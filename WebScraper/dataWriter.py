@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
 from typing import Any
 
@@ -13,12 +14,19 @@ from scraper import load_env_value
 LOGGER = logging.getLogger(__name__)
 
 
+DEFAULT_JOB_TABLE_NAME = "job_listings"
+
+
+def load_job_table_name() -> str:
+	return os.getenv("JOB_TABLE_NAME", DEFAULT_JOB_TABLE_NAME).strip() or DEFAULT_JOB_TABLE_NAME
+
+
 class Base(DeclarativeBase):
 	pass
 
 
 class JobListing(Base):
-	__tablename__ = "job_listings"
+	__tablename__ = load_job_table_name()
 
 	job_id: Mapped[int] = mapped_column(Integer, primary_key=True)
 	company_name: Mapped[str] = mapped_column(String(255), nullable=False)
