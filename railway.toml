@@ -1,0 +1,8 @@
+[build]
+builder = "railpack"
+buildCommand = "pip install -r WebScraper/requirements.txt"
+
+[deploy]
+startCommand = "python WebScraper/job_runner.py"
+restartPolicyType = "never"
+cronSchedule = "*/5 * * * *"

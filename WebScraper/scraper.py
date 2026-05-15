@@ -31,15 +31,20 @@ DEFAULT_HEADERS = {
 
 
 def load_env_value(key: str) -> str:
-	if not ENV_FILE.exists():
-		raise FileNotFoundError(f"Missing environment file: {ENV_FILE}")
-
-	load_dotenv(ENV_FILE)
 	value = os.getenv(key, "").strip()
 	if value:
 		return value
 
-	raise KeyError(f"{key} is not defined in {ENV_FILE.name}")
+	if ENV_FILE.exists():
+		load_dotenv(ENV_FILE)
+	value = os.getenv(key, "").strip()
+	if value:
+		return value
+
+	if ENV_FILE.exists():
+		raise KeyError(f"{key} is not defined in {ENV_FILE.name} or the environment")
+
+	raise KeyError(f"{key} is not defined in the environment")
 
 
 def fetch_html(url: str) -> str:
