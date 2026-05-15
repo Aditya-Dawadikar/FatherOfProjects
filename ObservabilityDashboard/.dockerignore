@@ -1,0 +1,5 @@
+.git
+.gitignore
+Project.md
+ObservabilityDashboard/node_modules
+ObservabilityDashboard/dist
