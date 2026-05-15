@@ -5,4 +5,4 @@ buildCommand = "pip install -r requirements.txt"
 [deploy]
 startCommand = "python job_runner.py"
 restartPolicyType = "never"
-cronSchedule = "*/5 * * * *"
+cronSchedule = "0 */4 * * *"
