@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from datetime import datetime
@@ -31,6 +32,10 @@ from shared.job_data import (  # noqa: E402
 	load_database_url,
 	normalize_job_payload,
 )
+from stream_events import RedisStreamPublisher, publish_server_event
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -89,11 +94,26 @@ class JobRead(JobBase):
 	model_config = ConfigDict(from_attributes=True)
 
 
+def serialize_job_listing(listing: JobListing) -> dict[str, object]:
+	payload: dict[str, object] = {
+		"job_id": listing.job_id,
+		"updated_at": listing.updated_at.isoformat() if listing.updated_at else None,
+	}
+	for field_name in JOB_FIELD_NAMES:
+		payload[field_name] = getattr(listing, field_name)
+	return payload
+
+
 @lru_cache
 def get_engine():
 	engine = create_db_engine(load_database_url())
 	Base.metadata.create_all(engine)
 	return engine
+
+
+@lru_cache
+def get_event_publisher() -> RedisStreamPublisher | None:
+	return RedisStreamPublisher.from_env()
 
 
 def get_session():
@@ -208,6 +228,12 @@ def create_job(payload: JobCreate, session: SessionDependency) -> JobListing:
 	session.add(listing)
 	session.commit()
 	session.refresh(listing)
+	publish_server_event(
+		get_event_publisher(),
+		"job_created",
+		job_id=listing.job_id,
+		job=serialize_job_listing(listing),
+	)
 	return listing
 
 
@@ -226,9 +252,19 @@ def patch_job(
 
 	listing = get_job_or_404(session, job_id, company_name)
 	merged_payload = merge_patch_payload(listing, patch)
-	apply_job_delta(listing, merged_payload)
+	changed = apply_job_delta(listing, merged_payload)
 	session.commit()
 	session.refresh(listing)
+	if changed:
+		publish_server_event(
+			get_event_publisher(),
+			"job_updated",
+			job_id=listing.job_id,
+			job=serialize_job_listing(listing),
+			updated_fields=sorted(patch.model_fields_set),
+		)
+	else:
+		LOGGER.info("No changes detected for job_id=%s", listing.job_id)
 	return listing
 
 
@@ -239,6 +275,13 @@ def delete_job(
 	company_name: str | None = Query(default=None),
 ) -> Response:
 	listing = get_job_or_404(session, job_id, company_name)
+	deleted_job = serialize_job_listing(listing)
 	session.delete(listing)
 	session.commit()
+	publish_server_event(
+		get_event_publisher(),
+		"job_deleted",
+		job_id=job_id,
+		job=deleted_job,
+	)
 	return Response(status_code=status.HTTP_204_NO_CONTENT)
