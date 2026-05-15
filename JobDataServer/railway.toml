@@ -1,8 +1,8 @@
 [build]
 builder = "railpack"
-buildCommand = "pip install -r JobDataServer/requirements.txt"
+buildCommand = "pip install -r requirements.txt"
 
 [deploy]
-startCommand = "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --app-dir JobDataServer"
+startCommand = "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3

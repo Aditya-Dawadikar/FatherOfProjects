@@ -18,11 +18,11 @@ from sqlalchemy.sql import func
 ENV_FILE = Path(__file__).with_name(".env")
 load_dotenv(ENV_FILE)
 
-WEB_SCRAPER_DIR = Path(__file__).resolve().parents[1] / "WebScraper"
-if str(WEB_SCRAPER_DIR) not in sys.path:
-	sys.path.insert(0, str(WEB_SCRAPER_DIR))
+SERVICE_ROOT = Path(__file__).resolve().parent
+if str(SERVICE_ROOT) not in sys.path:
+	sys.path.insert(0, str(SERVICE_ROOT))
 
-from dataWriter import (  # noqa: E402
+from shared.job_data import (  # noqa: E402
 	Base,
 	JOB_FIELD_NAMES,
 	JobListing,
