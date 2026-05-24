@@ -5,10 +5,10 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY requirements.txt ./requirements.txt
+COPY ObservabilityServer/requirements.txt ./requirements.txt
 RUN python -m pip install --no-cache-dir -r /app/requirements.txt
 
-COPY . ./
+COPY ObservabilityServer/ ./
 
 EXPOSE 8000
 

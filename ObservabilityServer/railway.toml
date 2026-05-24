@@ -1,6 +1,6 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "ObservabilityServer/Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"
