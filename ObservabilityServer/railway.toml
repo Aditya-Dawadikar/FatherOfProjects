@@ -1,9 +1,8 @@
 [build]
-builder = "railpack"
-buildCommand = "python -m pip install -r requirements.txt"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python -c \"import os, uvicorn; uvicorn.run('main:app', host='0.0.0.0', port=int(os.getenv('PORT', '8000')))\""
 healthcheckPath = "/health"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
