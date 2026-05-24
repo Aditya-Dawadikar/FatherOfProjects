@@ -1,6 +1,8 @@
 export type NodeStatus = 'healthy' | 'warning' | 'error' | 'idle'
 export type LogLevel = 'info' | 'warning' | 'error'
 export type NodeCategory = 'scraper' | 'storage' | 'backend' | 'stream' | 'worker' | 'dashboard'
+export type LivePullState = 'active' | 'inactive' | 'none'
+export type LiveSourceState = 'active' | 'inactive' | 'none'
 export type RelType =
   | 'triggers'
   | 'writes_to'
@@ -42,6 +44,8 @@ export interface SystemNode {
   name: string
   category: NodeCategory
   status: NodeStatus
+  livePullState?: LivePullState
+  liveSourceState?: LiveSourceState
   healthScore: number
   shortDescription: string
   lastSeenAt: string
@@ -68,4 +72,45 @@ export interface SystemEdge {
 export interface SystemDag {
   nodes: SystemNode[]
   edges: SystemEdge[]
+}
+
+export interface DashboardNodeSnapshot {
+  id: string
+  status: NodeStatus
+  healthScore: number
+  lastSeenAt: string
+  metrics: MetricEntry[]
+  logs: LogEntry[]
+  events: EventEntry[]
+}
+
+export interface DashboardEdgeSnapshot {
+  id: string
+  status: NodeStatus
+  throughput?: string
+  lastEventAt?: string
+}
+
+export interface DashboardSnapshot {
+  nodes: DashboardNodeSnapshot[]
+  edges: DashboardEdgeSnapshot[]
+  system: {
+    status: NodeStatus
+    avgHealth: number
+  }
+  stream: {
+    configured: boolean
+    streams: string[]
+    lastEventAt: string | null
+    lastEventId: string | null
+    lastStreamName: string | null
+    eventsSeenTotal: number
+    sseClients: number
+    lastDispatchAt: string | null
+  }
+}
+
+export interface DashboardStreamState {
+  connected: boolean
+  lastEventAt: string | null
 }

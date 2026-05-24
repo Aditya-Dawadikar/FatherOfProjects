@@ -1,6 +1,5 @@
-import { useNodeDetails, useNodeLogs, useNodeMetrics, useNodeEvents } from '../hooks'
-import { systemDag } from '../data/dag'
-import type { NodeStatus, LogLevel } from '../types'
+import { useNodeDetails, useNodeEvents, useNodeLogs, useNodeMetrics, useSystemDag } from '../hooks'
+import type { LivePullState, LiveSourceState, NodeStatus, LogLevel } from '../types'
 
 const STATUS_LABEL: Record<NodeStatus, string> = {
   healthy: 'Healthy',
@@ -13,6 +12,16 @@ const LOG_ICON: Record<LogLevel, string> = {
   info:    'ℹ',
   warning: '▲',
   error:   '✕',
+}
+
+const LIVE_PULL_LABEL: Record<Exclude<LivePullState, 'none'>, string> = {
+  active: 'Pulling live Redis data',
+  inactive: 'Configured consumer, no live feed',
+}
+
+const LIVE_SOURCE_LABEL: Record<Exclude<LiveSourceState, 'none'>, string> = {
+  active: 'Publishing live data into Redis',
+  inactive: 'Configured source, no live feed',
 }
 
 function HealthBar({ score }: { score: number }) {
@@ -33,6 +42,7 @@ interface InspectorProps {
 }
 
 export default function Inspector({ nodeId, onSelectNode }: InspectorProps) {
+  const { data: dag }     = useSystemDag()
   const { data: node }    = useNodeDetails(nodeId)
   const { data: logs }    = useNodeLogs(nodeId)
   const { data: metrics } = useNodeMetrics(nodeId)
@@ -46,8 +56,15 @@ export default function Inspector({ nodeId, onSelectNode }: InspectorProps) {
     )
   }
 
-  const upstreamNodes   = node.upstream.map(r => systemDag.nodes.find(n => n.id === r.targetNodeId)).filter(Boolean)
-  const downstreamNodes = node.downstream.map(r => systemDag.nodes.find(n => n.id === r.targetNodeId)).filter(Boolean)
+  const dagNodes = dag?.nodes ?? []
+  const upstreamNodes = node.upstream.map(r => dagNodes.find(n => n.id === r.targetNodeId)).filter(Boolean)
+  const downstreamNodes = node.downstream.map(r => dagNodes.find(n => n.id === r.targetNodeId)).filter(Boolean)
+  const livePullLabel = node.livePullState && node.livePullState !== 'none'
+    ? LIVE_PULL_LABEL[node.livePullState]
+    : null
+  const liveSourceLabel = node.liveSourceState && node.liveSourceState !== 'none'
+    ? LIVE_SOURCE_LABEL[node.liveSourceState]
+    : null
 
   return (
     <aside className="inspector">
@@ -58,6 +75,8 @@ export default function Inspector({ nodeId, onSelectNode }: InspectorProps) {
           <span className={`insp-badge insp-badge-${node.status}`}>{STATUS_LABEL[node.status]}</span>
         </div>
         <p className="inspector-desc">{node.shortDescription}</p>
+        {liveSourceLabel && <p className={`live-source-summary live-source-summary-${node.liveSourceState}`}>{liveSourceLabel}</p>}
+        {livePullLabel && <p className={`live-pull-summary live-pull-summary-${node.livePullState}`}>{livePullLabel}</p>}
         <div className="inspector-meta-row">
           <span className="meta-item">
             <span className="meta-key">Last seen</span>

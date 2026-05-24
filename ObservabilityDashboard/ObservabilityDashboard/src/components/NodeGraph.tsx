@@ -1,34 +1,29 @@
-import { useState } from 'react'
-import type { SystemDag, SystemNode, SystemEdge, NodeStatus } from '../types'
+import { useEffect, useRef, useState } from 'react'
+import type { LivePullState, LiveSourceState, SystemDag, SystemNode, SystemEdge, NodeStatus } from '../types'
 
-const NODE_W  = 148
-const NODE_H  = 52
+const NODE_W = 148
+const NODE_H = 100
 const NODE_HH = NODE_H / 2   // 26
 
 const CANVAS_W = 920
 const CANVAS_H = 510
+const DRAG_THRESHOLD = 4
 
 const CATEGORY_LABEL: Record<string, string> = {
-  scraper:   'Cron Job',
-  storage:   'Postgres',
-  backend:   'API Server',
-  stream:    'Redis',
-  worker:    'Worker',
+  scraper: 'Cron Job',
+  storage: 'Postgres',
+  backend: 'API Server',
+  stream: 'Redis',
+  worker: 'Worker',
   dashboard: 'Frontend',
 }
-
-const CLUSTERS = [
-  { label: 'Scraper Flow',        x: 16,  y: 44, w: 348, h: 388 },
-  { label: 'Observability Module', x: 400, y: 182, w: 224, h: 290 },
-  { label: 'Observer Dashboard',  x: 686, y: 82,  w: 178, h: 290 },
-]
 
 function nodeHW(n: SystemNode) { return (n.width ?? NODE_W) / 2 }
 
 function getEdgePath(src: SystemNode, tgt: SystemNode): string {
   const shw = nodeHW(src)
   const thw = nodeHW(tgt)
-  const dx  = tgt.cx - src.cx
+  const dx = tgt.cx - src.cx
 
   if (dx !== 0) {
     const x1 = dx > 0 ? src.cx + shw : src.cx - shw
@@ -47,7 +42,7 @@ function getEdgePath(src: SystemNode, tgt: SystemNode): string {
 function edgeMidpoint(src: SystemNode, tgt: SystemNode): [number, number] {
   const shw = nodeHW(src)
   const thw = nodeHW(tgt)
-  const dx  = tgt.cx - src.cx
+  const dx = tgt.cx - src.cx
   if (dx !== 0) {
     const x1 = dx > 0 ? src.cx + shw : src.cx - shw
     const x2 = dx > 0 ? tgt.cx - thw : tgt.cx + thw
@@ -61,9 +56,9 @@ function edgeMidpoint(src: SystemNode, tgt: SystemNode): [number, number] {
 function edgeStroke(status: NodeStatus): string {
   switch (status) {
     case 'warning': return 'var(--warn)'
-    case 'error':   return 'var(--error)'
-    case 'idle':    return 'var(--muted)'
-    default:        return 'var(--line)'
+    case 'error': return 'var(--error)'
+    case 'idle': return 'var(--muted)'
+    default: return 'var(--line)'
   }
 }
 
@@ -71,39 +66,84 @@ function statusDotColor(status: NodeStatus): string {
   switch (status) {
     case 'healthy': return 'var(--accent)'
     case 'warning': return 'var(--warn)'
-    case 'error':   return 'var(--error)'
-    case 'idle':    return 'var(--muted)'
+    case 'error': return 'var(--error)'
+    case 'idle': return 'var(--muted)'
+  }
+}
+
+function livePullLabel(livePullState: LivePullState | undefined): string | null {
+  switch (livePullState) {
+    case 'active':
+      return 'LIVE'
+    case 'inactive':
+      return 'NO FEED'
+    default:
+      return null
+  }
+}
+
+function liveSourceLabel(liveSourceState: LiveSourceState | undefined): string | null {
+  switch (liveSourceState) {
+    case 'active':
+      return 'SOURCE'
+    case 'inactive':
+      return 'SOURCE IDLE'
+    default:
+      return null
+  }
+}
+
+function clampNodePosition(node: SystemNode, cx: number, cy: number) {
+  const halfWidth = nodeHW(node)
+
+  return {
+    cx: Math.min(Math.max(cx, halfWidth), CANVAS_W - halfWidth),
+    cy: Math.min(Math.max(cy, NODE_HH), CANVAS_H - NODE_HH),
   }
 }
 
 interface GraphNodeProps {
   node: SystemNode
   selected: boolean
+  dragging: boolean
   onClick: () => void
+  onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void
 }
 
-function GraphNode({ node, selected, onClick }: GraphNodeProps) {
+function GraphNode({ node, selected, dragging, onClick, onPointerDown }: GraphNodeProps) {
   const w = node.width ?? NODE_W
   const left = node.cx - w / 2
-  const top  = node.cy - NODE_HH
+  const top = node.cy - NODE_HH
+  const liveBadge = livePullLabel(node.livePullState)
+  const sourceBadge = liveSourceLabel(node.liveSourceState)
 
   return (
     <div
       className={[
         'gnode',
         `gnode-${node.status}`,
+        dragging ? 'gnode-dragging' : '',
         selected ? 'gnode-selected' : '',
       ].join(' ')}
       style={{ left, top, width: w, height: NODE_H }}
       onClick={onClick}
+      onPointerDown={onPointerDown}
       title={node.shortDescription}
     >
       <span className="gnode-dot" style={{ background: statusDotColor(node.status) }} />
       <div className="gnode-body">
         <span className="gnode-name">{node.name}</span>
         <span className="gnode-cat">{CATEGORY_LABEL[node.category]}</span>
+        <br/>
+        {sourceBadge && (
+          <span className={`gnode-live-pill gnode-live-pill-source gnode-live-pill-source-${node.liveSourceState}`}>{sourceBadge}</span>
+        )}
+        {liveBadge && (
+          <span className={`gnode-live-pill gnode-live-pill-${node.livePullState}`}>{liveBadge}</span>
+        )}
+
       </div>
-      <span className="gnode-score">{node.healthScore}</span>
+
     </div>
   )
 }
@@ -117,7 +157,7 @@ interface EdgeGroupProps {
 }
 
 function EdgeGroup({ edge, src, tgt, hovered, onHover }: EdgeGroupProps) {
-  const d      = getEdgePath(src, tgt)
+  const d = getEdgePath(src, tgt)
   const [mx, my] = edgeMidpoint(src, tgt)
   const stroke = edgeStroke(edge.status)
   const opacity = edge.status === 'idle' ? 0.3 : hovered ? 1 : 0.5
@@ -172,14 +212,134 @@ interface NodeGraphProps {
 
 export default function NodeGraph({ dag, selectedNodeId, onSelectNode }: NodeGraphProps) {
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null)
+  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
+  const [positionOverrides, setPositionOverrides] = useState<Record<string, { cx: number, cy: number }>>({})
+  const canvasRef = useRef<HTMLDivElement | null>(null)
+  const dragStateRef = useRef<{ id: string, offsetX: number, offsetY: number, moved: boolean } | null>(null)
+  const suppressClickRef = useRef(false)
 
-  const nodeMap = new Map(dag.nodes.map(n => [n.id, n]))
+  useEffect(() => {
+    setPositionOverrides(current => {
+      const next: Record<string, { cx: number, cy: number }> = {}
+      let changed = false
+
+      for (const node of dag.nodes) {
+        const existing = current[node.id]
+        if (existing) {
+          next[node.id] = existing
+        }
+      }
+
+      if (Object.keys(current).length !== Object.keys(next).length) {
+        changed = true
+      }
+
+      return changed ? next : current
+    })
+  }, [dag.nodes])
+
+  const renderedNodes = dag.nodes.map(node => {
+    const override = positionOverrides[node.id]
+    return override ? { ...node, ...override } : node
+  })
+
+  const updateDraggedNodePosition = (clientX: number, clientY: number) => {
+    const dragState = dragStateRef.current
+    const canvas = canvasRef.current
+    if (!dragState || !canvas) {
+      return
+    }
+
+    const node = renderedNodes.find(candidate => candidate.id === dragState.id)
+    if (!node) {
+      return
+    }
+
+    const rect = canvas.getBoundingClientRect()
+    const nextPosition = clampNodePosition(
+      node,
+      clientX - rect.left - dragState.offsetX,
+      clientY - rect.top - dragState.offsetY,
+    )
+
+    const movedEnough =
+      Math.abs(nextPosition.cx - node.cx) > DRAG_THRESHOLD ||
+      Math.abs(nextPosition.cy - node.cy) > DRAG_THRESHOLD
+
+    if (movedEnough) {
+      dragState.moved = true
+    }
+
+    setPositionOverrides(current => {
+      const existing = current[node.id]
+      if (existing?.cx === nextPosition.cx && existing?.cy === nextPosition.cy) {
+        return current
+      }
+
+      return {
+        ...current,
+        [node.id]: nextPosition,
+      }
+    })
+  }
+
+  useEffect(() => {
+    if (!draggingNodeId) {
+      return
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      updateDraggedNodePosition(event.clientX, event.clientY)
+    }
+
+    const handlePointerUp = () => {
+      suppressClickRef.current = dragStateRef.current?.moved ?? false
+      dragStateRef.current = null
+      setDraggingNodeId(null)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [draggingNodeId, renderedNodes])
+
+  const handleNodePointerDown = (node: SystemNode) => (event: React.PointerEvent<HTMLDivElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) {
+      return
+    }
+
+    const rect = canvas.getBoundingClientRect()
+    dragStateRef.current = {
+      id: node.id,
+      offsetX: event.clientX - rect.left - node.cx,
+      offsetY: event.clientY - rect.top - node.cy,
+      moved: false,
+    }
+    suppressClickRef.current = false
+    setDraggingNodeId(node.id)
+  }
+
+  const handleNodeClick = (nodeId: string) => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false
+      return
+    }
+
+    onSelectNode(nodeId)
+  }
+
+  const nodeMap = new Map(renderedNodes.map(n => [n.id, n]))
 
   return (
     <div className="graph-canvas-wrap">
-      <div className="graph-canvas" style={{ width: CANVAS_W, height: CANVAS_H }}>
+      <div ref={canvasRef} className="graph-canvas" style={{ width: CANVAS_W, height: CANVAS_H }}>
 
-        {/* SVG layer: cluster backgrounds + edges */}
+        {/* SVG layer: edges */}
         <svg
           className="graph-svg"
           width={CANVAS_W}
@@ -206,29 +366,6 @@ export default function NodeGraph({ dag, selectedNodeId, onSelectNode }: NodeGra
             ))}
           </defs>
 
-          {/* Cluster backgrounds */}
-          {CLUSTERS.map(c => (
-            <g key={c.label}>
-              <rect
-                x={c.x} y={c.y} width={c.w} height={c.h}
-                rx={10}
-                fill="rgba(36, 43, 40, 0.45)"
-                stroke="var(--line)"
-                strokeWidth={1}
-              />
-              <text
-                x={c.x + 10} y={c.y - 7}
-                fill="var(--muted)"
-                fontSize={9}
-                fontWeight={700}
-                letterSpacing={1}
-                style={{ textTransform: 'uppercase' }}
-              >
-                {c.label}
-              </text>
-            </g>
-          ))}
-
           {/* Edges */}
           {dag.edges.map(edge => {
             const src = nodeMap.get(edge.source)
@@ -248,12 +385,14 @@ export default function NodeGraph({ dag, selectedNodeId, onSelectNode }: NodeGra
         </svg>
 
         {/* Node divs — sit on top of SVG */}
-        {dag.nodes.map(node => (
+        {renderedNodes.map(node => (
           <GraphNode
             key={node.id}
             node={node}
+            dragging={draggingNodeId === node.id}
             selected={selectedNodeId === node.id}
-            onClick={() => onSelectNode(node.id)}
+            onClick={() => handleNodeClick(node.id)}
+            onPointerDown={handleNodePointerDown(node)}
           />
         ))}
       </div>

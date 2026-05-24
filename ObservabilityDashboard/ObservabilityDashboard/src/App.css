@@ -120,6 +120,7 @@
 .graph-canvas {
   position: relative;
   flex-shrink: 0;
+  touch-action: none;
 }
 
 .graph-svg {
@@ -151,6 +152,11 @@
   background: #2c3530;
   border-color: var(--muted);
   z-index: 2;
+}
+
+.gnode-dragging {
+  cursor: grabbing;
+  z-index: 4;
 }
 
 .gnode-healthy { border-color: rgba(74,222,128,0.2); }
@@ -203,6 +209,37 @@
   flex-shrink: 0;
 }
 
+.gnode-live-pill {
+  flex-shrink: 0;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 2px 6px;
+}
+
+.gnode-live-pill-active {
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.gnode-live-pill-inactive {
+  color: var(--muted);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.gnode-live-pill-source-active {
+  color: #7dd3fc;
+  background: rgba(125, 211, 252, 0.12);
+}
+
+.gnode-live-pill-source-inactive {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.08);
+}
+
 /* ═══════════════════════════════
    Inspector Panel
 ══════════════════════════════════ */
@@ -246,6 +283,34 @@
 
 .inspector-header-section {
   background: var(--panel-2);
+}
+
+.live-pull-summary {
+  margin: 8px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.live-pull-summary-active {
+  color: var(--accent);
+}
+
+.live-pull-summary-inactive {
+  color: var(--muted);
+}
+
+.live-source-summary {
+  margin: 8px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.live-source-summary-active {
+  color: #7dd3fc;
+}
+
+.live-source-summary-inactive {
+  color: var(--muted);
 }
 
 .inspector-node-title {
