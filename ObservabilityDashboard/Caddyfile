@@ -9,16 +9,19 @@
 		format console
 	}
 
-	handle /api/* {
+	@observability_api {
+		path /api/* /health
+	}
+
+	handle @observability_api {
+		header X-Dashboard-Proxy "observability-api"
 		reverse_proxy {$OBSERVABILITY_API_UPSTREAM}
 	}
 
-	handle /health {
-		reverse_proxy {$OBSERVABILITY_API_UPSTREAM}
+	handle {
+		root * /usr/share/caddy
+		encode gzip zstd
+		try_files {path} /index.html
+		file_server
 	}
-
-	root * /usr/share/caddy
-	encode gzip zstd
-	try_files {path} /index.html
-	file_server
 }
