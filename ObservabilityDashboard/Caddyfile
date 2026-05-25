@@ -4,6 +4,14 @@
 }
 
 :{$PORT:8080} {
+	handle_path /api/* {
+		reverse_proxy {$OBSERVABILITY_API_UPSTREAM}
+	}
+
+	handle /health {
+		reverse_proxy {$OBSERVABILITY_API_UPSTREAM}
+	}
+
 	root * /usr/share/caddy
 	encode gzip zstd
 	try_files {path} /index.html
