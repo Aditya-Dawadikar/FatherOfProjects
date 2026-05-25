@@ -114,3 +114,17 @@ export interface DashboardStreamState {
   connected: boolean
   lastEventAt: string | null
 }
+
+export interface DashboardUpdateEvent {
+  type: 'dashboard-update'
+  stream: string
+  entryId: string
+  eventType: string
+  nodeId: string
+  emittedAt: string
+}
+
+export interface DashboardReadyEvent {
+  type: 'connected'
+  connectedAt: string
+}

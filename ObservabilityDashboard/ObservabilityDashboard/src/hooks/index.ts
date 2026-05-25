@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemDag } from '../data/dag'
 import type {
   DashboardSnapshot,
+  DashboardUpdateEvent,
+  DashboardReadyEvent,
   LiveSourceState,
   DashboardStreamState,
   LivePullState,
@@ -13,7 +15,6 @@ import type {
 
 const API_BASE = (import.meta.env.DEV ? import.meta.env.VITE_OBSERVABILITY_API_BASE_URL ?? '' : '').replace(/\/$/, '')
 const DAG_STALE = 5_000
-const NODE_STALE = 5_000
 const SYSTEM_DAG_QUERY_KEY = ['systemDag'] as const
 const LIVE_EDGE_SOURCE = 'redis-stream'
 const LIVE_EDGE_TARGET = 'redis-stream'
@@ -184,9 +185,24 @@ function systemDagQueryOptions() {
   } as const
 }
 
-async function getNodeFromCache(queryClient: ReturnType<typeof useQueryClient>, nodeId: string | null) {
-  const dag = await queryClient.ensureQueryData(systemDagQueryOptions())
+function getNodeFromDag(dag: SystemDag | undefined, nodeId: string | null) {
+  if (!dag || nodeId == null) {
+    return null
+  }
+
   return dag.nodes.find(node => node.id === nodeId) ?? null
+}
+
+function parseSseData<T>(event: MessageEvent<string>): T | null {
+  try {
+    return JSON.parse(event.data) as T
+  } catch (error) {
+    console.error('[dashboard-runtime] failed to parse SSE payload', {
+      data: event.data,
+      error,
+    })
+    return null
+  }
 }
 
 export function useSystemDag() {
@@ -194,42 +210,30 @@ export function useSystemDag() {
 }
 
 export function useNodeDetails(nodeId: string | null) {
-  const queryClient = useQueryClient()
   return useQuery({
-    queryKey: ['nodeDetails', nodeId],
-    queryFn: () => getNodeFromCache(queryClient, nodeId),
-    enabled: nodeId != null,
-    staleTime: NODE_STALE,
+    ...systemDagQueryOptions(),
+    select: (dag: SystemDag) => getNodeFromDag(dag, nodeId),
   })
 }
 
 export function useNodeLogs(nodeId: string | null) {
-  const queryClient = useQueryClient()
   return useQuery({
-    queryKey: ['nodeLogs', nodeId],
-    queryFn: async () => (await getNodeFromCache(queryClient, nodeId))?.logs ?? [],
-    enabled: nodeId != null,
-    staleTime: NODE_STALE,
+    ...systemDagQueryOptions(),
+    select: (dag: SystemDag) => getNodeFromDag(dag, nodeId)?.logs ?? [],
   })
 }
 
 export function useNodeMetrics(nodeId: string | null) {
-  const queryClient = useQueryClient()
   return useQuery({
-    queryKey: ['nodeMetrics', nodeId],
-    queryFn: async () => (await getNodeFromCache(queryClient, nodeId))?.metrics ?? [],
-    enabled: nodeId != null,
-    staleTime: NODE_STALE,
+    ...systemDagQueryOptions(),
+    select: (dag: SystemDag) => getNodeFromDag(dag, nodeId)?.metrics ?? [],
   })
 }
 
 export function useNodeEvents(nodeId: string | null) {
-  const queryClient = useQueryClient()
   return useQuery({
-    queryKey: ['nodeEvents', nodeId],
-    queryFn: async () => (await getNodeFromCache(queryClient, nodeId))?.events ?? [],
-    enabled: nodeId != null,
-    staleTime: NODE_STALE,
+    ...systemDagQueryOptions(),
+    select: (dag: SystemDag) => getNodeFromDag(dag, nodeId)?.events ?? [],
   })
 }
 
@@ -266,9 +270,17 @@ export function useObservabilityStream(): DashboardStreamState {
       setStreamState(current => ({ ...current, connected: true }))
     }
 
-    source.addEventListener('dashboard-update', () => {
-      const now = new Date().toISOString()
-      setStreamState({ connected: true, lastEventAt: now })
+    source.addEventListener('ready', event => {
+      const payload = parseSseData<DashboardReadyEvent>(event)
+      setStreamState(current => ({
+        connected: true,
+        lastEventAt: payload?.connectedAt ?? current.lastEventAt,
+      }))
+    })
+
+    source.addEventListener('dashboard-update', event => {
+      const payload = parseSseData<DashboardUpdateEvent>(event)
+      setStreamState({ connected: true, lastEventAt: payload?.emittedAt ?? new Date().toISOString() })
       void queryClient.invalidateQueries({ queryKey: SYSTEM_DAG_QUERY_KEY })
       void queryClient.invalidateQueries({ queryKey: ['systemHealth'] })
     })
