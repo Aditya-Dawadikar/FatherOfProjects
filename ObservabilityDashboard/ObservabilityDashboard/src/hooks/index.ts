@@ -11,7 +11,7 @@ import type {
   SystemNode,
 } from '../types'
 
-const API_BASE = (import.meta.env.VITE_OBSERVABILITY_API_BASE_URL ?? '').replace(/\/$/, '')
+const API_BASE = (import.meta.env.DEV ? import.meta.env.VITE_OBSERVABILITY_API_BASE_URL ?? '' : '').replace(/\/$/, '')
 const DAG_STALE = 5_000
 const NODE_STALE = 5_000
 const SYSTEM_DAG_QUERY_KEY = ['systemDag'] as const
