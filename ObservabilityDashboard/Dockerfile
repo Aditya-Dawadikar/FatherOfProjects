@@ -17,3 +17,5 @@ COPY Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/ObservabilityDashboard/dist /usr/share/caddy
 
 EXPOSE 8080
+
+CMD ["/bin/sh", "-c", "echo '[dashboard-runtime] PORT='\"${PORT:-8080}\"' OBSERVABILITY_API_UPSTREAM='\"${OBSERVABILITY_API_UPSTREAM:-<unset>}\"; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"]

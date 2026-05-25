@@ -18,6 +18,24 @@ const SYSTEM_DAG_QUERY_KEY = ['systemDag'] as const
 const LIVE_EDGE_SOURCE = 'redis-stream'
 const LIVE_EDGE_TARGET = 'redis-stream'
 
+function logRuntimeUrls() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  console.info('[dashboard-runtime]', {
+    mode: import.meta.env.MODE,
+    dev: import.meta.env.DEV,
+    origin: window.location.origin,
+    pathname: window.location.pathname,
+    apiBase: API_BASE || '(same-origin)',
+    dashboardUrl: buildApiUrl('/api/dashboard'),
+    streamUrl: buildApiUrl('/api/events/stream'),
+  })
+}
+
+logRuntimeUrls()
+
 function buildInactiveMetrics(baseNode: SystemNode) {
   return [
     { label: 'Live data', value: 'Not observed', trend: 'flat' as const },
@@ -30,10 +48,24 @@ function buildApiUrl(path: string) {
 }
 
 async function fetchDashboardSnapshot(): Promise<DashboardSnapshot> {
-  const response = await fetch(buildApiUrl('/api/dashboard'))
+  const requestUrl = buildApiUrl('/api/dashboard')
+  const response = await fetch(requestUrl)
   if (!response.ok) {
     throw new Error(`Dashboard request failed with ${response.status}`)
   }
+
+  const contentType = response.headers.get('content-type') ?? 'unknown'
+  if (!contentType.includes('application/json')) {
+    const responseText = await response.text()
+    console.error('[dashboard-runtime] unexpected dashboard response', {
+      requestUrl,
+      responseUrl: response.url,
+      contentType,
+      preview: responseText.slice(0, 160),
+    })
+    throw new Error(`Dashboard response was not JSON. content-type=${contentType}`)
+  }
+
   return response.json() as Promise<DashboardSnapshot>
 }
 
@@ -226,7 +258,9 @@ export function useObservabilityStream(): DashboardStreamState {
   })
 
   useEffect(() => {
-    const source = new EventSource(buildApiUrl('/api/events/stream'))
+    const streamUrl = buildApiUrl('/api/events/stream')
+    console.info('[dashboard-runtime] opening EventSource', { streamUrl })
+    const source = new EventSource(streamUrl)
 
     source.onopen = () => {
       setStreamState(current => ({ ...current, connected: true }))
@@ -240,6 +274,7 @@ export function useObservabilityStream(): DashboardStreamState {
     })
 
     source.onerror = () => {
+      console.error('[dashboard-runtime] EventSource error', { streamUrl })
       setStreamState(current => ({ ...current, connected: false }))
     }
 

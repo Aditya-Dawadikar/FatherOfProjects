@@ -4,6 +4,11 @@
 }
 
 :{$PORT:8080} {
+	log {
+		output stdout
+		format console
+	}
+
 	handle /api/* {
 		reverse_proxy {$OBSERVABILITY_API_UPSTREAM}
 	}
