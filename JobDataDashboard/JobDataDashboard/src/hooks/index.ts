@@ -37,7 +37,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 async function fetchJobs({ searchText, limit }: JobsQuery): Promise<JobRecord[]> {
   const params = new URLSearchParams({ limit: String(limit) })
   const trimmedQuery = searchText.trim()
-  const path = trimmedQuery ? '/jobs/search' : '/jobs'
+  const path = trimmedQuery ? '/api/jobs/search' : '/api/jobs'
 
   if (trimmedQuery) {
     params.set('query', trimmedQuery)
@@ -47,7 +47,7 @@ async function fetchJobs({ searchText, limit }: JobsQuery): Promise<JobRecord[]>
 }
 
 async function fetchHealth(): Promise<HealthResponse> {
-  return requestJson<HealthResponse>('/health')
+  return requestJson<HealthResponse>('/api/health')
 }
 
 function toNullable(value: string) {
@@ -120,21 +120,21 @@ export function toDraft(record: JobRecord): JobDraft {
 }
 
 export async function createJob(draft: JobDraft): Promise<JobRecord> {
-  return requestJson<JobRecord>('/jobs', {
+  return requestJson<JobRecord>('/api/jobs', {
     method: 'POST',
     body: JSON.stringify(toCreatePayload(draft)),
   })
 }
 
 export async function updateJob(draft: JobDraft): Promise<JobRecord> {
-  return requestJson<JobRecord>(`/jobs/${draft.job_id}`, {
+  return requestJson<JobRecord>(`/api/jobs/${draft.job_id}`, {
     method: 'PATCH',
     body: JSON.stringify(toPatchPayload(draft)),
   })
 }
 
 export async function deleteJob(jobId: number): Promise<void> {
-  await requestJson<void>(`/jobs/${jobId}`, {
+	await requestJson<void>(`/api/jobs/${jobId}`, {
     method: 'DELETE',
   })
 }

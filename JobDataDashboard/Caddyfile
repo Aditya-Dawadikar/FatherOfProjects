@@ -10,10 +10,10 @@
 	}
 
 	@job_data_api {
-		path /jobs /jobs/* /health
+		path /api/jobs /api/jobs/* /api/health
 	}
 
-	handle @job_data_api {
+	handle_path /api/* {
 		header X-Dashboard-Proxy "job-data-api"
 		reverse_proxy {$JOB_DATA_API_UPSTREAM}
 	}
