@@ -85,8 +85,11 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
-async function fetchJobs({ searchText, limit }: JobsQuery): Promise<JobRecord[]> {
-  const params = new URLSearchParams({ limit: String(limit) })
+async function fetchJobs({ searchText, limit, offset }: JobsQuery): Promise<JobRecord[]> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  })
   const trimmedQuery = searchText.trim()
   const path = trimmedQuery ? '/api/jobs/search' : '/api/jobs'
 

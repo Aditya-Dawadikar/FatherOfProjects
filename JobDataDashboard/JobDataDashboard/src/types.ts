@@ -41,4 +41,5 @@ export type HealthResponse = {
 export type JobsQuery = {
   searchText: string
   limit: number
+  offset: number
 }

@@ -121,6 +121,23 @@
   gap: 12px;
 }
 
+.pagination-bar,
+.pagination-actions,
+.pagination-copy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pagination-bar {
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.pagination-copy strong {
+  font-size: 1rem;
+}
+
 .search-input,
 .field input,
 .field textarea {
@@ -315,7 +332,10 @@
   .toolbar,
   .panel-heading,
   .form-actions,
-  .toolbar-actions {
+  .toolbar-actions,
+  .pagination-bar,
+  .pagination-actions,
+  .pagination-copy {
     flex-direction: column;
     align-items: stretch;
   }

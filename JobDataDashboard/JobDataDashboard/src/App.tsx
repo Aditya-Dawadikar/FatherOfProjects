@@ -16,18 +16,27 @@ import type { JobDraft, JobRecord } from './types'
 
 const queryClient = new QueryClient()
 const JOBS_QUERY_KEY = ['jobs']
+const PAGE_SIZE = 20
 
 function DashboardApp() {
   const [searchText, setSearchText] = useState('')
+  const [page, setPage] = useState(1)
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null)
   const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create')
   const [draft, setDraft] = useState<JobDraft>(() => createEmptyDraft())
   const [feedback, setFeedback] = useState<string>('')
   const deferredSearchText = useDeferredValue(searchText)
-  const jobsQuery = useJobs({ searchText: deferredSearchText, limit: 100 })
+  const jobsQuery = useJobs({
+    searchText: deferredSearchText,
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
+  })
   const jobList = jobsQuery.data ?? []
   const selectedJob = jobList.find((job) => job.job_id === selectedJobId) ?? null
   const reactQueryClient = useQueryClient()
+  const pageStart = jobList.length ? (page - 1) * PAGE_SIZE + 1 : 0
+  const pageEnd = jobList.length ? pageStart + jobList.length - 1 : 0
+  const hasNextPage = jobList.length === PAGE_SIZE
 
   const createMutation = useMutation({
     mutationFn: createJob,
@@ -121,6 +130,23 @@ function DashboardApp() {
     deleteMutation.mutate(job.job_id)
   }
 
+  function changeSearchText(value: string) {
+    setSearchText(value)
+    setPage(1)
+  }
+
+  function goToPreviousPage() {
+    setPage((currentPage) => Math.max(1, currentPage - 1))
+  }
+
+  function goToNextPage() {
+    if (!hasNextPage || jobsQuery.isFetching) {
+      return
+    }
+
+    setPage((currentPage) => currentPage + 1)
+  }
+
   return (
     <div className="app-shell">
       <Header />
@@ -137,7 +163,7 @@ function DashboardApp() {
                 className="search-input"
                 type="search"
                 value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
+                onChange={(event) => changeSearchText(event.target.value)}
                 placeholder="Search company, role, or location"
               />
               <button
@@ -153,7 +179,7 @@ function DashboardApp() {
 
           <div className="summary-grid">
             <article className="summary-card">
-              <span>Total rows</span>
+              <span>Rows on page</span>
               <strong>{jobList.length}</strong>
             </article>
             <article className="summary-card">
@@ -161,8 +187,8 @@ function DashboardApp() {
               <strong>{selectedJob?.company_name ?? (editorMode === 'edit' ? draft.company_name || 'Unsynced record' : 'None')}</strong>
             </article>
             <article className="summary-card">
-              <span>Editor mode</span>
-              <strong>{editorMode === 'create' ? 'Create' : 'Edit'}</strong>
+              <span>Page window</span>
+              <strong>{pageStart && pageEnd ? `${pageStart}-${pageEnd}` : '0'}</strong>
             </article>
           </div>
 
@@ -177,6 +203,31 @@ function DashboardApp() {
             onSelectJob={selectJob}
             onDeleteJob={removeJob}
           />
+
+          <div className="pagination-bar">
+            <div className="pagination-copy">
+              <span className="eyebrow">Pagination</span>
+              <strong>Page {page}</strong>
+            </div>
+            <div className="pagination-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={goToPreviousPage}
+                disabled={page === 1 || jobsQuery.isFetching}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={goToNextPage}
+                disabled={!hasNextPage || jobsQuery.isFetching}
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </section>
 
         <JobForm
