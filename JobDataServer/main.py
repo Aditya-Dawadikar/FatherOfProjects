@@ -131,6 +131,30 @@ def with_company_filter(statement: Select[tuple[JobListing]], company_name: str 
 	return statement.where(func.lower(JobListing.company_name) == company_name.strip().lower())
 
 
+def with_search_filters(
+	statement: Select,
+	*,
+	job_role: str | None = None,
+	location: str | None = None,
+	query: str | None = None,
+):
+	if job_role:
+		statement = statement.where(JobListing.job_role.ilike(f"%{job_role.strip()}%"))
+	if location:
+		statement = statement.where(JobListing.location.ilike(f"%{location.strip()}%"))
+	if query:
+		search_term = f"%{query.strip()}%"
+		statement = statement.where(
+			or_(
+				JobListing.company_name.ilike(search_term),
+				JobListing.job_role.ilike(search_term),
+				JobListing.location.ilike(search_term),
+			)
+		)
+
+	return statement
+
+
 def get_job_or_404(session: Session, job_id: int, company_name: str | None) -> JobListing:
 	statement = select(JobListing).where(JobListing.job_id == job_id)
 	listing = session.scalar(with_company_filter(statement, company_name))
@@ -191,22 +215,38 @@ def search_jobs(
 	if job_id is not None:
 		statement = statement.where(JobListing.job_id == job_id)
 	statement = with_company_filter(statement, company_name)
-	if job_role:
-		statement = statement.where(JobListing.job_role.ilike(f"%{job_role.strip()}%"))
-	if location:
-		statement = statement.where(JobListing.location.ilike(f"%{location.strip()}%"))
-	if query:
-		search_term = f"%{query.strip()}%"
-		statement = statement.where(
-			or_(
-				JobListing.company_name.ilike(search_term),
-				JobListing.job_role.ilike(search_term),
-				JobListing.location.ilike(search_term),
-			)
-		)
+	statement = with_search_filters(
+		statement,
+		job_role=job_role,
+		location=location,
+		query=query,
+	)
 
 	statement = statement.offset(offset).limit(limit)
 	return list(session.scalars(statement))
+
+
+@app.get("/jobs/count")
+def count_jobs(
+	session: SessionDependency,
+	company_name: str | None = Query(default=None),
+	job_id: int | None = Query(default=None),
+	job_role: str | None = Query(default=None),
+	location: str | None = Query(default=None),
+	query: str | None = Query(default=None),
+) -> dict[str, int]:
+	statement = select(func.count()).select_from(JobListing)
+	if job_id is not None:
+		statement = statement.where(JobListing.job_id == job_id)
+	statement = with_company_filter(statement, company_name)
+	statement = with_search_filters(
+		statement,
+		job_role=job_role,
+		location=location,
+		query=query,
+	)
+	total = session.scalar(statement) or 0
+	return {"total": int(total)}
 
 
 @app.get("/jobs/{job_id}", response_model=JobRead)

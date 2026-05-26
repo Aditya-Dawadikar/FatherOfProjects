@@ -10,6 +10,7 @@ import {
   deleteJob,
   toDraft,
   updateJob,
+  useJobsCount,
   useJobs,
 } from './hooks'
 import type { JobDraft, JobRecord } from './types'
@@ -31,12 +32,15 @@ function DashboardApp() {
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   })
+  const jobsCountQuery = useJobsCount(deferredSearchText)
   const jobList = jobsQuery.data ?? []
   const selectedJob = jobList.find((job) => job.job_id === selectedJobId) ?? null
   const reactQueryClient = useQueryClient()
+  const totalRows = jobsCountQuery.data?.total ?? 0
+  const totalPages = totalRows ? Math.ceil(totalRows / PAGE_SIZE) : 1
   const pageStart = jobList.length ? (page - 1) * PAGE_SIZE + 1 : 0
   const pageEnd = jobList.length ? pageStart + jobList.length - 1 : 0
-  const hasNextPage = jobList.length === PAGE_SIZE
+  const hasNextPage = page < totalPages
 
   const createMutation = useMutation({
     mutationFn: createJob,
@@ -47,7 +51,10 @@ function DashboardApp() {
         setEditorMode('edit')
       })
       setDraft(toDraft(createdJob))
-      await reactQueryClient.invalidateQueries({ queryKey: JOBS_QUERY_KEY })
+      await Promise.all([
+        reactQueryClient.invalidateQueries({ queryKey: JOBS_QUERY_KEY }),
+        reactQueryClient.invalidateQueries({ queryKey: ['jobsCount'] }),
+      ])
     },
   })
 
@@ -56,7 +63,10 @@ function DashboardApp() {
     onSuccess: async (updatedJob) => {
       setFeedback(`Updated job ${updatedJob.job_id}`)
       setDraft(toDraft(updatedJob))
-      await reactQueryClient.invalidateQueries({ queryKey: JOBS_QUERY_KEY })
+      await Promise.all([
+        reactQueryClient.invalidateQueries({ queryKey: JOBS_QUERY_KEY }),
+        reactQueryClient.invalidateQueries({ queryKey: ['jobsCount'] }),
+      ])
     },
   })
 
@@ -69,7 +79,10 @@ function DashboardApp() {
         setEditorMode('create')
       })
       setDraft(createEmptyDraft())
-      await reactQueryClient.invalidateQueries({ queryKey: JOBS_QUERY_KEY })
+      await Promise.all([
+        reactQueryClient.invalidateQueries({ queryKey: JOBS_QUERY_KEY }),
+        reactQueryClient.invalidateQueries({ queryKey: ['jobsCount'] }),
+      ])
     },
   })
 
@@ -156,7 +169,7 @@ function DashboardApp() {
           <div className="toolbar">
             <div className="toolbar-copy">
               <p className="eyebrow">Records</p>
-              <h2>{jobsQuery.isLoading ? 'Loading jobs...' : `${jobList.length} records loaded`}</h2>
+              <h2>{jobsQuery.isLoading ? 'Loading jobs...' : `${totalRows} total records`}</h2>
             </div>
             <div className="toolbar-actions">
               <input
@@ -179,12 +192,16 @@ function DashboardApp() {
 
           <div className="summary-grid">
             <article className="summary-card">
-              <span>Rows on page</span>
-              <strong>{jobList.length}</strong>
+              <span>Total rows</span>
+              <strong>{totalRows}</strong>
             </article>
             <article className="summary-card">
               <span>Selected</span>
               <strong>{selectedJob?.company_name ?? (editorMode === 'edit' ? draft.company_name || 'Unsynced record' : 'None')}</strong>
+            </article>
+            <article className="summary-card">
+              <span>Total pages</span>
+              <strong>{totalPages}</strong>
             </article>
             <article className="summary-card">
               <span>Page window</span>
@@ -195,6 +212,7 @@ function DashboardApp() {
           {feedback && <div className="banner banner-info">{feedback}</div>}
           {mutationError && <div className="banner banner-error">{mutationError.message}</div>}
           {jobsQuery.error && <div className="banner banner-error">{jobsQuery.error.message}</div>}
+          {jobsCountQuery.error && <div className="banner banner-error">{jobsCountQuery.error.message}</div>}
 
           <JobsTable
             jobs={jobList}
@@ -207,7 +225,7 @@ function DashboardApp() {
           <div className="pagination-bar">
             <div className="pagination-copy">
               <span className="eyebrow">Pagination</span>
-              <strong>Page {page}</strong>
+              <strong>Page {page} of {totalPages}</strong>
             </div>
             <div className="pagination-actions">
               <button

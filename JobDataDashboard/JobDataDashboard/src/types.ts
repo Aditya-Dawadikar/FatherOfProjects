@@ -38,6 +38,10 @@ export type HealthResponse = {
   table: string
 }
 
+export type JobsCountResponse = {
+  total: number
+}
+
 export type JobsQuery = {
   searchText: string
   limit: number

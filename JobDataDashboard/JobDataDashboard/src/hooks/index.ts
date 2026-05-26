@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { HealthResponse, JobDraft, JobRecord, JobsQuery } from '../types'
+import type { HealthResponse, JobDraft, JobRecord, JobsCountResponse, JobsQuery } from '../types'
 
 const API_BASE = (import.meta.env.DEV ? import.meta.env.VITE_JOB_DATA_API_BASE_URL ?? '' : '').replace(/\/$/, '')
 
@@ -100,6 +100,18 @@ async function fetchJobs({ searchText, limit, offset }: JobsQuery): Promise<JobR
   return requestJson<JobRecord[]>(`${path}?${params.toString()}`)
 }
 
+async function fetchJobsCount({ searchText }: Pick<JobsQuery, 'searchText'>): Promise<JobsCountResponse> {
+  const params = new URLSearchParams()
+  const trimmedQuery = searchText.trim()
+
+  if (trimmedQuery) {
+    params.set('query', trimmedQuery)
+  }
+
+  const querySuffix = params.size ? `?${params.toString()}` : ''
+  return requestJson<JobsCountResponse>(`/api/jobs/count${querySuffix}`)
+}
+
 async function fetchHealth(): Promise<HealthResponse> {
   return requestJson<HealthResponse>('/api/health')
 }
@@ -197,6 +209,14 @@ export function useJobs(filters: JobsQuery) {
   return useQuery({
     queryKey: ['jobs', filters],
     queryFn: () => fetchJobs(filters),
+    staleTime: 5_000,
+  })
+}
+
+export function useJobsCount(searchText: string) {
+  return useQuery({
+    queryKey: ['jobsCount', searchText],
+    queryFn: () => fetchJobsCount({ searchText }),
     staleTime: 5_000,
   })
 }
