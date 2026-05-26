@@ -1,6 +1,7 @@
 {
 	auto_https off
 	admin off
+	debug
 }
 
 :{$PORT:8080} {
@@ -16,15 +17,20 @@
 
 		handle @job_data_api {
 			header X-Dashboard-Proxy "job-data-api"
+			header X-Caddy-Route "root-api"
+			header X-Job-Data-Upstream "{$JOB_DATA_API_UPSTREAM}"
 			reverse_proxy {$JOB_DATA_API_UPSTREAM}
 		}
 
 		handle_path /api/* {
 			header X-Dashboard-Proxy "job-data-api"
+			header X-Caddy-Route "api-prefix"
+			header X-Job-Data-Upstream "{$JOB_DATA_API_UPSTREAM}"
 			reverse_proxy {$JOB_DATA_API_UPSTREAM}
 		}
 
 		handle {
+			header X-Caddy-Route "spa-fallback"
 			root * /usr/share/caddy
 			encode gzip zstd
 			try_files {path} /index.html

@@ -7,13 +7,64 @@ function buildApiUrl(path: string) {
   return `${API_BASE}${path}`
 }
 
+function logRuntimeUrls() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  console.info('[job-data-dashboard-runtime]', {
+    mode: import.meta.env.MODE,
+    dev: import.meta.env.DEV,
+    origin: window.location.origin,
+    pathname: window.location.pathname,
+    apiBase: API_BASE || '(same-origin)',
+    healthUrl: buildApiUrl('/api/health'),
+    jobsUrl: buildApiUrl('/api/jobs'),
+  })
+}
+
+logRuntimeUrls()
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(buildApiUrl(path), {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-    ...init,
+  const requestUrl = buildApiUrl(path)
+  const requestMethod = init?.method ?? 'GET'
+
+  console.info('[job-data-dashboard-request:start]', {
+    method: requestMethod,
+    path,
+    requestUrl,
+  })
+
+  let response: Response
+  try {
+    response = await fetch(requestUrl, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers ?? {}),
+      },
+      ...init,
+    })
+  } catch (error) {
+    console.error('[job-data-dashboard-request:network-error]', {
+      method: requestMethod,
+      path,
+      requestUrl,
+      error,
+    })
+    throw error
+  }
+
+  console.info('[job-data-dashboard-request:response]', {
+    method: requestMethod,
+    path,
+    requestUrl,
+    responseUrl: response.url,
+    status: response.status,
+    redirected: response.redirected,
+    proxy: response.headers.get('x-dashboard-proxy'),
+    route: response.headers.get('x-caddy-route'),
+    upstream: response.headers.get('x-job-data-upstream'),
+    contentType: response.headers.get('content-type'),
   })
 
   if (!response.ok) {
@@ -134,7 +185,7 @@ export async function updateJob(draft: JobDraft): Promise<JobRecord> {
 }
 
 export async function deleteJob(jobId: number): Promise<void> {
-	await requestJson<void>(`/api/jobs/${jobId}`, {
+  await requestJson<void>(`/api/jobs/${jobId}`, {
     method: 'DELETE',
   })
 }
