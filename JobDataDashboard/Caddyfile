@@ -17,18 +17,18 @@
 	}
 
 	route {
-		@job_data_api {
+		@legacy_job_data_root {
 			path /health /jobs /jobs/*
 		}
 
-		handle @job_data_api {
-			header X-Dashboard-Proxy "job-data-api"
-			header X-Caddy-Route "root-api"
-			header X-Job-Data-Upstream "https://peaceful-dream-production-9540.up.railway.app"
-			import job_data_upstream
+		redir @legacy_job_data_root /api{uri} 308
+
+		@job_data_api_prefixed {
+			path /api/health /api/jobs /api/jobs/*
 		}
 
-		handle_path /api/* {
+		handle @job_data_api_prefixed {
+			uri strip_prefix /api
 			header X-Dashboard-Proxy "job-data-api"
 			header X-Caddy-Route "api-prefix"
 			header X-Job-Data-Upstream "https://peaceful-dream-production-9540.up.railway.app"
