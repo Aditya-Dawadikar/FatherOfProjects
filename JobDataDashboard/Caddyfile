@@ -1,0 +1,27 @@
+{
+	auto_https off
+	admin off
+}
+
+:{$PORT:8080} {
+	log {
+		output stdout
+		format console
+	}
+
+	@job_data_api {
+		path /jobs /jobs/* /health
+	}
+
+	handle @job_data_api {
+		header X-Dashboard-Proxy "job-data-api"
+		reverse_proxy {$JOB_DATA_API_UPSTREAM}
+	}
+
+	handle {
+		root * /usr/share/caddy
+		encode gzip zstd
+		try_files {path} /index.html
+		file_server
+	}
+}

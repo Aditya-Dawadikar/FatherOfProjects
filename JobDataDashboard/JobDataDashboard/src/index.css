@@ -1,0 +1,38 @@
+:root {
+  --bg: #131714;
+  --panel: rgba(26, 31, 28, 0.9);
+  --panel-2: #202722;
+  --line: #33413b;
+  --text: #eef3ef;
+  --muted: #95a39b;
+  --accent: #7fe28c;
+  --accent-dim: rgba(127, 226, 140, 0.18);
+  --warn: #d4b85f;
+  --warn-dim: rgba(212, 184, 95, 0.18);
+  --error-dim: rgba(225, 109, 109, 0.22);
+  font: 14px/1.5 'Segoe UI', system-ui, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100svh;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
