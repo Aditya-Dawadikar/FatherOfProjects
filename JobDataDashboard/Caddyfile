@@ -4,12 +4,6 @@
 	debug
 }
 
-(job_data_upstream) {
-	reverse_proxy https://peaceful-dream-production-9540.up.railway.app {
-		header_up Host peaceful-dream-production-9540.up.railway.app
-	}
-}
-
 :{$PORT:8080} {
 	log {
 		output stdout
@@ -17,22 +11,13 @@
 	}
 
 	route {
-		@legacy_job_data_root {
-			path /health /jobs /jobs/*
-		}
-
-		redir @legacy_job_data_root /api{uri} 308
-
-		@job_data_api_prefixed {
-			path /api/health /api/jobs /api/jobs/*
-		}
-
-		handle @job_data_api_prefixed {
-			uri strip_prefix /api
+		handle_path /api/* {
 			header X-Dashboard-Proxy "job-data-api"
-			header X-Caddy-Route "api-prefix"
+			header X-Caddy-Route "api-proxy"
 			header X-Job-Data-Upstream "https://peaceful-dream-production-9540.up.railway.app"
-			import job_data_upstream
+			reverse_proxy https://peaceful-dream-production-9540.up.railway.app {
+				header_up Host peaceful-dream-production-9540.up.railway.app
+			}
 		}
 
 		handle {
