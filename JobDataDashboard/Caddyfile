@@ -19,14 +19,18 @@
 			header X-Dashboard-Proxy "job-data-api"
 			header X-Caddy-Route "root-api"
 			header X-Job-Data-Upstream "{$JOB_DATA_API_UPSTREAM}"
-			reverse_proxy {$JOB_DATA_API_UPSTREAM}
+			reverse_proxy {$JOB_DATA_API_UPSTREAM} {
+				header_up Host peaceful-dream-production-9540.up.railway.app
+			}
 		}
 
 		handle_path /api/* {
 			header X-Dashboard-Proxy "job-data-api"
 			header X-Caddy-Route "api-prefix"
 			header X-Job-Data-Upstream "{$JOB_DATA_API_UPSTREAM}"
-			reverse_proxy {$JOB_DATA_API_UPSTREAM}
+			reverse_proxy {$JOB_DATA_API_UPSTREAM} {
+				header_up Host peaceful-dream-production-9540.up.railway.app
+			}
 		}
 
 		handle {
