@@ -81,21 +81,26 @@ def create_db_engine(database_url: str):
 	return create_engine(normalize_database_url(database_url), future=True)
 
 
+def _clip(value: object, max_len: int) -> str | None:
+	s = str(value) if value else None
+	return s[:max_len] if s else None
+
+
 def normalize_job_payload(job: dict[str, object]) -> dict[str, str | None]:
 	return {
-		"company_name": str(job.get("company_name") or ""),
-		"company_batch": job.get("company_batch") or None,
+		"company_name": _clip(job.get("company_name") or "", 255),
+		"company_batch": _clip(job.get("company_batch"), 50),
 		"company_url": job.get("company_url") or None,
 		"company_one_liner": job.get("company_one_liner") or None,
 		"company_logo_url": job.get("company_logo_url") or None,
-		"company_last_active_at": job.get("company_last_active_at") or None,
-		"job_role": str(job.get("job_role") or ""),
+		"company_last_active_at": _clip(job.get("company_last_active_at"), 100),
+		"job_role": _clip(job.get("job_role") or "", 255),
 		"job_url": job.get("job_url") or None,
 		"application_link": job.get("application_link") or None,
-		"location": job.get("location") or None,
-		"job_type": job.get("job_type") or None,
-		"role_type": job.get("role_type") or None,
-		"salary_range": job.get("salary_range") or None,
+		"location": _clip(job.get("location"), 255),
+		"job_type": _clip(job.get("job_type"), 100),
+		"role_type": _clip(job.get("role_type"), 100),
+		"salary_range": _clip(job.get("salary_range"), 100),
 	}
 
 
