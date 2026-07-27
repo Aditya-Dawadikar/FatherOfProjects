@@ -40,12 +40,12 @@ If any of that doesn't fit your plan, a smaller/lighter-quantized model (see `OL
 ## Persisting the model
 
 Without a volume, every redeploy or restart re-runs `ollama pull` against an empty container
-filesystem — a ~5GB re-download each time. Attach a Railway volume to this service (mounted at,
-say, `/data`) and set `OLLAMA_MODELS=/data` so pulled weights survive redeploys:
+filesystem — a ~5GB re-download each time. Attach a Railway volume mounted directly at
+`/root/.ollama` (ollama's own default data directory, no extra env var needed) so pulled weights
+survive redeploys:
 
 ```powershell
-railway volume add --mount-path /data --service OllamaServer
-railway variables --set OLLAMA_MODELS=/data --service OllamaServer
+railway volume add --mount-path /root/.ollama --service OllamaServer
 ```
 
 ## Setup (local)
