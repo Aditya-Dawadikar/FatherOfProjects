@@ -243,6 +243,23 @@ The run is tagged with `cycle_id` (matching the id in structured logs and the
 `matching_cycle_completed`/`matching_cycle_failed` Redis events) so a run can be cross-referenced
 back to logs or dashboard data for the same cycle.
 
+### Traces (end-to-end visibility)
+
+Runs/metrics alone do **not** create MLflow Traces; traces only appear when the code creates
+spans (`mlflow.start_span` / `@mlflow.trace`). The live agent and eval harness now emit:
+
+- Root span per run (`matching_cycle`, `offline_eval`) linked to the active MLflow run id.
+- Child span per item (`evaluate_job` for live jobs, `eval_case` for eval cases).
+- Inputs/outputs on spans so each step's request/result shape is inspectable in Trace view.
+
+Tracing env knobs:
+
+- `MLFLOW_TRACE_SAMPLING_RATIO=1.0` to capture every trace.
+- `MLFLOW_ENABLE_ASYNC_TRACE_LOGGING=true` (default). Code explicitly flushes trace buffers at
+  cycle/eval boundaries via `mlflow.flush_trace_async_logging()`.
+
+If you only saw experiment runs before, that's expected behavior without span instrumentation.
+
 ## Offline evals
 
 `evals/run_offline_eval.py` scores the job-match prompt/model against a fixed, labeled **golden

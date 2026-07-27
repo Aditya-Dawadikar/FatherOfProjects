@@ -84,92 +84,125 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_i
 		run = mlflow.active_run()
 		if run is not None:
 			log.action("mlflow_run_started", run_id=run.info.run_id)
-		mlflow.set_tags({"cycle_id": cycle_id, "prompt_name": PROMPT_NAME, "llm_provider": provider})
-		mlflow.log_params(
-			{
-				"prompt_version": prompt_version,
-				"llm_provider": provider,
-				"llm_model": llm_model,
-				"match_threshold": threshold,
-				"max_jobs_per_cycle": max_jobs,
-				"llm_request_delay_seconds": request_delay,
+		run_id = run.info.run_id if run is not None else None
+		with mlflow.start_span(
+			name="matching_cycle",
+			span_type="WORKFLOW",
+			attributes={"cycle_id": cycle_id, "llm_provider": provider, "llm_model": llm_model},
+			run_id=run_id,
+		) as cycle_span:
+			cycle_span.set_inputs(
+				{
+					"cycle_id": cycle_id,
+					"experiment_name": experiment_name,
+					"prompt_name": PROMPT_NAME,
+					"prompt_version": prompt_version,
+					"match_threshold": threshold,
+					"max_jobs_per_cycle": max_jobs,
+				}
+			)
+			mlflow.set_tags({"cycle_id": cycle_id, "prompt_name": PROMPT_NAME, "llm_provider": provider})
+			mlflow.log_params(
+				{
+					"prompt_version": prompt_version,
+					"llm_provider": provider,
+					"llm_model": llm_model,
+					"match_threshold": threshold,
+					"max_jobs_per_cycle": max_jobs,
+					"llm_request_delay_seconds": request_delay,
+				}
+			)
+
+			with Session(engine) as session:
+				candidates = session.execute(unevaluated_job_ids_stmt(max_jobs)).all()
+				log.action("candidates_found", candidate_count=len(candidates), max_jobs=max_jobs)
+
+				for index, (job_id, job_url, job_role, company_name) in enumerate(candidates):
+					job_log = log.bind(job_id=job_id)
+
+					if index > 0 and request_delay > 0:
+						job_log.sleeping(
+							request_delay,
+							reason="llm_rate_limit_pacing",
+							position=f"{index + 1}/{len(candidates)}",
+						)
+						time.sleep(request_delay)
+
+					try:
+						with mlflow.start_span(
+							name="evaluate_job",
+							span_type="TASK",
+							attributes={
+								"job_id": str(job_id),
+								"job_role": job_role,
+								"company_name": company_name,
+							},
+						) as job_span:
+							job_span.set_inputs({"job_url": job_url, "job_role": job_role, "company_name": company_name})
+							_evaluate_one_job(
+								session=session,
+								job_id=job_id,
+								job_url=job_url,
+								job_role=job_role,
+								company_name=company_name,
+								resume_text=resume_text,
+								prompt_version_obj=prompt_version_obj,
+								prompt_version=prompt_version,
+								llm_client=llm_client,
+								llm_model=llm_model,
+								provider=provider,
+								threshold=threshold,
+								log=job_log,
+								metric_step=index,
+							)
+							job_span.set_outputs({"status": "ok"})
+						# Commit immediately so a job that succeeds is never re-evaluated (and
+						# never re-billed against the provider's quota) even if a later job in this
+						# same cycle fails or hits a rate limit.
+						session.commit()
+						evaluated_count += 1
+					except RateLimitError as error:
+						job_log.action(
+							"cycle_stopped_rate_limited",
+							evaluated_count=evaluated_count,
+							retry_after=error.retry_after,
+						)
+						rate_limited = True
+						break
+					except (CrawlError, MatchResponseError, TransientProviderError) as error:
+						session.rollback()
+						failed_count += 1
+						job_log.action("job_skipped", error=str(error))
+						continue
+
+				candidate_job_ids = [row[0] for row in candidates]
+				matched_count = session.scalar(
+					select(func.count())
+					.select_from(JobMatch)
+					.where(JobMatch.job_id.in_(candidate_job_ids), JobMatch.is_match.is_(True))
+				) or 0
+
+			result: dict[str, Any] = {
+				"candidate_count": len(candidates),
+				"evaluated_count": evaluated_count,
+				"matched_count": matched_count,
+				"failed_count": failed_count,
+				"rate_limited": rate_limited,
 			}
-		)
+			mlflow.log_metrics(
+				{
+					"candidate_count": result["candidate_count"],
+					"evaluated_count": result["evaluated_count"],
+					"matched_count": result["matched_count"],
+					"failed_count": result["failed_count"],
+					"rate_limited": int(result["rate_limited"]),
+				}
+			)
+			cycle_span.set_outputs(result)
+			log.action("mlflow_trace_ready", trace_id=cycle_span.trace_id)
 
-		with Session(engine) as session:
-			candidates = session.execute(unevaluated_job_ids_stmt(max_jobs)).all()
-			log.action("candidates_found", candidate_count=len(candidates), max_jobs=max_jobs)
-
-			for index, (job_id, job_url, job_role, company_name) in enumerate(candidates):
-				job_log = log.bind(job_id=job_id)
-
-				if index > 0 and request_delay > 0:
-					job_log.sleeping(
-						request_delay,
-						reason="llm_rate_limit_pacing",
-						position=f"{index + 1}/{len(candidates)}",
-					)
-					time.sleep(request_delay)
-
-				try:
-					_evaluate_one_job(
-						session=session,
-						job_id=job_id,
-						job_url=job_url,
-						job_role=job_role,
-						company_name=company_name,
-						resume_text=resume_text,
-						prompt_version_obj=prompt_version_obj,
-						prompt_version=prompt_version,
-						llm_client=llm_client,
-						llm_model=llm_model,
-						provider=provider,
-						threshold=threshold,
-						log=job_log,
-						metric_step=index,
-					)
-					# Commit immediately so a job that succeeds is never re-evaluated (and
-					# never re-billed against the provider's quota) even if a later job in this
-					# same cycle fails or hits a rate limit.
-					session.commit()
-					evaluated_count += 1
-				except RateLimitError as error:
-					job_log.action(
-						"cycle_stopped_rate_limited",
-						evaluated_count=evaluated_count,
-						retry_after=error.retry_after,
-					)
-					rate_limited = True
-					break
-				except (CrawlError, MatchResponseError, TransientProviderError) as error:
-					session.rollback()
-					failed_count += 1
-					job_log.action("job_skipped", error=str(error))
-					continue
-
-			candidate_job_ids = [row[0] for row in candidates]
-			matched_count = session.scalar(
-				select(func.count())
-				.select_from(JobMatch)
-				.where(JobMatch.job_id.in_(candidate_job_ids), JobMatch.is_match.is_(True))
-			) or 0
-
-		result: dict[str, Any] = {
-			"candidate_count": len(candidates),
-			"evaluated_count": evaluated_count,
-			"matched_count": matched_count,
-			"failed_count": failed_count,
-			"rate_limited": rate_limited,
-		}
-		mlflow.log_metrics(
-			{
-				"candidate_count": result["candidate_count"],
-				"evaluated_count": result["evaluated_count"],
-				"matched_count": result["matched_count"],
-				"failed_count": result["failed_count"],
-				"rate_limited": int(result["rate_limited"]),
-			}
-		)
+		# Traces are exported asynchronously; force a flush in case the process exits soon.
+		mlflow.flush_trace_async_logging(terminate=False)
 
 	log.action("cycle_complete", **result)
 	publish_event(publisher, "matching_cycle_completed", cycle_id=cycle_id, **result)
