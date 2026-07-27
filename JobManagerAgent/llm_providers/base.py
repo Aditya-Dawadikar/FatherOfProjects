@@ -19,6 +19,13 @@ class RateLimitError(RuntimeError):
 		self.retry_after = retry_after
 
 
+class TransientProviderError(RuntimeError):
+	"""Provider-agnostic signal for a retryable server-side hiccup (5xx / overloaded / timed
+	out / connection dropped) as opposed to RateLimitError (a quota that won't clear by
+	retrying seconds later) or MatchResponseError (a response that will never parse no matter
+	how many times you ask). evaluate_match() retries these with backoff before giving up."""
+
+
 def _text_or_blank(value: Any) -> str:
 	return "" if value is None else str(value)
 

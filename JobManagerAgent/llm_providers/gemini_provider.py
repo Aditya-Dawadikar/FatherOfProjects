@@ -8,7 +8,7 @@ from google.genai import types as genai_types
 
 from env_utils import load_env_value
 
-from .base import RateLimitError
+from .base import RateLimitError, TransientProviderError
 
 
 DEFAULT_MODEL = "gemini-3.5-flash"
@@ -36,4 +36,8 @@ def call_model(client: genai.Client, *, model: str, prompt: str) -> str:
 		if error.code == 429:
 			raise RateLimitError(str(error)) from error
 		raise
+	except genai_errors.ServerError as error:
+		# 5xx from Gemini -- most commonly 503 "currently experiencing high demand", which its
+		# own error message says is usually temporary, so worth a retry rather than failing hard.
+		raise TransientProviderError(str(error)) from error
 	return response.text or ""

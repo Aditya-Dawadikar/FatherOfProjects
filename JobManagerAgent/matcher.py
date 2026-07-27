@@ -14,6 +14,7 @@ from env_utils import load_env_value
 from llm_providers import (
 	MatchResponseError,
 	RateLimitError,
+	TransientProviderError,
 	build_client,
 	evaluate_match,
 	load_model_name,
@@ -135,7 +136,7 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_i
 					)
 					rate_limited = True
 					break
-				except (CrawlError, MatchResponseError) as error:
+				except (CrawlError, MatchResponseError, TransientProviderError) as error:
 					session.rollback()
 					failed_count += 1
 					job_log.action("job_skipped", error=str(error))

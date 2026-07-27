@@ -97,9 +97,14 @@ same code path as the boot-time one.
    - Error handling per job: a `RateLimitError` (each provider module maps its own SDK's
      rate-limit exception into this common one — see "LLM provider" below) stops the whole cycle
      early (`break`, preserving everything already committed) since retrying immediately would
-     just burn quota against a limit that isn't going away; `CrawlError`/`MatchResponseError` roll
-     back just that job's uncommitted state, count it as failed, and move on — it stays
-     unevaluated and will be retried on the next cycle (startup or next `pipeline_completed`).
+     just burn quota against a limit that isn't going away. A `TransientProviderError` (5xx /
+     overloaded / timed out / connection dropped — e.g. Gemini's "currently experiencing high
+     demand" 503) is different: `evaluate_match` itself retries it up to 3 times with exponential
+     backoff (2s/4s/8s) *before* it ever reaches this level, since that kind of failure often
+     clears within seconds; only if it's still failing after those retries does it fall through
+     to here. Both that and `CrawlError`/`MatchResponseError` roll back just that job's
+     uncommitted state, count it as failed, and move on — it stays unevaluated and will be
+     retried on the next cycle (startup or next `pipeline_completed`).
    - At the end, publishes `matching_cycle_completed` (or `matching_cycle_failed`, from
      `run_cycle_safely`'s outer `except`) to `jobmanageragent:events` with counts:
      `candidate_count`, `evaluated_count`, `matched_count`, `failed_count`, `rate_limited`. No
@@ -160,19 +165,23 @@ so switching which model does the scoring is a one-line env var change instead o
 
 - `llm_providers/base.py` — provider-agnostic: `render_prompt` (fills the MLflow template),
   `parse_match_response` (extracts `{match_score, reasoning}` from a JSON reply, tolerant of a
-  model that wraps it in prose), `MatchResponseError`, and `RateLimitError` — a common exception
-  every provider module raises instead of leaking its own SDK's exception type, so `matcher.py`
-  and the eval harness only ever need one `except` clause.
+  model that wraps it in prose), `MatchResponseError`, and two common exceptions every provider
+  module raises instead of leaking its own SDK's exception type: `RateLimitError` (quota/429 —
+  won't clear by retrying seconds later) and `TransientProviderError` (5xx/overloaded/timed
+  out/connection dropped — often *does* clear within seconds).
 - `llm_providers/groq_provider.py` / `gemini_provider.py` — each implements `build_client()`,
-  `load_model()`, and `call_model(client, *, model, prompt) -> str`, and maps its SDK's own
-  rate-limit exception (`groq.RateLimitError`, or Gemini's `ClientError` with `code == 429`) into
-  the shared `RateLimitError`.
+  `load_model()`, and `call_model(client, *, model, prompt) -> str`, and maps its own SDK's
+  exceptions into the shared ones: rate limits (`groq.RateLimitError`, or Gemini's `ClientError`
+  with `code == 429`) into `RateLimitError`; server-side failures (`groq.InternalServerError` /
+  `groq.APIConnectionError`, or Gemini's `ServerError`) into `TransientProviderError`.
 - `llm_providers/__init__.py` — the facade `matcher.py`/`evals/run_offline_eval.py` actually
   import: `load_provider_name()` reads `LLM_PROVIDER` (`groq` or `gemini`), and
   `build_client()`/`load_model_name()`/`evaluate_match()` all dispatch to whichever provider
   module that names, defaulting to it but accepting an explicit `provider=` override (used by the
   eval harness's `--provider` flag to score the same dataset through a different provider without
-  touching `.env`).
+  touching `.env`). `evaluate_match()` also retries a `TransientProviderError` up to 3 times with
+  exponential backoff (2s/4s/8s) before letting it propagate — callers only see one after retries
+  are exhausted.
 
 Adding a third provider means adding one more `llm_providers/<name>_provider.py` with those three
 functions and registering it in `__init__.py`'s `_PROVIDERS` dict — no changes needed to

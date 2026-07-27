@@ -6,7 +6,7 @@ import groq
 
 from env_utils import load_env_value
 
-from .base import RateLimitError
+from .base import RateLimitError, TransientProviderError
 
 
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
@@ -40,4 +40,8 @@ def call_model(client: Any, *, model: str, prompt: str) -> str:
 		)
 	except groq.RateLimitError as error:
 		raise RateLimitError(str(error), retry_after=_retry_after_seconds(error)) from error
+	except (groq.InternalServerError, groq.APIConnectionError) as error:
+		# InternalServerError = 5xx from Groq itself; APIConnectionError (and its subclass
+		# APITimeoutError) = the request never got a response at all -- both are worth a retry.
+		raise TransientProviderError(str(error)) from error
 	return response.choices[0].message.content or ""

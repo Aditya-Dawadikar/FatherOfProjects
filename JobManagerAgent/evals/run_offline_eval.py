@@ -26,6 +26,7 @@ from evals.dataset import DatasetError, EvalCase, load_golden_dataset  # noqa: E
 from llm_providers import (  # noqa: E402
 	MatchResponseError,
 	RateLimitError,
+	TransientProviderError,
 	build_client,
 	evaluate_match,
 	load_model_name,
@@ -255,7 +256,7 @@ def run_offline_eval(
 				case_log.action("eval_stopped_rate_limited", error=str(error), retry_after=error.retry_after)
 				rows.append(_error_row(case, "rate_limited"))
 				break
-			except MatchResponseError as error:
+			except (MatchResponseError, TransientProviderError) as error:
 				case_log.action("case_errored", error=str(error))
 				rows.append(_error_row(case, str(error)))
 
