@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 
+from agent_logger import configure_logging, get_agent_logger, new_id
 from matcher import run_matching_cycle
 from stream_consumer import RedisStreamConsumer
 from stream_events import RedisStreamPublisher, publish_event
@@ -14,23 +14,23 @@ from stream_events import RedisStreamPublisher, publish_event
 ENV_FILE = Path(__file__).with_name(".env")
 load_dotenv(ENV_FILE)
 
-logging.basicConfig(
-	level=logging.INFO,
-	format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
-LOGGER = logging.getLogger(__name__)
+configure_logging()
+LOGGER = get_agent_logger(__name__)
 
 
 def run_cycle_safely(publisher: RedisStreamPublisher | None, *, reason: str) -> None:
-	LOGGER.info("Starting matching cycle (reason=%s)", reason)
-	publish_event(publisher, "matching_cycle_started", reason=reason)
+	cycle_id = new_id()
+	log = LOGGER.bind(cycle_id=cycle_id, reason=reason)
+	log.action("cycle_triggered")
+	publish_event(publisher, "matching_cycle_started", cycle_id=cycle_id, reason=reason)
 	try:
-		run_matching_cycle(publisher)
+		run_matching_cycle(publisher, cycle_id=cycle_id)
 	except Exception as error:
-		LOGGER.exception("Matching cycle failed (reason=%s)", reason)
+		log.exception("Matching cycle failed")
 		publish_event(
 			publisher,
 			"matching_cycle_failed",
+			cycle_id=cycle_id,
 			reason=reason,
 			error_type=type(error).__name__,
 			error_message=str(error),

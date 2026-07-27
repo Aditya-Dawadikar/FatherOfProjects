@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import logging
 from typing import Any, Callable
 
 from redis import Redis
 from redis.exceptions import ConnectionError, ResponseError, TimeoutError
 
+from agent_logger import get_agent_logger
 from env_utils import load_env_value
 
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = get_agent_logger(__name__)
 DEFAULT_SOURCE_STREAM_NAME = "webscraper:events"
 DEFAULT_CONSUMER_GROUP = "jobmanageragent-group"
 DEFAULT_CONSUMER_NAME = "jobmanageragent-1"
@@ -78,10 +78,14 @@ class RedisStreamConsumer:
 
 	def _handle_entry(self, entry_id: str, fields: dict[str, str], on_trigger: Callable[[dict[str, Any]], None]) -> None:
 		event_type = fields.get("event_type", "")
+		other_fields = {key: value for key, value in fields.items() if key != "event_type"}
+		LOGGER.event_received(event_type=event_type, entry_id=entry_id, stream=self._stream_name, **other_fields)
 		try:
 			if event_type in TRIGGER_EVENT_TYPES:
-				LOGGER.info("Received trigger event_type=%s id=%s", event_type, entry_id)
+				LOGGER.action("trigger_matching_cycle", event_type=event_type, entry_id=entry_id)
 				on_trigger(fields)
+			else:
+				LOGGER.action("ignore_event", event_type=event_type, entry_id=entry_id, reason="not a trigger event_type")
 		except Exception:
 			LOGGER.exception("Failed handling stream entry id=%s event_type=%s", entry_id, event_type)
 		finally:

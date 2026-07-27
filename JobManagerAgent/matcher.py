@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -9,6 +8,7 @@ from groq import RateLimitError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from agent_logger import AgentLogger, get_agent_logger, new_id
 from crawler import CrawlError, fetch_job_detail
 from env_utils import load_env_value
 from groq_client import MatchResponseError, build_client, evaluate_match, load_groq_model, render_prompt
@@ -18,7 +18,7 @@ from shared.job_match_data import JobMatch, unevaluated_job_ids_stmt
 from stream_events import RedisStreamPublisher, publish_event
 
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = get_agent_logger(__name__)
 RESUME_FILE = Path(__file__).with_name("resume.md")
 
 
@@ -51,7 +51,10 @@ def _retry_after_seconds(error: RateLimitError) -> float | None:
 		return None
 
 
-def run_matching_cycle(publisher: RedisStreamPublisher | None = None) -> dict[str, Any]:
+def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_id: str | None = None) -> dict[str, Any]:
+	cycle_id = cycle_id or new_id()
+	log = LOGGER.bind(cycle_id=cycle_id)
+
 	engine = create_db_engine(load_database_url())
 	Base.metadata.create_all(engine)
 
@@ -70,10 +73,17 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None) -> dict[st
 
 	with Session(engine) as session:
 		candidates = session.execute(unevaluated_job_ids_stmt(max_jobs)).all()
-		LOGGER.info("Found %s unevaluated job(s) for this cycle", len(candidates))
+		log.action("candidates_found", candidate_count=len(candidates), max_jobs=max_jobs)
 
 		for index, (job_id, job_url, job_role, company_name) in enumerate(candidates):
+			job_log = log.bind(job_id=job_id)
+
 			if index > 0 and request_delay > 0:
+				job_log.sleeping(
+					request_delay,
+					reason="groq_rate_limit_pacing",
+					position=f"{index + 1}/{len(candidates)}",
+				)
 				time.sleep(request_delay)
 
 			try:
@@ -89,6 +99,7 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None) -> dict[st
 					groq_client=groq_client,
 					groq_model=groq_model,
 					threshold=threshold,
+					log=job_log,
 				)
 				# Commit immediately so a job that succeeds is never re-evaluated (and
 				# never re-billed against the Groq quota) even if a later job in this
@@ -97,17 +108,17 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None) -> dict[st
 				evaluated_count += 1
 			except RateLimitError as error:
 				retry_after = _retry_after_seconds(error)
-				LOGGER.warning(
-					"Groq rate limit hit after %s job(s) this cycle (retry_after=%s); stopping cycle early",
-					evaluated_count,
-					retry_after,
+				job_log.action(
+					"cycle_stopped_rate_limited",
+					evaluated_count=evaluated_count,
+					retry_after=retry_after,
 				)
 				rate_limited = True
 				break
 			except (CrawlError, MatchResponseError) as error:
 				session.rollback()
 				failed_count += 1
-				LOGGER.warning("Skipping job_id=%s after error: %s", job_id, error)
+				job_log.action("job_skipped", error=str(error))
 				continue
 
 		candidate_job_ids = [row[0] for row in candidates]
@@ -124,8 +135,8 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None) -> dict[st
 		"failed_count": failed_count,
 		"rate_limited": rate_limited,
 	}
-	LOGGER.info("Matching cycle complete: %s", result)
-	publish_event(publisher, "matching_cycle_completed", **result)
+	log.action("cycle_complete", **result)
+	publish_event(publisher, "matching_cycle_completed", cycle_id=cycle_id, **result)
 	return result
 
 
@@ -142,14 +153,16 @@ def _evaluate_one_job(
 	groq_client: Any,
 	groq_model: str,
 	threshold: int,
+	log: AgentLogger,
 ) -> None:
 	if not job_url:
 		raise CrawlError(f"job_id={job_id} has no job_url to crawl")
 
-	LOGGER.info("Crawling job_id=%s url=%s", job_id, job_url)
+	log.action("crawl_start", job_url=job_url, job_role=job_role, company_name=company_name)
 	job_detail = fetch_job_detail(job_url)
 	job_detail["company_name"] = company_name
 
+	log.action("llm_call_start", model=groq_model, prompt_version=prompt_version)
 	prompt = render_prompt(prompt_version_obj, resume=resume_text, job=job_detail)
 	result = evaluate_match(groq_client, model=groq_model, prompt=prompt)
 
@@ -165,10 +178,9 @@ def _evaluate_one_job(
 			model_name=groq_model,
 		)
 	)
-	LOGGER.info(
-		"Evaluated job_id=%s role=%r score=%s is_match=%s",
-		job_id,
-		job_role,
-		result["match_score"],
-		is_match,
+	log.action(
+		"match_recorded",
+		job_role=job_role,
+		match_score=result["match_score"],
+		is_match=is_match,
 	)

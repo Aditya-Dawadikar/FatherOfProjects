@@ -162,8 +162,33 @@ tracked centrally instead of in a per-instance local file that wouldn't survive 
 be visible from anywhere else. The client-side calls are identical either way; only the URI
 changes.
 
+## Logging
+
+All runtime logging goes through `agent_logger.py` instead of calling `logging.getLogger`
+directly, so the codebase always logs three things consistently:
+- **the input event** — every Redis stream entry read (`event_received`), whether or not it
+  ends up triggering a cycle;
+- **the action taken** — `action=...` lines for what the agent decided to do (ignore an
+  event, start crawling a job, call the LLM, record a match, stop early on a rate limit, skip
+  a failed job, etc.);
+- **deliberate pauses** — `sleeping seconds=... reason=...` before the pacing delay between
+  Groq calls, so a quiet log stream during a cycle reads as "pacing" rather than "stuck".
+
+Every line is timestamped (stdlib `asctime`) and carries correlation ids: a `cycle_id`
+(generated once per matching cycle, also included in the `matching_cycle_*` events published
+to Redis) and, once a job is picked up, its `job_id` — so `grep cycle_id=<id>` pulls every log
+line for one full cycle, per-job included.
+
+The actual output destination is swappable via the `LOG_SINK` env var (`console` today,
+default). To add a future sink — e.g. shipping to a Prometheus/Grafana log pipeline — add a
+`LogSink` subclass in `agent_logger.py` and register it in `SINK_REGISTRY`; no call site
+anywhere in the codebase needs to change.
+
 ## Key files
 
+- `agent_logger.py` — structured logging facade (correlation ids, `event_received`/`action`/
+  `sleeping` conventions) and the swappable console/future-sink configuration. See Logging
+  above.
 - `crawler.py` — fetches a job's detail page and parses out the description/skills/interview
   process (same `data-page` JSON payload technique `WebScraper` uses for the listing page).
 - `groq_client.py` — renders the active prompt and calls the Groq model, returning
