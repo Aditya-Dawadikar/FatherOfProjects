@@ -80,5 +80,6 @@ else). The client-side calls are identical either way; only the URI changes.
 
 See `.env.example` for the full list, including `MATCH_THRESHOLD` (default 70),
 `MAX_JOBS_PER_CYCLE` (default 25, caps how many jobs one pass evaluates), and
-`GROQ_REQUEST_DELAY_SECONDS` (default 2, paced sleep between consecutive Groq calls within a
-cycle — raise this if you're still seeing 429s from Groq).
+`GROQ_REQUEST_DELAY_SECONDS` (default 20 — paced sleep between consecutive Groq calls within a
+cycle, capping throughput at 3 calls/minute to match a 3-requests-per-minute Groq plan; adjust
+to match your actual plan's limit).

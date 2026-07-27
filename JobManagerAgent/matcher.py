@@ -37,7 +37,8 @@ def load_max_jobs_per_cycle() -> int:
 
 
 def load_request_delay_seconds() -> float:
-	return float(load_env_value("GROQ_REQUEST_DELAY_SECONDS", "2"))
+	# Default paces calls at 20s apart -> at most 3 Groq calls per rolling minute.
+	return float(load_env_value("GROQ_REQUEST_DELAY_SECONDS", "20"))
 
 
 def _retry_after_seconds(error: RateLimitError) -> float | None:
