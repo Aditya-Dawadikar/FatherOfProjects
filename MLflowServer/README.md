@@ -32,6 +32,16 @@ The UI is served at `http://localhost:5000`.
 New Railway service pointed at this directory, same shape as the other Python services here
 (`Dockerfile` + `railway.toml`). Set `MLFLOW_BACKEND_STORE_URI` in the service's variables.
 
+If you see `403 Forbidden` in the MLflow UI when loading experiments/runs, it is usually
+MLflow 3.x host/origin filtering. `serve.py` now auto-populates both allowlists from Railway
+domain env vars and wildcard Railway domains. If your ingress is custom, set these explicitly:
+
+- `MLFLOW_ALLOWED_HOSTS` — comma-separated hostnames/wildcards accepted in `Host`.
+- `MLFLOW_CORS_ALLOWED_ORIGINS` — comma-separated browser origins allowed for API calls.
+
+For short debugging only, set `MLFLOW_DISABLE_SECURITY_MIDDLEWARE=true` to confirm the block
+is middleware-related, then revert and configure allowlists instead.
+
 **Security note:** this server has no authentication in front of it. Prefer Railway's private
 networking (reach it from `JobManagerAgent` via its `*.railway.internal` address) over
 generating a public domain for it. If you do need external access to the UI, put it behind a
