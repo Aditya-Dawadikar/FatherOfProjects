@@ -23,22 +23,6 @@ def build_client() -> genai.Client:
 	return genai.Client(api_key=load_env_value("GEMINI_API_KEY"))
 
 
-def _is_model_unavailable_error(message: str) -> bool:
-	normalized = message.lower()
-	if "model" not in normalized:
-		return False
-	return any(
-		token in normalized
-		for token in (
-			"not found",
-			"not available",
-			"temporarily unavailable",
-			"unsupported",
-			"not supported",
-		)
-	)
-
-
 def _generate_content(client: genai.Client, *, model: str, prompt: str) -> str:
 	response = client.models.generate_content(
 		model=model,
@@ -51,18 +35,15 @@ def _generate_content(client: genai.Client, *, model: str, prompt: str) -> str:
 	return response.text or ""
 
 
+def _should_try_fallback(*, model: str) -> bool:
+	return model == DEFAULT_MODEL and FALLBACK_MODEL != DEFAULT_MODEL
+
+
 def call_model(client: genai.Client, *, model: str, prompt: str) -> str:
 	try:
 		return _generate_content(client, model=model, prompt=prompt)
 	except genai_errors.ClientError as error:
-		if error.code == 429:
-			raise RateLimitError(str(error)) from error
-
-		if (
-			model == DEFAULT_MODEL
-			and FALLBACK_MODEL != DEFAULT_MODEL
-			and _is_model_unavailable_error(str(error))
-		):
+		if _should_try_fallback(model=model):
 			try:
 				return _generate_content(client, model=FALLBACK_MODEL, prompt=prompt)
 			except genai_errors.ClientError as fallback_error:
@@ -72,13 +53,12 @@ def call_model(client: genai.Client, *, model: str, prompt: str) -> str:
 			except genai_errors.ServerError as fallback_error:
 				raise TransientProviderError(str(fallback_error)) from fallback_error
 
+		if error.code == 429:
+			raise RateLimitError(str(error)) from error
+
 		raise
 	except genai_errors.ServerError as error:
-		if (
-			model == DEFAULT_MODEL
-			and FALLBACK_MODEL != DEFAULT_MODEL
-			and _is_model_unavailable_error(str(error))
-		):
+		if _should_try_fallback(model=model):
 			try:
 				return _generate_content(client, model=FALLBACK_MODEL, prompt=prompt)
 			except genai_errors.ClientError as fallback_error:
