@@ -11,7 +11,7 @@ from env_utils import load_env_value
 from .base import RateLimitError
 
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.5-flash"
 
 
 def load_model() -> str:
