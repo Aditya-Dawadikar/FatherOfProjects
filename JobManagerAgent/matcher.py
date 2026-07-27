@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import mlflow
 from groq import RateLimitError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from agent_logger import AgentLogger, get_agent_logger, new_id
 from crawler import CrawlError, fetch_job_detail
 from env_utils import load_env_value
 from groq_client import MatchResponseError, build_client, evaluate_match, load_groq_model, render_prompt
+from mlflow_utils import ensure_tracking_uri_configured, load_mlflow_experiment_name
 from prompt_registry import PROMPT_NAME, get_active_prompt
 from shared.job_data import Base, create_db_engine, load_database_url
 from shared.job_match_data import JobMatch, unevaluated_job_ids_stmt
@@ -71,70 +73,96 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_i
 	failed_count = 0
 	rate_limited = False
 
-	with Session(engine) as session:
-		candidates = session.execute(unevaluated_job_ids_stmt(max_jobs)).all()
-		log.action("candidates_found", candidate_count=len(candidates), max_jobs=max_jobs)
+	ensure_tracking_uri_configured()
+	mlflow.set_experiment(load_mlflow_experiment_name())
 
-		for index, (job_id, job_url, job_role, company_name) in enumerate(candidates):
-			job_log = log.bind(job_id=job_id)
+	with mlflow.start_run(run_name=f"cycle-{cycle_id}"):
+		mlflow.set_tags({"cycle_id": cycle_id, "prompt_name": PROMPT_NAME})
+		mlflow.log_params(
+			{
+				"prompt_version": prompt_version,
+				"groq_model": groq_model,
+				"match_threshold": threshold,
+				"max_jobs_per_cycle": max_jobs,
+				"groq_request_delay_seconds": request_delay,
+			}
+		)
 
-			if index > 0 and request_delay > 0:
-				job_log.sleeping(
-					request_delay,
-					reason="groq_rate_limit_pacing",
-					position=f"{index + 1}/{len(candidates)}",
-				)
-				time.sleep(request_delay)
+		with Session(engine) as session:
+			candidates = session.execute(unevaluated_job_ids_stmt(max_jobs)).all()
+			log.action("candidates_found", candidate_count=len(candidates), max_jobs=max_jobs)
 
-			try:
-				_evaluate_one_job(
-					session=session,
-					job_id=job_id,
-					job_url=job_url,
-					job_role=job_role,
-					company_name=company_name,
-					resume_text=resume_text,
-					prompt_version_obj=prompt_version_obj,
-					prompt_version=prompt_version,
-					groq_client=groq_client,
-					groq_model=groq_model,
-					threshold=threshold,
-					log=job_log,
-				)
-				# Commit immediately so a job that succeeds is never re-evaluated (and
-				# never re-billed against the Groq quota) even if a later job in this
-				# same cycle fails or hits a rate limit.
-				session.commit()
-				evaluated_count += 1
-			except RateLimitError as error:
-				retry_after = _retry_after_seconds(error)
-				job_log.action(
-					"cycle_stopped_rate_limited",
-					evaluated_count=evaluated_count,
-					retry_after=retry_after,
-				)
-				rate_limited = True
-				break
-			except (CrawlError, MatchResponseError) as error:
-				session.rollback()
-				failed_count += 1
-				job_log.action("job_skipped", error=str(error))
-				continue
+			for index, (job_id, job_url, job_role, company_name) in enumerate(candidates):
+				job_log = log.bind(job_id=job_id)
 
-		candidate_job_ids = [row[0] for row in candidates]
-		matched_count = session.scalar(
-			select(func.count())
-			.select_from(JobMatch)
-			.where(JobMatch.job_id.in_(candidate_job_ids), JobMatch.is_match.is_(True))
-		) or 0
+				if index > 0 and request_delay > 0:
+					job_log.sleeping(
+						request_delay,
+						reason="groq_rate_limit_pacing",
+						position=f"{index + 1}/{len(candidates)}",
+					)
+					time.sleep(request_delay)
 
-	result: dict[str, Any] = {
-		"candidate_count": len(candidates),
-		"evaluated_count": evaluated_count,
-		"matched_count": matched_count,
-		"failed_count": failed_count,
-		"rate_limited": rate_limited,
-	}
+				try:
+					_evaluate_one_job(
+						session=session,
+						job_id=job_id,
+						job_url=job_url,
+						job_role=job_role,
+						company_name=company_name,
+						resume_text=resume_text,
+						prompt_version_obj=prompt_version_obj,
+						prompt_version=prompt_version,
+						groq_client=groq_client,
+						groq_model=groq_model,
+						threshold=threshold,
+						log=job_log,
+						metric_step=index,
+					)
+					# Commit immediately so a job that succeeds is never re-evaluated (and
+					# never re-billed against the Groq quota) even if a later job in this
+					# same cycle fails or hits a rate limit.
+					session.commit()
+					evaluated_count += 1
+				except RateLimitError as error:
+					retry_after = _retry_after_seconds(error)
+					job_log.action(
+						"cycle_stopped_rate_limited",
+						evaluated_count=evaluated_count,
+						retry_after=retry_after,
+					)
+					rate_limited = True
+					break
+				except (CrawlError, MatchResponseError) as error:
+					session.rollback()
+					failed_count += 1
+					job_log.action("job_skipped", error=str(error))
+					continue
+
+			candidate_job_ids = [row[0] for row in candidates]
+			matched_count = session.scalar(
+				select(func.count())
+				.select_from(JobMatch)
+				.where(JobMatch.job_id.in_(candidate_job_ids), JobMatch.is_match.is_(True))
+			) or 0
+
+		result: dict[str, Any] = {
+			"candidate_count": len(candidates),
+			"evaluated_count": evaluated_count,
+			"matched_count": matched_count,
+			"failed_count": failed_count,
+			"rate_limited": rate_limited,
+		}
+		mlflow.log_metrics(
+			{
+				"candidate_count": result["candidate_count"],
+				"evaluated_count": result["evaluated_count"],
+				"matched_count": result["matched_count"],
+				"failed_count": result["failed_count"],
+				"rate_limited": int(result["rate_limited"]),
+			}
+		)
+
 	log.action("cycle_complete", **result)
 	publish_event(publisher, "matching_cycle_completed", cycle_id=cycle_id, **result)
 	return result
@@ -154,6 +182,7 @@ def _evaluate_one_job(
 	groq_model: str,
 	threshold: int,
 	log: AgentLogger,
+	metric_step: int,
 ) -> None:
 	if not job_url:
 		raise CrawlError(f"job_id={job_id} has no job_url to crawl")
@@ -177,6 +206,10 @@ def _evaluate_one_job(
 			prompt_version=prompt_version,
 			model_name=groq_model,
 		)
+	)
+	mlflow.log_metrics(
+		{"match_score": result["match_score"], "is_match": int(is_match)},
+		step=metric_step,
 	)
 	log.action(
 		"match_recorded",

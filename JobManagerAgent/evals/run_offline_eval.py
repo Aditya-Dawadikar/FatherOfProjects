@@ -1,0 +1,305 @@
+"""Offline eval harness: scores the job-match prompt/model against a fixed, labeled golden
+dataset (see dataset.py for the JSONL schema) instead of live crawled jobs, so prompt/model
+changes can be checked for regressions before they ever touch production traffic.
+
+Usage (from JobManagerAgent/):
+    venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl
+    venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl --prompt-source local
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import mlflow  # noqa: E402
+from groq import RateLimitError  # noqa: E402
+from mlflow.entities.model_registry.prompt_version import PromptVersion  # noqa: E402
+
+from agent_logger import get_agent_logger, new_id  # noqa: E402
+from evals.dataset import DatasetError, EvalCase, load_golden_dataset  # noqa: E402
+from groq_client import (  # noqa: E402
+	MatchResponseError,
+	build_client,
+	evaluate_match,
+	load_groq_model,
+	render_prompt,
+)
+from matcher import load_match_threshold, load_request_delay_seconds, load_resume  # noqa: E402
+from mlflow_utils import ensure_tracking_uri_configured, load_mlflow_eval_experiment_name  # noqa: E402
+from prompt_registry import PROMPT_ALIAS, PROMPT_FILE, PROMPT_NAME  # noqa: E402
+
+
+LOGGER = get_agent_logger(__name__)
+
+
+def _load_prompt_version(source: str) -> tuple[Any, str]:
+	if source == "production":
+		ensure_tracking_uri_configured()
+		prompt = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@{PROMPT_ALIAS}", allow_missing=True)
+		if prompt is None:
+			raise SystemExit(
+				f"No prompt is registered under alias '{PROMPT_ALIAS}' yet. Run the live agent once "
+				"first, or pass --prompt-source local to eval prompts/job_match_v1.txt directly."
+			)
+		return prompt, str(prompt.version)
+
+	if source == "local":
+		template = PROMPT_FILE.read_text(encoding="utf-8")
+		# version=0 (unregistered) signals "not yet promoted to MLflow" -- this lets prompt edits
+		# be scored before prompt_registry.get_active_prompt() would auto-promote them on the next
+		# live cycle.
+		return PromptVersion(name=PROMPT_NAME, version=0, template=template), "local"
+
+	raise ValueError(f"Unknown prompt source: {source!r}")
+
+
+def _run_one_case(
+	*,
+	case: EvalCase,
+	default_resume: str,
+	prompt_version_obj: Any,
+	groq_client: Any,
+	groq_model: str,
+	threshold: int,
+) -> dict[str, Any]:
+	resume_text = case.resume if case.resume is not None else default_resume
+	prompt = render_prompt(prompt_version_obj, resume=resume_text, job=case.job)
+	result = evaluate_match(groq_client, model=groq_model, prompt=prompt)
+
+	predicted_score = result["match_score"]
+	predicted_is_match = predicted_score >= threshold
+	correct = predicted_is_match == case.expected_is_match
+
+	score_in_range = None
+	if case.expected_score_min is not None:
+		score_in_range = case.expected_score_min <= predicted_score <= case.expected_score_max
+
+	return {
+		"id": case.id,
+		"expected_is_match": case.expected_is_match,
+		"predicted_is_match": predicted_is_match,
+		"correct": correct,
+		"predicted_score": predicted_score,
+		"expected_score_min": case.expected_score_min,
+		"expected_score_max": case.expected_score_max,
+		"score_in_range": score_in_range,
+		"reasoning": result["reasoning"],
+		"error": None,
+	}
+
+
+def _error_row(case: EvalCase, error_message: str) -> dict[str, Any]:
+	return {
+		"id": case.id,
+		"expected_is_match": case.expected_is_match,
+		"predicted_is_match": None,
+		"correct": None,
+		"predicted_score": None,
+		"expected_score_min": case.expected_score_min,
+		"expected_score_max": case.expected_score_max,
+		"score_in_range": None,
+		"reasoning": "",
+		"error": error_message,
+	}
+
+
+ROW_COLUMNS = (
+	"id",
+	"expected_is_match",
+	"predicted_is_match",
+	"correct",
+	"predicted_score",
+	"expected_score_min",
+	"expected_score_max",
+	"score_in_range",
+	"reasoning",
+	"error",
+)
+
+
+def _rows_to_columns(rows: list[dict[str, Any]]) -> dict[str, list[Any]]:
+	"""mlflow.log_table expects column-oriented data ({col: [values...]}), not the row-oriented
+	list our loop naturally builds -- convert here rather than shaping the loop around it."""
+	return {column: [row.get(column) for row in rows] for column in ROW_COLUMNS}
+
+
+def _compute_summary(rows: list[dict[str, Any]], *, total_cases: int) -> dict[str, Any]:
+	scored = [row for row in rows if row["error"] is None]
+	errored_count = len(rows) - len(scored)
+
+	tp = sum(1 for row in scored if row["predicted_is_match"] and row["expected_is_match"])
+	fp = sum(1 for row in scored if row["predicted_is_match"] and not row["expected_is_match"])
+	fn = sum(1 for row in scored if not row["predicted_is_match"] and row["expected_is_match"])
+	tn = sum(1 for row in scored if not row["predicted_is_match"] and not row["expected_is_match"])
+
+	accuracy = (tp + tn) / len(scored) if scored else None
+	precision = tp / (tp + fp) if (tp + fp) > 0 else None
+	recall = tp / (tp + fn) if (tp + fn) > 0 else None
+	f1 = (2 * precision * recall / (precision + recall)) if precision and recall else None
+
+	ranged = [row for row in scored if row["score_in_range"] is not None]
+	score_in_range_rate = (sum(1 for row in ranged if row["score_in_range"]) / len(ranged)) if ranged else None
+
+	mean_predicted_score = (sum(row["predicted_score"] for row in scored) / len(scored)) if scored else None
+
+	summary: dict[str, Any] = {
+		"total_cases": total_cases,
+		"evaluated_cases": len(scored),
+		"errored_cases": errored_count,
+		"true_positive": tp,
+		"false_positive": fp,
+		"false_negative": fn,
+		"true_negative": tn,
+	}
+	if accuracy is not None:
+		summary["accuracy"] = accuracy
+	if precision is not None:
+		summary["precision"] = precision
+	if recall is not None:
+		summary["recall"] = recall
+	if f1 is not None:
+		summary["f1"] = f1
+	if score_in_range_rate is not None:
+		summary["score_in_range_rate"] = score_in_range_rate
+	if mean_predicted_score is not None:
+		summary["mean_predicted_score"] = mean_predicted_score
+	return summary
+
+
+def run_offline_eval(
+	*,
+	dataset_path: Path,
+	prompt_source: str,
+	groq_model: str | None,
+	threshold: int | None,
+	request_delay: float | None,
+	experiment_name: str | None,
+	run_name: str | None,
+	limit: int | None,
+) -> dict[str, Any]:
+	eval_id = new_id()
+	log = LOGGER.bind(eval_id=eval_id)
+
+	cases = load_golden_dataset(dataset_path)
+	if limit is not None:
+		cases = cases[:limit]
+	log.action("dataset_loaded", dataset=str(dataset_path), case_count=len(cases))
+
+	default_resume = load_resume()
+	prompt_version_obj, prompt_version = _load_prompt_version(prompt_source)
+	resolved_model = groq_model or load_groq_model()
+	resolved_threshold = threshold if threshold is not None else load_match_threshold()
+	resolved_delay = request_delay if request_delay is not None else load_request_delay_seconds()
+	groq_client = build_client()
+
+	ensure_tracking_uri_configured()
+	mlflow.set_experiment(experiment_name or load_mlflow_eval_experiment_name())
+
+	rows: list[dict[str, Any]] = []
+	with mlflow.start_run(run_name=run_name or f"eval-{eval_id}"):
+		mlflow.set_tags(
+			{
+				"eval_id": eval_id,
+				"run_type": "offline_eval",
+				"prompt_name": PROMPT_NAME,
+				"prompt_source": prompt_source,
+				"dataset_path": str(dataset_path),
+			}
+		)
+		mlflow.log_params(
+			{
+				"prompt_version": prompt_version,
+				"groq_model": resolved_model,
+				"match_threshold": resolved_threshold,
+				"dataset_case_count": len(cases),
+			}
+		)
+		mlflow.log_artifact(str(dataset_path))
+
+		for index, case in enumerate(cases):
+			case_log = log.bind(case_id=case.id)
+			if index > 0 and resolved_delay > 0:
+				time.sleep(resolved_delay)
+
+			try:
+				row = _run_one_case(
+					case=case,
+					default_resume=default_resume,
+					prompt_version_obj=prompt_version_obj,
+					groq_client=groq_client,
+					groq_model=resolved_model,
+					threshold=resolved_threshold,
+				)
+				case_log.action(
+					"case_scored",
+					predicted_score=row["predicted_score"],
+					correct=row["correct"],
+				)
+				rows.append(row)
+			except RateLimitError as error:
+				case_log.action("eval_stopped_rate_limited", error=str(error))
+				rows.append(_error_row(case, "rate_limited"))
+				break
+			except MatchResponseError as error:
+				case_log.action("case_errored", error=str(error))
+				rows.append(_error_row(case, str(error)))
+
+		summary = _compute_summary(rows, total_cases=len(cases))
+		mlflow.log_metrics({key: value for key, value in summary.items() if isinstance(value, (int, float))})
+		mlflow.log_table(data=_rows_to_columns(rows), artifact_file="eval_results.json")
+
+	log.action("eval_complete", **summary)
+	return summary
+
+
+def _parse_args() -> argparse.Namespace:
+	parser = argparse.ArgumentParser(description="Run the offline eval harness against a golden dataset.")
+	parser.add_argument("--dataset", required=True, type=Path, help="Path to a golden-dataset JSONL file.")
+	parser.add_argument(
+		"--prompt-source",
+		choices=("production", "local"),
+		default="production",
+		help="'production' loads the MLflow-registered prompt at the 'production' alias (read-only). "
+		"'local' renders prompts/job_match_v1.txt directly, without registering it, so you can eval "
+		"an edit before it gets promoted by the next live cycle.",
+	)
+	parser.add_argument("--model", default=None, help="Overrides GROQ_MODEL for this run.")
+	parser.add_argument("--threshold", type=int, default=None, help="Overrides MATCH_THRESHOLD for this run.")
+	parser.add_argument(
+		"--request-delay", type=float, default=None, help="Overrides GROQ_REQUEST_DELAY_SECONDS for this run."
+	)
+	parser.add_argument("--experiment-name", default=None, help="Overrides MLFLOW_EVAL_EXPERIMENT_NAME.")
+	parser.add_argument("--run-name", default=None, help="MLflow run name; defaults to eval-<eval_id>.")
+	parser.add_argument("--limit", type=int, default=None, help="Only score the first N cases (smoke testing).")
+	return parser.parse_args()
+
+
+def main() -> None:
+	args = _parse_args()
+	try:
+		summary = run_offline_eval(
+			dataset_path=args.dataset,
+			prompt_source=args.prompt_source,
+			groq_model=args.model,
+			threshold=args.threshold,
+			request_delay=args.request_delay,
+			experiment_name=args.experiment_name,
+			run_name=args.run_name,
+			limit=args.limit,
+		)
+	except DatasetError as error:
+		raise SystemExit(f"Invalid golden dataset: {error}") from error
+
+	print("\nOffline eval summary:")
+	for key, value in summary.items():
+		print(f"  {key}: {value}")
+
+
+if __name__ == "__main__":
+	main()

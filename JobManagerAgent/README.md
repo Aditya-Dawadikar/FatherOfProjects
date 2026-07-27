@@ -162,6 +162,69 @@ tracked centrally instead of in a per-instance local file that wouldn't survive 
 be visible from anywhere else. The client-side calls are identical either way; only the URI
 changes.
 
+## Experiment tracking
+
+Every call to `run_matching_cycle()` (`matcher.py`) opens one MLflow run, under the experiment
+named by `MLFLOW_EXPERIMENT_NAME` (default `job_matching`), against the same Tracking Server used
+for prompt versioning:
+
+- **Params** (logged once per run): `prompt_version`, `groq_model`, `match_threshold`,
+  `max_jobs_per_cycle`, `groq_request_delay_seconds`.
+- **Per-job metrics** (logged with `step` = the job's index in the cycle, so a run's chart shows
+  score progression across the cycle): `match_score`, `is_match`.
+- **Cycle-level metrics** (logged once, at the end of the run): `candidate_count`,
+  `evaluated_count`, `matched_count`, `failed_count`, `rate_limited`.
+
+The run is tagged with `cycle_id` (matching the id in structured logs and the
+`matching_cycle_completed`/`matching_cycle_failed` Redis events) so a run can be cross-referenced
+back to logs or dashboard data for the same cycle.
+
+## Offline evals
+
+`evals/run_offline_eval.py` scores the job-match prompt/model against a fixed, labeled **golden
+dataset** instead of live crawled jobs — so a prompt or model change can be checked for
+regressions before it ever touches production traffic. It reuses the exact same rendering/scoring
+path as the live agent (`groq_client.render_prompt` / `evaluate_match`), so an eval result reflects
+what production would actually do.
+
+### Golden dataset schema
+
+A JSONL file, one eval case per line:
+
+| Field                | Type            | Required | Notes                                                                                  |
+|-----------------------|-----------------|----------|-----------------------------------------------------------------------------------------|
+| `id`                  | string          | yes      | Unique within the file.                                                                 |
+| `job`                  | object          | yes      | Same shape `crawler.fetch_job_detail()` produces: `title`, `company_name`, `location`, `job_type`, `min_experience`, `salary_range`, `equity_range`, `sponsors_visa`, `skills` (list), `description_text`, `interview_process_text`. Inlined rather than a `job_url` so a case never depends on a live page still being reachable. |
+| `expected_is_match`   | boolean         | yes      | Ground-truth pass/fail at the configured `MATCH_THRESHOLD`.                             |
+| `expected_score_min`  | integer (0-100) | no       | Only if you also want to assert the score lands in a band, not just the pass/fail call. Must be set together with `expected_score_max`. |
+| `expected_score_max`  | integer (0-100) | no       | See above.                                                                               |
+| `resume`              | string          | no       | Overrides `resume.md` for this one case. Omit to use the real resume (the common case).  |
+| `notes`                | string          | no       | Free-text rationale for the label; not used by the harness, just for maintainers.        |
+
+See `evals/golden_dataset.example.jsonl` for a worked example (a strong match, a clear non-match,
+and a borderline case scored on pass/fail only).
+
+### Running it
+
+```powershell
+venv\Scripts\python evals\run_offline_eval.py --dataset evals\golden_dataset.jsonl
+```
+
+Useful flags: `--prompt-source local` scores `prompts/job_match_v1.txt` as it currently sits on
+disk, without registering/promoting it in MLflow (the default, `production`, read-only-loads the
+currently promoted alias) — use `local` to validate a prompt edit *before* the next live cycle
+auto-promotes it via `prompt_registry.get_active_prompt()`. `--limit N` for a quick smoke test,
+`--model`/`--threshold`/`--request-delay`/`--experiment-name`/`--run-name` to override the
+corresponding env var for one run.
+
+Each run logs to the `MLFLOW_EVAL_EXPERIMENT_NAME` experiment (default `job_matching_evals`,
+deliberately separate from the live-cycle `job_matching` experiment since the metrics don't share
+a shape): params (`prompt_version`, `groq_model`, `match_threshold`, `dataset_case_count`),
+metrics (`accuracy`, `precision`, `recall`, `f1`, `score_in_range_rate`, `mean_predicted_score`,
+plus raw confusion-matrix counts), the golden dataset file itself as an artifact, and a
+per-case results table (`eval_results.json`) viewable in the MLflow UI for drilling into any
+individual disagreement.
+
 ## Logging
 
 All runtime logging goes through `agent_logger.py` instead of calling `logging.getLogger`

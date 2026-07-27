@@ -6,7 +6,7 @@ from pathlib import Path
 import mlflow
 from mlflow.entities.model_registry.prompt_version import PromptVersion
 
-from env_utils import load_env_value
+from mlflow_utils import ensure_tracking_uri_configured
 
 
 LOGGER = logging.getLogger(__name__)
@@ -15,24 +15,13 @@ PROMPT_NAME = "job_match_prompt"
 PROMPT_ALIAS = "production"
 PROMPT_FILE = Path(__file__).with_name("prompts") / "job_match_v1.txt"
 
-_tracking_uri_configured = False
-
-
-def _ensure_tracking_uri_configured() -> None:
-	global _tracking_uri_configured
-	if _tracking_uri_configured:
-		return
-	tracking_uri = load_env_value("MLFLOW_TRACKING_URI", "sqlite:///./mlflow.db")
-	mlflow.set_tracking_uri(tracking_uri)
-	_tracking_uri_configured = True
-
 
 def get_active_prompt() -> PromptVersion:
 	"""Load the current 'production' version of the job-match prompt, registering a new
 	version in MLflow (and re-pointing the alias) if prompts/job_match_v1.txt changed since
 	the last registered version.
 	"""
-	_ensure_tracking_uri_configured()
+	ensure_tracking_uri_configured()
 
 	file_template = PROMPT_FILE.read_text(encoding="utf-8")
 
