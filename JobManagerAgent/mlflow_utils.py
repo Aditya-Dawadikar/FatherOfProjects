@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import logging
+
 import mlflow
 
 from env_utils import load_env_value
 
 
 _tracking_uri_configured = False
+LOGGER = logging.getLogger(__name__)
+
+
+def _is_sqlite_uri(uri: str) -> bool:
+	value = uri.strip().lower()
+	return value.startswith("sqlite:")
 
 
 def ensure_tracking_uri_configured() -> None:
@@ -18,9 +26,19 @@ def ensure_tracking_uri_configured() -> None:
 	global _tracking_uri_configured
 	if _tracking_uri_configured:
 		return
-	tracking_uri = load_env_value("MLFLOW_TRACKING_URI", "sqlite:///./mlflow.db")
+	tracking_uri = load_env_value("MLFLOW_TRACKING_URI")
+	if _is_sqlite_uri(tracking_uri):
+		raise ValueError(
+			"MLFLOW_TRACKING_URI must point to a remote MLflow Tracking Server; sqlite URIs are disabled"
+		)
 	mlflow.set_tracking_uri(tracking_uri)
+	LOGGER.info("MLflow tracking configured uri=%s", tracking_uri)
 	_tracking_uri_configured = True
+
+
+def get_tracking_uri() -> str:
+	ensure_tracking_uri_configured()
+	return mlflow.get_tracking_uri()
 
 
 def load_mlflow_experiment_name() -> str:

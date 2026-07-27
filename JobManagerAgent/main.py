@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from agent_logger import configure_logging, get_agent_logger, new_id
 from matcher import run_matching_cycle
+from mlflow_utils import get_tracking_uri
 from stream_consumer import RedisStreamConsumer
 from stream_events import RedisStreamPublisher, publish_event
 
@@ -39,6 +40,8 @@ def run_cycle_safely(publisher: RedisStreamPublisher | None, *, reason: str) -> 
 
 def main() -> None:
 	publisher = RedisStreamPublisher.from_env()
+	tracking_uri = get_tracking_uri()
+	LOGGER.info("MLflow startup target uri=%s", tracking_uri)
 
 	LOGGER.info("Running boot-time catch-up matching cycle")
 	run_cycle_safely(publisher, reason="startup")

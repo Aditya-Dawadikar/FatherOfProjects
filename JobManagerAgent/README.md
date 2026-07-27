@@ -149,7 +149,8 @@ Fill in `.env`:
 - `MLFLOW_TRACKING_URI` — the MLflow Tracking Server that prompt versions are registered
   against (see sibling `MLflowServer/` service). Locally, run `serve.py` in `MLflowServer/`
   and point this at its `http://localhost:5000`; in production point it at the deployed
-  `MLflowServer` service's Railway internal address instead.
+  `MLflowServer` service's Railway internal address instead. This is required: sqlite
+  tracking URIs are rejected so runs never silently land in a local file.
 
 Fill in `resume.md` with your real skills/experience/preferences — its full contents are sent
 to the LLM as-is for every job evaluated, so keep it accurate.
@@ -219,6 +220,11 @@ service. Run it locally (`serve.py`, served at `http://localhost:5000`) for dev,
 tracked centrally instead of in a per-instance local file that wouldn't survive a redeploy or
 be visible from anywhere else. The client-side calls are identical either way; only the URI
 changes.
+
+At startup and at each cycle/eval run, the agent logs the resolved MLflow target and run id,
+for example: `MLflow startup target uri=...`, `action=mlflow_target ...`, and
+`action=mlflow_run_started run_id=...`. If you don't see these in logs, the run never reached
+MLflow logging code.
 
 ## Experiment tracking
 

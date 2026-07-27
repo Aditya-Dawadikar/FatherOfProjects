@@ -21,7 +21,7 @@ from llm_providers import (
 	load_provider_name,
 	render_prompt,
 )
-from mlflow_utils import ensure_tracking_uri_configured, load_mlflow_experiment_name
+from mlflow_utils import ensure_tracking_uri_configured, get_tracking_uri, load_mlflow_experiment_name
 from prompt_registry import PROMPT_NAME, get_active_prompt
 from shared.job_data import Base, create_db_engine, load_database_url
 from shared.job_match_data import JobMatch, unevaluated_job_ids_stmt
@@ -76,9 +76,14 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_i
 	rate_limited = False
 
 	ensure_tracking_uri_configured()
-	mlflow.set_experiment(load_mlflow_experiment_name())
+	experiment_name = load_mlflow_experiment_name()
+	mlflow.set_experiment(experiment_name)
+	log.action("mlflow_target", tracking_uri=get_tracking_uri(), experiment_name=experiment_name)
 
 	with mlflow.start_run(run_name=f"cycle-{cycle_id}"):
+		run = mlflow.active_run()
+		if run is not None:
+			log.action("mlflow_run_started", run_id=run.info.run_id)
 		mlflow.set_tags({"cycle_id": cycle_id, "prompt_name": PROMPT_NAME, "llm_provider": provider})
 		mlflow.log_params(
 			{
