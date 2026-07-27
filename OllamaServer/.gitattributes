@@ -1,4 +1,0 @@
-# start.sh runs as the container's Linux entrypoint -- CRLF line endings (which Windows'
-# core.autocrlf would otherwise introduce on checkout) break its shebang with "bad interpreter".
-start.sh text eol=lf
-Dockerfile text eol=lf

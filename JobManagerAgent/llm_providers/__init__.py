@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import time
-from types import ModuleType
 from typing import Any
 
 from env_utils import load_env_value
 
-from . import gemini_provider, groq_provider, ollama_provider
+from . import gemini_provider
 from .base import MatchResponseError, RateLimitError, TransientProviderError, parse_match_response, render_prompt
 
 
@@ -22,25 +21,24 @@ __all__ = [
 	"render_prompt",
 ]
 
-_PROVIDERS: dict[str, ModuleType] = {
-	"groq": groq_provider,
-	"gemini": gemini_provider,
-	"ollama": ollama_provider,
-}
+_ONLY_PROVIDER = "gemini"
 
 _TRANSIENT_MAX_RETRIES = 3
 _TRANSIENT_BASE_DELAY_SECONDS = 2.0
 
 
 def load_provider_name() -> str:
-	name = load_env_value("LLM_PROVIDER", "ollama").strip().lower()
-	if name not in _PROVIDERS:
-		raise ValueError(f"Unknown LLM_PROVIDER {name!r}; expected one of {sorted(_PROVIDERS)}")
-	return name
+	name = load_env_value("LLM_PROVIDER", _ONLY_PROVIDER).strip().lower()
+	if name and name != _ONLY_PROVIDER:
+		raise ValueError(f"Unsupported LLM_PROVIDER {name!r}; only {_ONLY_PROVIDER!r} is supported")
+	return _ONLY_PROVIDER
 
 
-def _provider_module(provider: str | None) -> ModuleType:
-	return _PROVIDERS[provider or load_provider_name()]
+def _provider_module(provider: str | None) -> Any:
+	resolved = (provider or load_provider_name()).strip().lower()
+	if resolved != _ONLY_PROVIDER:
+		raise ValueError(f"Unsupported provider {resolved!r}; only {_ONLY_PROVIDER!r} is supported")
+	return gemini_provider
 
 
 def load_model_name(provider: str | None = None) -> str:

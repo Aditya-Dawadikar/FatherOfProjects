@@ -12,6 +12,7 @@ from .base import RateLimitError, TransientProviderError
 
 
 DEFAULT_MODEL = "gemini-3.5-flash"
+FALLBACK_MODEL = "gemini-3.6-flash"
 
 
 def load_model() -> str:
@@ -22,22 +23,71 @@ def build_client() -> genai.Client:
 	return genai.Client(api_key=load_env_value("GEMINI_API_KEY"))
 
 
+def _is_model_unavailable_error(message: str) -> bool:
+	normalized = message.lower()
+	if "model" not in normalized:
+		return False
+	return any(
+		token in normalized
+		for token in (
+			"not found",
+			"not available",
+			"temporarily unavailable",
+			"unsupported",
+			"not supported",
+		)
+	)
+
+
+def _generate_content(client: genai.Client, *, model: str, prompt: str) -> str:
+	response = client.models.generate_content(
+		model=model,
+		contents=prompt,
+		config=genai_types.GenerateContentConfig(
+			temperature=0,
+			response_mime_type="application/json",
+		),
+	)
+	return response.text or ""
+
+
 def call_model(client: genai.Client, *, model: str, prompt: str) -> str:
 	try:
-		response = client.models.generate_content(
-			model=model,
-			contents=prompt,
-			config=genai_types.GenerateContentConfig(
-				temperature=0,
-				response_mime_type="application/json",
-			),
-		)
+		return _generate_content(client, model=model, prompt=prompt)
 	except genai_errors.ClientError as error:
 		if error.code == 429:
 			raise RateLimitError(str(error)) from error
+
+		if (
+			model == DEFAULT_MODEL
+			and FALLBACK_MODEL != DEFAULT_MODEL
+			and _is_model_unavailable_error(str(error))
+		):
+			try:
+				return _generate_content(client, model=FALLBACK_MODEL, prompt=prompt)
+			except genai_errors.ClientError as fallback_error:
+				if fallback_error.code == 429:
+					raise RateLimitError(str(fallback_error)) from fallback_error
+				raise
+			except genai_errors.ServerError as fallback_error:
+				raise TransientProviderError(str(fallback_error)) from fallback_error
+
 		raise
 	except genai_errors.ServerError as error:
+		if (
+			model == DEFAULT_MODEL
+			and FALLBACK_MODEL != DEFAULT_MODEL
+			and _is_model_unavailable_error(str(error))
+		):
+			try:
+				return _generate_content(client, model=FALLBACK_MODEL, prompt=prompt)
+			except genai_errors.ClientError as fallback_error:
+				if fallback_error.code == 429:
+					raise RateLimitError(str(fallback_error)) from fallback_error
+				raise
+			except genai_errors.ServerError as fallback_error:
+				raise TransientProviderError(str(fallback_error)) from fallback_error
+
 		# 5xx from Gemini -- most commonly 503 "currently experiencing high demand", which its
 		# own error message says is usually temporary, so worth a retry rather than failing hard.
 		raise TransientProviderError(str(error)) from error
-	return response.text or ""
