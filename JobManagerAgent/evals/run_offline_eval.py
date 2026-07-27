@@ -21,7 +21,7 @@ import mlflow  # noqa: E402
 from groq import RateLimitError  # noqa: E402
 from mlflow.entities.model_registry.prompt_version import PromptVersion  # noqa: E402
 
-from agent_logger import get_agent_logger, new_id  # noqa: E402
+from agent_logger import configure_logging, get_agent_logger, new_id  # noqa: E402
 from evals.dataset import DatasetError, EvalCase, load_golden_dataset  # noqa: E402
 from groq_client import (  # noqa: E402
 	MatchResponseError,
@@ -35,6 +35,7 @@ from mlflow_utils import ensure_tracking_uri_configured, load_mlflow_eval_experi
 from prompt_registry import PROMPT_ALIAS, PROMPT_FILE, PROMPT_NAME  # noqa: E402
 
 
+configure_logging()
 LOGGER = get_agent_logger(__name__)
 
 
