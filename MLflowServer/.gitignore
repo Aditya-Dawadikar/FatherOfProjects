@@ -1,0 +1,24 @@
+# Environment files
+.env
+
+# Virtual environments
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Tooling and test caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local MLflow artifact store / sqlite fallback
+mlruns/
+*.sqlite3
+*.db
+
+# OS/editor files
+.DS_Store
+Thumbs.db

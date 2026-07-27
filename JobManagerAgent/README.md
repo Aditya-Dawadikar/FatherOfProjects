@@ -55,6 +55,11 @@ registers a new version and moves the `production` alias to it. `job_matches.pro
 records which version produced each evaluation, so you can trace results back to a specific
 prompt edit. Edit the template file directly to iterate — no manual registration step needed.
 
+Prompt versions are tracked by an MLflow Tracking Server — see the sibling `MLflowServer/`
+service. Point `MLFLOW_TRACKING_URI` at its deployed URL in production (a local `sqlite` file
+works for zero-config local dev, but won't survive a redeploy or be visible from anywhere
+else). The client-side calls are identical either way; only the URI changes.
+
 ## Key files
 
 - `crawler.py` — fetches a job's detail page and parses out the description/skills/interview
