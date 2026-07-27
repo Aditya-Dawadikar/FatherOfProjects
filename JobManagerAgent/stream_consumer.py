@@ -4,7 +4,7 @@ import logging
 from typing import Any, Callable
 
 from redis import Redis
-from redis.exceptions import ResponseError
+from redis.exceptions import ConnectionError, ResponseError, TimeoutError
 
 from env_utils import load_env_value
 
@@ -19,7 +19,12 @@ BLOCK_MS = 10_000
 
 class RedisStreamConsumer:
 	def __init__(self, redis_url: str, stream_name: str, group_name: str, consumer_name: str):
-		self._client = Redis.from_url(redis_url, decode_responses=True)
+		self._client = Redis.from_url(
+			redis_url,
+			decode_responses=True,
+			socket_keepalive=True,
+			health_check_interval=30,
+		)
 		self._stream_name = stream_name
 		self._group_name = group_name
 		self._consumer_name = consumer_name
@@ -50,13 +55,20 @@ class RedisStreamConsumer:
 			self._consumer_name,
 		)
 		while True:
-			response = self._client.xreadgroup(
-				groupname=self._group_name,
-				consumername=self._consumer_name,
-				streams={self._stream_name: ">"},
-				count=10,
-				block=BLOCK_MS,
-			)
+			try:
+				response = self._client.xreadgroup(
+					groupname=self._group_name,
+					consumername=self._consumer_name,
+					streams={self._stream_name: ">"},
+					count=10,
+					block=BLOCK_MS,
+				)
+			except (TimeoutError, ConnectionError):
+				LOGGER.warning(
+					"Redis connection dropped/timed out while blocking on stream=%s; reconnecting",
+					self._stream_name,
+				)
+				continue
 			if not response:
 				continue
 

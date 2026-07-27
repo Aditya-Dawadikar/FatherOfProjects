@@ -66,8 +66,11 @@ else). The client-side calls are identical either way; only the URI changes.
   process (same `data-page` JSON payload technique `WebScraper` uses for the listing page).
 - `groq_client.py` — renders the active prompt and calls the Groq model, returning
   `{match_score, reasoning}`.
-- `matcher.py` — orchestrates one evaluation pass; skips and retries next cycle on a
-  per-job crawl/LLM failure rather than aborting the batch.
+- `matcher.py` — orchestrates one evaluation pass. Commits each job's `job_matches` row
+  immediately after evaluating it (not once at the end of the batch), skips and retries next
+  cycle on a per-job crawl/LLM-parsing failure, and stops the cycle early — without losing
+  already-committed progress — if Groq returns a rate-limit error, rather than burning through
+  the rest of the batch against a limit that will just keep rejecting it.
 - `stream_consumer.py` / `stream_events.py` — Redis Stream consumer/publisher counterparts to
   `WebScraper`'s publisher.
 - `shared/job_match_data.py` — the `job_matches` SQLAlchemy model and the "unevaluated jobs"
@@ -75,5 +78,7 @@ else). The client-side calls are identical either way; only the URI changes.
 
 ## Environment variables
 
-See `.env.example` for the full list, including `MATCH_THRESHOLD` (default 70) and
-`MAX_JOBS_PER_CYCLE` (default 25, caps how many jobs one pass evaluates).
+See `.env.example` for the full list, including `MATCH_THRESHOLD` (default 70),
+`MAX_JOBS_PER_CYCLE` (default 25, caps how many jobs one pass evaluates), and
+`GROQ_REQUEST_DELAY_SECONDS` (default 2, paced sleep between consecutive Groq calls within a
+cycle — raise this if you're still seeing 429s from Groq).

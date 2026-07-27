@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
+from groq import RateLimitError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -34,7 +36,21 @@ def load_max_jobs_per_cycle() -> int:
 	return int(load_env_value("MAX_JOBS_PER_CYCLE", "25"))
 
 
-def run_matching_cycle(publisher: RedisStreamPublisher | None = None) -> dict[str, int]:
+def load_request_delay_seconds() -> float:
+	return float(load_env_value("GROQ_REQUEST_DELAY_SECONDS", "2"))
+
+
+def _retry_after_seconds(error: RateLimitError) -> float | None:
+	header_value = error.response.headers.get("retry-after") if error.response is not None else None
+	if header_value is None:
+		return None
+	try:
+		return float(header_value)
+	except ValueError:
+		return None
+
+
+def run_matching_cycle(publisher: RedisStreamPublisher | None = None) -> dict[str, Any]:
 	engine = create_db_engine(load_database_url())
 	Base.metadata.create_all(engine)
 
@@ -45,18 +61,22 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None) -> dict[st
 	groq_model = load_groq_model()
 	threshold = load_match_threshold()
 	max_jobs = load_max_jobs_per_cycle()
+	request_delay = load_request_delay_seconds()
 
 	evaluated_count = 0
-	matched_count = 0
 	failed_count = 0
+	rate_limited = False
 
 	with Session(engine) as session:
 		candidates = session.execute(unevaluated_job_ids_stmt(max_jobs)).all()
 		LOGGER.info("Found %s unevaluated job(s) for this cycle", len(candidates))
 
-		for job_id, job_url, job_role, company_name in candidates:
+		for index, (job_id, job_url, job_role, company_name) in enumerate(candidates):
+			if index > 0 and request_delay > 0:
+				time.sleep(request_delay)
+
 			try:
-				evaluated_count += _evaluate_one_job(
+				_evaluate_one_job(
 					session=session,
 					job_id=job_id,
 					job_url=job_url,
@@ -69,12 +89,25 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None) -> dict[st
 					groq_model=groq_model,
 					threshold=threshold,
 				)
+				# Commit immediately so a job that succeeds is never re-evaluated (and
+				# never re-billed against the Groq quota) even if a later job in this
+				# same cycle fails or hits a rate limit.
+				session.commit()
+				evaluated_count += 1
+			except RateLimitError as error:
+				retry_after = _retry_after_seconds(error)
+				LOGGER.warning(
+					"Groq rate limit hit after %s job(s) this cycle (retry_after=%s); stopping cycle early",
+					evaluated_count,
+					retry_after,
+				)
+				rate_limited = True
+				break
 			except (CrawlError, MatchResponseError) as error:
+				session.rollback()
 				failed_count += 1
 				LOGGER.warning("Skipping job_id=%s after error: %s", job_id, error)
 				continue
-
-		session.commit()
 
 		candidate_job_ids = [row[0] for row in candidates]
 		matched_count = session.scalar(
@@ -83,11 +116,12 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None) -> dict[st
 			.where(JobMatch.job_id.in_(candidate_job_ids), JobMatch.is_match.is_(True))
 		) or 0
 
-	result = {
+	result: dict[str, Any] = {
 		"candidate_count": len(candidates),
 		"evaluated_count": evaluated_count,
 		"matched_count": matched_count,
 		"failed_count": failed_count,
+		"rate_limited": rate_limited,
 	}
 	LOGGER.info("Matching cycle complete: %s", result)
 	publish_event(publisher, "matching_cycle_completed", **result)
@@ -107,7 +141,7 @@ def _evaluate_one_job(
 	groq_client: Any,
 	groq_model: str,
 	threshold: int,
-) -> int:
+) -> None:
 	if not job_url:
 		raise CrawlError(f"job_id={job_id} has no job_url to crawl")
 
@@ -137,4 +171,3 @@ def _evaluate_one_job(
 		result["match_score"],
 		is_match,
 	)
-	return 1
