@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from agent_logger import AgentLogger, get_agent_logger, new_id
-from crawler import CrawlError, fetch_job_detail
+from crawler import CrawlError, NotFoundCrawlError, fetch_job_detail
 from env_utils import load_env_value
 from llm_providers import (
 	MatchResponseError,
@@ -73,7 +73,9 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_i
 
 	evaluated_count = 0
 	failed_count = 0
+	not_found_count = 0
 	rate_limited = False
+	not_found_jobs: list[dict[str, Any]] = []
 
 	ensure_tracking_uri_configured()
 	experiment_name = load_mlflow_experiment_name()
@@ -169,6 +171,40 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_i
 						)
 						rate_limited = True
 						break
+					except NotFoundCrawlError as error:
+						session.rollback()
+						not_found_count += 1
+						not_found_jobs.append(
+							{
+								"job_id": job_id,
+								"job_url": job_url,
+								"job_role": job_role,
+								"company_name": company_name,
+								"reason": str(error),
+							}
+						)
+						_record_unavailable_job(
+							session=session,
+							job_id=job_id,
+							prompt_version=prompt_version,
+							llm_model=llm_model,
+							job_url=job_url,
+							reason=str(error),
+						)
+						session.commit()
+						evaluated_count += 1
+						job_log.action("job_removed_or_missing", job_url=job_url, reason=str(error))
+						publish_event(
+							publisher,
+							"matching_job_url_not_found",
+							cycle_id=cycle_id,
+							job_id=job_id,
+							job_url=job_url,
+							job_role=job_role,
+							company_name=company_name,
+							reason=str(error),
+						)
+						continue
 					except (CrawlError, MatchResponseError, TransientProviderError) as error:
 						session.rollback()
 						failed_count += 1
@@ -187,6 +223,8 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_i
 				"evaluated_count": evaluated_count,
 				"matched_count": matched_count,
 				"failed_count": failed_count,
+				"not_found_count": not_found_count,
+				"not_found_jobs_sample": not_found_jobs[:10],
 				"rate_limited": rate_limited,
 			}
 			mlflow.log_metrics(
@@ -195,9 +233,16 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_i
 					"evaluated_count": result["evaluated_count"],
 					"matched_count": result["matched_count"],
 					"failed_count": result["failed_count"],
+					"not_found_count": result["not_found_count"],
 					"rate_limited": int(result["rate_limited"]),
 				}
 			)
+			if not_found_count > 0:
+				log.action(
+					"not_found_urls_summary",
+					not_found_count=not_found_count,
+					not_found_jobs_sample=result["not_found_jobs_sample"],
+				)
 			cycle_span.set_outputs(result)
 			log.action("mlflow_trace_ready", trace_id=cycle_span.trace_id)
 
@@ -258,4 +303,28 @@ def _evaluate_one_job(
 		job_role=job_role,
 		match_score=result["match_score"],
 		is_match=is_match,
+	)
+
+
+def _record_unavailable_job(
+	*,
+	session: Session,
+	job_id: int,
+	prompt_version: str,
+	llm_model: str,
+	job_url: str | None,
+	reason: str,
+) -> None:
+	"""Persist a non-match marker for jobs with permanently unavailable detail pages."""
+	verification_reason = f"not_found_404 job_url={job_url or 'unknown'}; {reason}"
+	session.add(
+		JobMatch(
+			job_id=job_id,
+			match_score=0,
+			is_match=False,
+			reasoning=verification_reason,
+			prompt_name=PROMPT_NAME,
+			prompt_version=prompt_version,
+			model_name=llm_model,
+		)
 	)

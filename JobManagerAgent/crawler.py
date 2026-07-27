@@ -24,10 +24,20 @@ class CrawlError(RuntimeError):
 	pass
 
 
+class NotFoundCrawlError(CrawlError):
+	def __init__(self, url: str):
+		super().__init__(f"Job page not found: {url}")
+		self.url = url
+
+
 def fetch_html(url: str) -> str:
 	try:
 		response = requests.get(url, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT_SECONDS)
 		response.raise_for_status()
+	except requests.HTTPError as error:
+		if error.response is not None and error.response.status_code == 404:
+			raise NotFoundCrawlError(url) from error
+		raise CrawlError(f"Failed to fetch {url}: {error}") from error
 	except RequestException as error:
 		raise CrawlError(f"Failed to fetch {url}: {error}") from error
 	return response.text

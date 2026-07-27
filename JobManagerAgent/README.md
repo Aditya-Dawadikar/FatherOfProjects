@@ -109,9 +109,13 @@ same code path as the boot-time one.
      retried on the next cycle (startup or next `pipeline_completed`).
    - At the end, publishes `matching_cycle_completed` (or `matching_cycle_failed`, from
      `run_cycle_safely`'s outer `except`) to `jobmanageragent:events` with counts:
-     `candidate_count`, `evaluated_count`, `matched_count`, `failed_count`, `rate_limited`. No
-     other service in this repo currently consumes that stream — it's there for a future
-     notifier/dashboard, or for manual inspection via `XRANGE`.
+     `candidate_count`, `evaluated_count`, `matched_count`, `failed_count`, `not_found_count`,
+     `rate_limited`, plus `not_found_jobs_sample` (up to 10 structured entries with
+     `job_id/job_url/job_role/company_name/reason`) for quick verification.
+   - For each scraped listing whose detail URL returns 404, publishes a dedicated
+     `matching_job_url_not_found` event (with cycle and job metadata) and writes a `JobMatch`
+     row with `reasoning` prefixed by `not_found_404 ...`, so these items are visible in both
+     stream telemetry and Postgres.
 
 **7. Loop back to step 3** and block again until the next `pipeline_completed` event.
 
@@ -237,7 +241,7 @@ for prompt versioning:
 - **Per-job metrics** (logged with `step` = the job's index in the cycle, so a run's chart shows
   score progression across the cycle): `match_score`, `is_match`.
 - **Cycle-level metrics** (logged once, at the end of the run): `candidate_count`,
-  `evaluated_count`, `matched_count`, `failed_count`, `rate_limited`.
+  `evaluated_count`, `matched_count`, `failed_count`, `not_found_count`, `rate_limited`.
 
 The run is tagged with `cycle_id` (matching the id in structured logs and the
 `matching_cycle_completed`/`matching_cycle_failed` Redis events) so a run can be cross-referenced
