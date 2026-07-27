@@ -6,7 +6,7 @@ from typing import Any
 
 from env_utils import load_env_value
 
-from . import gemini_provider, groq_provider
+from . import gemini_provider, groq_provider, ollama_provider
 from .base import MatchResponseError, RateLimitError, TransientProviderError, parse_match_response, render_prompt
 
 
@@ -25,6 +25,7 @@ __all__ = [
 _PROVIDERS: dict[str, ModuleType] = {
 	"groq": groq_provider,
 	"gemini": gemini_provider,
+	"ollama": ollama_provider,
 }
 
 _TRANSIENT_MAX_RETRIES = 3
@@ -32,7 +33,7 @@ _TRANSIENT_BASE_DELAY_SECONDS = 2.0
 
 
 def load_provider_name() -> str:
-	name = load_env_value("LLM_PROVIDER", "gemini").strip().lower()
+	name = load_env_value("LLM_PROVIDER", "ollama").strip().lower()
 	if name not in _PROVIDERS:
 		raise ValueError(f"Unknown LLM_PROVIDER {name!r}; expected one of {sorted(_PROVIDERS)}")
 	return name

@@ -6,6 +6,7 @@ Usage (from JobManagerAgent/):
     venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl
     venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl --prompt-source local
     venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl --provider groq
+    venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl --provider ollama
 """
 
 from __future__ import annotations
@@ -280,7 +281,7 @@ def _parse_args() -> argparse.Namespace:
 		"an edit before it gets promoted by the next live cycle.",
 	)
 	parser.add_argument(
-		"--provider", choices=("groq", "gemini"), default=None, help="Overrides LLM_PROVIDER for this run."
+		"--provider", choices=("groq", "gemini", "ollama"), default=None, help="Overrides LLM_PROVIDER for this run."
 	)
 	parser.add_argument("--model", default=None, help="Overrides the active provider's model env var for this run.")
 	parser.add_argument("--threshold", type=int, default=None, help="Overrides MATCH_THRESHOLD for this run.")

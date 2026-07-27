@@ -6,9 +6,10 @@ score, reasoning, and whether it clears the bar — into a `job_matches` table. 
 at/above `MATCH_THRESHOLD` are worth applying to; the rest are recorded so they're never
 re-evaluated.
 
-The LLM call is behind a small provider abstraction (`llm_providers/`) — Groq and Gemini are
-both supported today, switching between them is a one-line env var change (`LLM_PROVIDER`), and
-adding another provider means adding one more module. See "LLM provider" below.
+The LLM call is behind a small provider abstraction (`llm_providers/`) — a self-hosted Ollama
+model (see sibling `OllamaServer/` service, the default), Groq, and Gemini are all supported
+today; switching between them is a one-line env var change (`LLM_PROVIDER`), and adding another
+provider means adding one more module. See "LLM provider" below.
 
 ## How it runs
 
@@ -21,7 +22,7 @@ WebScraper (cron) --xadd--> webscraper:events --xreadgroup--> JobManagerAgent
                                                                      |
                                                      job_listings ---+--- crawler.py (fetch job_url)
                                                                      |
-                                                        resume.md ---+--- llm_providers/ (Groq or Gemini call)
+                                                        resume.md ---+--- llm_providers/ (Ollama, Groq, or Gemini)
                                                                      |
                                                                      v
                                                               job_matches table
@@ -85,7 +86,8 @@ same code path as the boot-time one.
      - `llm_providers.render_prompt` fills the MLflow prompt template's `{{variable}}` placeholders
        with the resume text and every field pulled from the job detail.
      - `llm_providers.evaluate_match` dispatches to whichever provider module `LLM_PROVIDER`
-       selects (`groq_provider.py` or `gemini_provider.py`), which calls that provider's API with
+       selects (`ollama_provider.py`, `groq_provider.py`, or `gemini_provider.py`), which calls
+       that provider's API with
        `temperature=0` and JSON-mode output; `parse_match_response` then extracts
        `{match_score, reasoning}` from the reply, tolerating a model that wraps the JSON in prose
        (regex-extracts the first `{...}` block) but raising `MatchResponseError` if no valid score
@@ -125,7 +127,7 @@ JobManagerAgent (long-running process)
         └─ on pipeline_completed → run_matching_cycle()
              ├─ query job_listings LEFT ANTI JOIN job_matches → unevaluated jobs (capped, newest first)
              ├─ per job: sleep(pacing) → crawl job_url → render prompt (resume + job fields)
-             │            → LLM call (Groq or Gemini) → parse {match_score, reasoning}
+             │            → LLM call (Ollama, Groq, or Gemini) → parse {match_score, reasoning}
              │            → INSERT job_matches row → commit immediately
              ├─ stop early on provider RateLimitError (progress so far stays committed)
              ├─ skip+continue on CrawlError / MatchResponseError (retried next cycle)
@@ -142,8 +144,8 @@ copy .env.example .env
 
 Fill in `.env`:
 - `DATABASE_URL` / `REDIS_URL` — same Postgres/Redis instance `WebScraper` uses.
-- `LLM_PROVIDER` — `groq` or `gemini`; only that provider's API key/model vars need filling in
-  (see "LLM provider" below).
+- `LLM_PROVIDER` — `ollama` (default, self-hosted, see sibling `OllamaServer/`), `groq`, or
+  `gemini`; only that provider's vars need filling in (see "LLM provider" below).
 - `MLFLOW_TRACKING_URI` — the MLflow Tracking Server that prompt versions are registered
   against (see sibling `MLflowServer/` service). Locally, run `serve.py` in `MLflowServer/`
   and point this at its `http://localhost:5000`; in production point it at the deployed
@@ -169,21 +171,24 @@ so switching which model does the scoring is a one-line env var change instead o
   module raises instead of leaking its own SDK's exception type: `RateLimitError` (quota/429 —
   won't clear by retrying seconds later) and `TransientProviderError` (5xx/overloaded/timed
   out/connection dropped — often *does* clear within seconds).
-- `llm_providers/groq_provider.py` / `gemini_provider.py` — each implements `build_client()`,
-  `load_model()`, and `call_model(client, *, model, prompt) -> str`, and maps its own SDK's
-  exceptions into the shared ones: rate limits (`groq.RateLimitError`, or Gemini's `ClientError`
-  with `code == 429`) into `RateLimitError`; server-side failures (`groq.InternalServerError` /
-  `groq.APIConnectionError`, or Gemini's `ServerError`) into `TransientProviderError`.
+- `llm_providers/ollama_provider.py` / `groq_provider.py` / `gemini_provider.py` — each
+  implements `build_client()`, `load_model()`, and `call_model(client, *, model, prompt) -> str`,
+  and maps its own SDK's/API's exceptions into the shared ones: rate limits
+  (`groq.RateLimitError`, or Gemini's `ClientError` with `code == 429`) into `RateLimitError` —
+  Ollama, self-hosted with no quota, never raises this one; server-side failures
+  (`groq.InternalServerError`/`groq.APIConnectionError`, Gemini's `ServerError`, or a `requests`
+  connection/timeout error or 5xx from Ollama — typically "still starting up" or "still loading
+  the model into memory") into `TransientProviderError`.
 - `llm_providers/__init__.py` — the facade `matcher.py`/`evals/run_offline_eval.py` actually
-  import: `load_provider_name()` reads `LLM_PROVIDER` (`groq` or `gemini`), and
-  `build_client()`/`load_model_name()`/`evaluate_match()` all dispatch to whichever provider
-  module that names, defaulting to it but accepting an explicit `provider=` override (used by the
-  eval harness's `--provider` flag to score the same dataset through a different provider without
-  touching `.env`). `evaluate_match()` also retries a `TransientProviderError` up to 3 times with
-  exponential backoff (2s/4s/8s) before letting it propagate — callers only see one after retries
-  are exhausted.
+  import: `load_provider_name()` reads `LLM_PROVIDER` (`ollama`, `groq`, or `gemini`; defaults to
+  `ollama`), and `build_client()`/`load_model_name()`/`evaluate_match()` all dispatch to whichever
+  provider module that names, defaulting to it but accepting an explicit `provider=` override
+  (used by the eval harness's `--provider` flag to score the same dataset through a different
+  provider without touching `.env`). `evaluate_match()` also retries a `TransientProviderError` up
+  to 3 times with exponential backoff (2s/4s/8s) before letting it propagate — callers only see
+  one after retries are exhausted.
 
-Adding a third provider means adding one more `llm_providers/<name>_provider.py` with those three
+Adding a fourth provider means adding one more `llm_providers/<name>_provider.py` with those three
 functions and registering it in `__init__.py`'s `_PROVIDERS` dict — no changes needed to
 `matcher.py`, the eval harness, or anything else that calls through the facade.
 
@@ -191,10 +196,13 @@ Both the live agent and the eval harness log which provider/model produced a run
 params/tags (`llm_provider`, `llm_model`) — so a provider swap shows up as a comparable dimension
 in MLflow rather than being invisible.
 
-**Rate limits are provider- and plan-specific**, and can be per-minute *or* per-day (token-based).
-`LLM_REQUEST_DELAY_SECONDS` only paces requests/minute — if you're seeing 429s despite a generous
-delay, check the actual error message (it names the limit type) and the provider's usage
-dashboard rather than assuming pacing alone will fix it.
+**Ollama is the default** since it has no per-request cost or rate limit — see sibling
+`OllamaServer/` for the service that hosts it, including the RAM/CPU footprint of running an 8B
+model on CPU (read that before deploying it). **Rate limits on the hosted providers are
+provider- and plan-specific**, and can be per-minute *or* per-day (token-based).
+`LLM_REQUEST_DELAY_SECONDS` only paces requests/minute — if you're seeing 429s from Groq/Gemini
+despite a generous delay, check the actual error message (it names the limit type) and the
+provider's usage dashboard rather than assuming pacing alone will fix it.
 
 ## Prompt versioning
 
@@ -323,6 +331,6 @@ anywhere in the codebase needs to change.
 
 See `.env.example` for the full list, including `MATCH_THRESHOLD` (default 70),
 `MAX_JOBS_PER_CYCLE` (default 25, caps how many jobs one pass evaluates), `LLM_PROVIDER`
-(`groq` or `gemini`), and `LLM_REQUEST_DELAY_SECONDS` (default 20 — paced sleep between
+(`ollama`, `groq`, or `gemini`), and `LLM_REQUEST_DELAY_SECONDS` (default 20 — paced sleep between
 consecutive LLM calls within a cycle; note some providers also enforce a *daily* token quota
 that this can't help with — see "LLM provider" above).
