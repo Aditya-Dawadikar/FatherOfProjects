@@ -5,6 +5,7 @@ changes can be checked for regressions before they ever touch production traffic
 Usage (from JobManagerAgent/):
     venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl
     venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl --prompt-source local
+    venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl --provider groq
 """
 
 from __future__ import annotations
@@ -18,16 +19,17 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import mlflow  # noqa: E402
-from groq import RateLimitError  # noqa: E402
 from mlflow.entities.model_registry.prompt_version import PromptVersion  # noqa: E402
 
 from agent_logger import configure_logging, get_agent_logger, new_id  # noqa: E402
 from evals.dataset import DatasetError, EvalCase, load_golden_dataset  # noqa: E402
-from groq_client import (  # noqa: E402
+from llm_providers import (  # noqa: E402
 	MatchResponseError,
+	RateLimitError,
 	build_client,
 	evaluate_match,
-	load_groq_model,
+	load_model_name,
+	load_provider_name,
 	render_prompt,
 )
 from matcher import load_match_threshold, load_request_delay_seconds, load_resume  # noqa: E402
@@ -65,13 +67,14 @@ def _run_one_case(
 	case: EvalCase,
 	default_resume: str,
 	prompt_version_obj: Any,
-	groq_client: Any,
-	groq_model: str,
+	llm_client: Any,
+	llm_model: str,
+	provider: str,
 	threshold: int,
 ) -> dict[str, Any]:
 	resume_text = case.resume if case.resume is not None else default_resume
 	prompt = render_prompt(prompt_version_obj, resume=resume_text, job=case.job)
-	result = evaluate_match(groq_client, model=groq_model, prompt=prompt)
+	result = evaluate_match(llm_client, model=llm_model, prompt=prompt, provider=provider)
 
 	predicted_score = result["match_score"]
 	predicted_is_match = predicted_score >= threshold
@@ -177,7 +180,8 @@ def run_offline_eval(
 	*,
 	dataset_path: Path,
 	prompt_source: str,
-	groq_model: str | None,
+	provider: str | None,
+	model: str | None,
 	threshold: int | None,
 	request_delay: float | None,
 	experiment_name: str | None,
@@ -194,10 +198,11 @@ def run_offline_eval(
 
 	default_resume = load_resume()
 	prompt_version_obj, prompt_version = _load_prompt_version(prompt_source)
-	resolved_model = groq_model or load_groq_model()
+	resolved_provider = provider or load_provider_name()
+	resolved_model = model or load_model_name(resolved_provider)
 	resolved_threshold = threshold if threshold is not None else load_match_threshold()
 	resolved_delay = request_delay if request_delay is not None else load_request_delay_seconds()
-	groq_client = build_client()
+	llm_client = build_client(resolved_provider)
 
 	ensure_tracking_uri_configured()
 	mlflow.set_experiment(experiment_name or load_mlflow_eval_experiment_name())
@@ -210,13 +215,15 @@ def run_offline_eval(
 				"run_type": "offline_eval",
 				"prompt_name": PROMPT_NAME,
 				"prompt_source": prompt_source,
+				"llm_provider": resolved_provider,
 				"dataset_path": str(dataset_path),
 			}
 		)
 		mlflow.log_params(
 			{
 				"prompt_version": prompt_version,
-				"groq_model": resolved_model,
+				"llm_provider": resolved_provider,
+				"llm_model": resolved_model,
 				"match_threshold": resolved_threshold,
 				"dataset_case_count": len(cases),
 			}
@@ -233,8 +240,9 @@ def run_offline_eval(
 					case=case,
 					default_resume=default_resume,
 					prompt_version_obj=prompt_version_obj,
-					groq_client=groq_client,
-					groq_model=resolved_model,
+					llm_client=llm_client,
+					llm_model=resolved_model,
+					provider=resolved_provider,
 					threshold=resolved_threshold,
 				)
 				case_log.action(
@@ -244,7 +252,7 @@ def run_offline_eval(
 				)
 				rows.append(row)
 			except RateLimitError as error:
-				case_log.action("eval_stopped_rate_limited", error=str(error))
+				case_log.action("eval_stopped_rate_limited", error=str(error), retry_after=error.retry_after)
 				rows.append(_error_row(case, "rate_limited"))
 				break
 			except MatchResponseError as error:
@@ -270,10 +278,13 @@ def _parse_args() -> argparse.Namespace:
 		"'local' renders prompts/job_match_v1.txt directly, without registering it, so you can eval "
 		"an edit before it gets promoted by the next live cycle.",
 	)
-	parser.add_argument("--model", default=None, help="Overrides GROQ_MODEL for this run.")
+	parser.add_argument(
+		"--provider", choices=("groq", "gemini"), default=None, help="Overrides LLM_PROVIDER for this run."
+	)
+	parser.add_argument("--model", default=None, help="Overrides the active provider's model env var for this run.")
 	parser.add_argument("--threshold", type=int, default=None, help="Overrides MATCH_THRESHOLD for this run.")
 	parser.add_argument(
-		"--request-delay", type=float, default=None, help="Overrides GROQ_REQUEST_DELAY_SECONDS for this run."
+		"--request-delay", type=float, default=None, help="Overrides LLM_REQUEST_DELAY_SECONDS for this run."
 	)
 	parser.add_argument("--experiment-name", default=None, help="Overrides MLFLOW_EVAL_EXPERIMENT_NAME.")
 	parser.add_argument("--run-name", default=None, help="MLflow run name; defaults to eval-<eval_id>.")
@@ -287,7 +298,8 @@ def main() -> None:
 		summary = run_offline_eval(
 			dataset_path=args.dataset,
 			prompt_source=args.prompt_source,
-			groq_model=args.model,
+			provider=args.provider,
+			model=args.model,
 			threshold=args.threshold,
 			request_delay=args.request_delay,
 			experiment_name=args.experiment_name,

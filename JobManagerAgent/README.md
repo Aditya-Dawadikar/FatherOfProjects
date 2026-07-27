@@ -1,10 +1,14 @@
 # Job Manager Agent
 
 Reads scraped listings from the `job_listings` table (written by `WebScraper`), crawls each
-job's full posting, scores it against a resume using a Groq-hosted Llama model, and writes
-every evaluated job — score, reasoning, and whether it clears the bar — into a `job_matches`
-table. Only jobs at/above `MATCH_THRESHOLD` are worth applying to; the rest are recorded so
-they're never re-evaluated.
+job's full posting, scores it against a resume using an LLM, and writes every evaluated job —
+score, reasoning, and whether it clears the bar — into a `job_matches` table. Only jobs
+at/above `MATCH_THRESHOLD` are worth applying to; the rest are recorded so they're never
+re-evaluated.
+
+The LLM call is behind a small provider abstraction (`llm_providers/`) — Groq and Gemini are
+both supported today, switching between them is a one-line env var change (`LLM_PROVIDER`), and
+adding another provider means adding one more module. See "LLM provider" below.
 
 ## How it runs
 
@@ -17,7 +21,7 @@ WebScraper (cron) --xadd--> webscraper:events --xreadgroup--> JobManagerAgent
                                                                      |
                                                      job_listings ---+--- crawler.py (fetch job_url)
                                                                      |
-                                                        resume.md ---+--- groq_client.py (Groq LLM call)
+                                                        resume.md ---+--- llm_providers/ (Groq or Gemini call)
                                                                      |
                                                                      v
                                                               job_matches table
@@ -70,30 +74,32 @@ same code path as the boot-time one.
      `job_listings.job_id` that has **no** row in `job_matches`, newest-updated first, capped at
      `MAX_JOBS_PER_CYCLE`. This is what makes cycles idempotent/resumable — a job is only ever
      evaluated once, ever, regardless of how many cycles run.
-   - For each candidate job, in order: sleep `GROQ_REQUEST_DELAY_SECONDS` (except before the
-     first) to pace Groq calls, then `_evaluate_one_job`:
+   - For each candidate job, in order: sleep `LLM_REQUEST_DELAY_SECONDS` (except before the
+     first) to pace LLM calls, then `_evaluate_one_job`:
      - `crawler.fetch_job_detail(job_url)` — GETs the job's detail page with a browser-like
        `User-Agent`, regexes out the `data-page="..."` attribute (a server-rendered JSON blob),
        HTML-unescapes and JSON-decodes it, and pulls `title`/`descriptionHtml`→text/
        `interviewProcessHtml`→text/`skills`/`minExperience`/`salaryRange`/etc. out of
        `payload.props.job`. Any failure here (network error, missing payload) raises
        `CrawlError`.
-     - `groq_client.render_prompt` fills the MLflow prompt template's `{{variable}}` placeholders
+     - `llm_providers.render_prompt` fills the MLflow prompt template's `{{variable}}` placeholders
        with the resume text and every field pulled from the job detail.
-     - `groq_client.evaluate_match` calls the Groq chat-completions API
-       (`temperature=0`, `response_format=json_object`) and `parse_match_response` extracts
-       `{match_score, reasoning}` from the JSON reply, tolerating a model that wraps the JSON in
-       prose (regex-extracts the first `{...}` block) but raising `MatchResponseError` if no
-       valid score can be found.
+     - `llm_providers.evaluate_match` dispatches to whichever provider module `LLM_PROVIDER`
+       selects (`groq_provider.py` or `gemini_provider.py`), which calls that provider's API with
+       `temperature=0` and JSON-mode output; `parse_match_response` then extracts
+       `{match_score, reasoning}` from the reply, tolerating a model that wraps the JSON in prose
+       (regex-extracts the first `{...}` block) but raising `MatchResponseError` if no valid score
+       can be found.
      - A `JobMatch` row is added with `is_match = match_score >= MATCH_THRESHOLD`, the prompt
        name/version, and the model name — then **committed immediately**, before moving to the
        next job. This means a job that succeeds is permanently recorded even if a later job in
        the same cycle fails or the batch is cut short by a rate limit.
-   - Error handling per job: `RateLimitError` from Groq stops the whole cycle early (`break`,
-     preserving everything already committed) since retrying immediately would just burn quota
-     against a limit that isn't going away; `CrawlError`/`MatchResponseError` roll back just that
-     job's uncommitted state, count it as failed, and move on — it stays unevaluated and will be
-     retried on the next cycle (startup or next `pipeline_completed`).
+   - Error handling per job: a `RateLimitError` (each provider module maps its own SDK's
+     rate-limit exception into this common one — see "LLM provider" below) stops the whole cycle
+     early (`break`, preserving everything already committed) since retrying immediately would
+     just burn quota against a limit that isn't going away; `CrawlError`/`MatchResponseError` roll
+     back just that job's uncommitted state, count it as failed, and move on — it stays
+     unevaluated and will be retried on the next cycle (startup or next `pipeline_completed`).
    - At the end, publishes `matching_cycle_completed` (or `matching_cycle_failed`, from
      `run_cycle_safely`'s outer `except`) to `jobmanageragent:events` with counts:
      `candidate_count`, `evaluated_count`, `matched_count`, `failed_count`, `rate_limited`. No
@@ -114,9 +120,9 @@ JobManagerAgent (long-running process)
         └─ on pipeline_completed → run_matching_cycle()
              ├─ query job_listings LEFT ANTI JOIN job_matches → unevaluated jobs (capped, newest first)
              ├─ per job: sleep(pacing) → crawl job_url → render prompt (resume + job fields)
-             │            → Groq chat completion → parse {match_score, reasoning}
+             │            → LLM call (Groq or Gemini) → parse {match_score, reasoning}
              │            → INSERT job_matches row → commit immediately
-             ├─ stop early on Groq RateLimitError (progress so far stays committed)
+             ├─ stop early on provider RateLimitError (progress so far stays committed)
              ├─ skip+continue on CrawlError / MatchResponseError (retried next cycle)
              └─ XADD jobmanageragent:events {event_type: matching_cycle_completed, counts...}
 ```
@@ -131,7 +137,8 @@ copy .env.example .env
 
 Fill in `.env`:
 - `DATABASE_URL` / `REDIS_URL` — same Postgres/Redis instance `WebScraper` uses.
-- `GROQ_API_KEY` — from console.groq.com.
+- `LLM_PROVIDER` — `groq` or `gemini`; only that provider's API key/model vars need filling in
+  (see "LLM provider" below).
 - `MLFLOW_TRACKING_URI` — the MLflow Tracking Server that prompt versions are registered
   against (see sibling `MLflowServer/` service). Locally, run `serve.py` in `MLflowServer/`
   and point this at its `http://localhost:5000`; in production point it at the deployed
@@ -145,6 +152,40 @@ Run locally:
 ```powershell
 venv\Scripts\python main.py
 ```
+
+## LLM provider
+
+Job scoring goes through `llm_providers/`, a small dispatch layer rather than a direct SDK call,
+so switching which model does the scoring is a one-line env var change instead of a code change:
+
+- `llm_providers/base.py` — provider-agnostic: `render_prompt` (fills the MLflow template),
+  `parse_match_response` (extracts `{match_score, reasoning}` from a JSON reply, tolerant of a
+  model that wraps it in prose), `MatchResponseError`, and `RateLimitError` — a common exception
+  every provider module raises instead of leaking its own SDK's exception type, so `matcher.py`
+  and the eval harness only ever need one `except` clause.
+- `llm_providers/groq_provider.py` / `gemini_provider.py` — each implements `build_client()`,
+  `load_model()`, and `call_model(client, *, model, prompt) -> str`, and maps its SDK's own
+  rate-limit exception (`groq.RateLimitError`, or Gemini's `ClientError` with `code == 429`) into
+  the shared `RateLimitError`.
+- `llm_providers/__init__.py` — the facade `matcher.py`/`evals/run_offline_eval.py` actually
+  import: `load_provider_name()` reads `LLM_PROVIDER` (`groq` or `gemini`), and
+  `build_client()`/`load_model_name()`/`evaluate_match()` all dispatch to whichever provider
+  module that names, defaulting to it but accepting an explicit `provider=` override (used by the
+  eval harness's `--provider` flag to score the same dataset through a different provider without
+  touching `.env`).
+
+Adding a third provider means adding one more `llm_providers/<name>_provider.py` with those three
+functions and registering it in `__init__.py`'s `_PROVIDERS` dict — no changes needed to
+`matcher.py`, the eval harness, or anything else that calls through the facade.
+
+Both the live agent and the eval harness log which provider/model produced a run as MLflow
+params/tags (`llm_provider`, `llm_model`) — so a provider swap shows up as a comparable dimension
+in MLflow rather than being invisible.
+
+**Rate limits are provider- and plan-specific**, and can be per-minute *or* per-day (token-based).
+`LLM_REQUEST_DELAY_SECONDS` only paces requests/minute — if you're seeing 429s despite a generous
+delay, check the actual error message (it names the limit type) and the provider's usage
+dashboard rather than assuming pacing alone will fix it.
 
 ## Prompt versioning
 
@@ -168,8 +209,8 @@ Every call to `run_matching_cycle()` (`matcher.py`) opens one MLflow run, under 
 named by `MLFLOW_EXPERIMENT_NAME` (default `job_matching`), against the same Tracking Server used
 for prompt versioning:
 
-- **Params** (logged once per run): `prompt_version`, `groq_model`, `match_threshold`,
-  `max_jobs_per_cycle`, `groq_request_delay_seconds`.
+- **Params** (logged once per run): `prompt_version`, `llm_provider`, `llm_model`,
+  `match_threshold`, `max_jobs_per_cycle`, `llm_request_delay_seconds`.
 - **Per-job metrics** (logged with `step` = the job's index in the cycle, so a run's chart shows
   score progression across the cycle): `match_score`, `is_match`.
 - **Cycle-level metrics** (logged once, at the end of the run): `candidate_count`,
@@ -182,10 +223,10 @@ back to logs or dashboard data for the same cycle.
 ## Offline evals
 
 `evals/run_offline_eval.py` scores the job-match prompt/model against a fixed, labeled **golden
-dataset** instead of live crawled jobs — so a prompt or model change can be checked for
+dataset** instead of live crawled jobs — so a prompt, model, or provider change can be checked for
 regressions before it ever touches production traffic. It reuses the exact same rendering/scoring
-path as the live agent (`groq_client.render_prompt` / `evaluate_match`), so an eval result reflects
-what production would actually do.
+path as the live agent (`llm_providers.render_prompt` / `evaluate_match`), so an eval result
+reflects what production would actually do.
 
 ### Golden dataset schema
 
@@ -213,17 +254,19 @@ venv\Scripts\python evals\run_offline_eval.py --dataset evals\golden_dataset.jso
 Useful flags: `--prompt-source local` scores `prompts/job_match_v1.txt` as it currently sits on
 disk, without registering/promoting it in MLflow (the default, `production`, read-only-loads the
 currently promoted alias) — use `local` to validate a prompt edit *before* the next live cycle
-auto-promotes it via `prompt_registry.get_active_prompt()`. `--limit N` for a quick smoke test,
+auto-promotes it via `prompt_registry.get_active_prompt()`. `--provider {groq,gemini}` scores the
+same dataset through a specific provider regardless of `LLM_PROVIDER` — handy for comparing two
+providers' MLflow runs on the exact same golden set. `--limit N` for a quick smoke test,
 `--model`/`--threshold`/`--request-delay`/`--experiment-name`/`--run-name` to override the
 corresponding env var for one run.
 
 Each run logs to the `MLFLOW_EVAL_EXPERIMENT_NAME` experiment (default `job_matching_evals`,
 deliberately separate from the live-cycle `job_matching` experiment since the metrics don't share
-a shape): params (`prompt_version`, `groq_model`, `match_threshold`, `dataset_case_count`),
-metrics (`accuracy`, `precision`, `recall`, `f1`, `score_in_range_rate`, `mean_predicted_score`,
-plus raw confusion-matrix counts), the golden dataset file itself as an artifact, and a
-per-case results table (`eval_results.json`) viewable in the MLflow UI for drilling into any
-individual disagreement.
+a shape): params (`prompt_version`, `llm_provider`, `llm_model`, `match_threshold`,
+`dataset_case_count`), metrics (`accuracy`, `precision`, `recall`, `f1`, `score_in_range_rate`,
+`mean_predicted_score`, plus raw confusion-matrix counts), the golden dataset file itself as an
+artifact, and a per-case results table (`eval_results.json`) viewable in the MLflow UI for
+drilling into any individual disagreement.
 
 ## Logging
 
@@ -254,22 +297,23 @@ anywhere in the codebase needs to change.
   above.
 - `crawler.py` — fetches a job's detail page and parses out the description/skills/interview
   process (same `data-page` JSON payload technique `WebScraper` uses for the listing page).
-- `groq_client.py` — renders the active prompt and calls the Groq model, returning
-  `{match_score, reasoning}`.
+- `llm_providers/` — renders the active prompt and calls whichever provider `LLM_PROVIDER`
+  selects, returning `{match_score, reasoning}`. See "LLM provider" above.
 - `matcher.py` — orchestrates one evaluation pass. Commits each job's `job_matches` row
   immediately after evaluating it (not once at the end of the batch), skips and retries next
   cycle on a per-job crawl/LLM-parsing failure, and stops the cycle early — without losing
-  already-committed progress — if Groq returns a rate-limit error, rather than burning through
-  the rest of the batch against a limit that will just keep rejecting it.
+  already-committed progress — if the provider returns a rate-limit error, rather than burning
+  through the rest of the batch against a limit that will just keep rejecting it.
 - `stream_consumer.py` / `stream_events.py` — Redis Stream consumer/publisher counterparts to
   `WebScraper`'s publisher.
 - `shared/job_match_data.py` — the `job_matches` SQLAlchemy model and the "unevaluated jobs"
   query that makes re-runs idempotent.
+- `evals/` — offline eval harness against a labeled golden dataset. See "Offline evals" above.
 
 ## Environment variables
 
 See `.env.example` for the full list, including `MATCH_THRESHOLD` (default 70),
-`MAX_JOBS_PER_CYCLE` (default 25, caps how many jobs one pass evaluates), and
-`GROQ_REQUEST_DELAY_SECONDS` (default 20 — paced sleep between consecutive Groq calls within a
-cycle, capping throughput at 3 calls/minute to match a 3-requests-per-minute Groq plan; adjust
-to match your actual plan's limit).
+`MAX_JOBS_PER_CYCLE` (default 25, caps how many jobs one pass evaluates), `LLM_PROVIDER`
+(`groq` or `gemini`), and `LLM_REQUEST_DELAY_SECONDS` (default 20 — paced sleep between
+consecutive LLM calls within a cycle; note some providers also enforce a *daily* token quota
+that this can't help with — see "LLM provider" above).

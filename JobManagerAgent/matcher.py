@@ -5,14 +5,21 @@ from pathlib import Path
 from typing import Any
 
 import mlflow
-from groq import RateLimitError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from agent_logger import AgentLogger, get_agent_logger, new_id
 from crawler import CrawlError, fetch_job_detail
 from env_utils import load_env_value
-from groq_client import MatchResponseError, build_client, evaluate_match, load_groq_model, render_prompt
+from llm_providers import (
+	MatchResponseError,
+	RateLimitError,
+	build_client,
+	evaluate_match,
+	load_model_name,
+	load_provider_name,
+	render_prompt,
+)
 from mlflow_utils import ensure_tracking_uri_configured, load_mlflow_experiment_name
 from prompt_registry import PROMPT_NAME, get_active_prompt
 from shared.job_data import Base, create_db_engine, load_database_url
@@ -39,18 +46,11 @@ def load_max_jobs_per_cycle() -> int:
 
 
 def load_request_delay_seconds() -> float:
-	# Default paces calls at 20s apart -> at most 3 Groq calls per rolling minute.
-	return float(load_env_value("GROQ_REQUEST_DELAY_SECONDS", "20"))
-
-
-def _retry_after_seconds(error: RateLimitError) -> float | None:
-	header_value = error.response.headers.get("retry-after") if error.response is not None else None
-	if header_value is None:
-		return None
-	try:
-		return float(header_value)
-	except ValueError:
-		return None
+	# Paces calls between jobs so a cycle doesn't burst the active provider's per-minute limit.
+	# Whatever provider is active (see llm_providers), the real constraint in practice tends to
+	# be a daily token quota rather than this per-minute pacing -- see README's "LLM provider"
+	# section for how to check that.
+	return float(load_env_value("LLM_REQUEST_DELAY_SECONDS", "20"))
 
 
 def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_id: str | None = None) -> dict[str, Any]:
@@ -63,8 +63,9 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_i
 	resume_text = load_resume()
 	prompt_version_obj = get_active_prompt()
 	prompt_version = str(prompt_version_obj.version)
-	groq_client = build_client()
-	groq_model = load_groq_model()
+	provider = load_provider_name()
+	llm_client = build_client(provider)
+	llm_model = load_model_name(provider)
 	threshold = load_match_threshold()
 	max_jobs = load_max_jobs_per_cycle()
 	request_delay = load_request_delay_seconds()
@@ -77,14 +78,15 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_i
 	mlflow.set_experiment(load_mlflow_experiment_name())
 
 	with mlflow.start_run(run_name=f"cycle-{cycle_id}"):
-		mlflow.set_tags({"cycle_id": cycle_id, "prompt_name": PROMPT_NAME})
+		mlflow.set_tags({"cycle_id": cycle_id, "prompt_name": PROMPT_NAME, "llm_provider": provider})
 		mlflow.log_params(
 			{
 				"prompt_version": prompt_version,
-				"groq_model": groq_model,
+				"llm_provider": provider,
+				"llm_model": llm_model,
 				"match_threshold": threshold,
 				"max_jobs_per_cycle": max_jobs,
-				"groq_request_delay_seconds": request_delay,
+				"llm_request_delay_seconds": request_delay,
 			}
 		)
 
@@ -98,7 +100,7 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_i
 				if index > 0 and request_delay > 0:
 					job_log.sleeping(
 						request_delay,
-						reason="groq_rate_limit_pacing",
+						reason="llm_rate_limit_pacing",
 						position=f"{index + 1}/{len(candidates)}",
 					)
 					time.sleep(request_delay)
@@ -113,23 +115,23 @@ def run_matching_cycle(publisher: RedisStreamPublisher | None = None, *, cycle_i
 						resume_text=resume_text,
 						prompt_version_obj=prompt_version_obj,
 						prompt_version=prompt_version,
-						groq_client=groq_client,
-						groq_model=groq_model,
+						llm_client=llm_client,
+						llm_model=llm_model,
+						provider=provider,
 						threshold=threshold,
 						log=job_log,
 						metric_step=index,
 					)
 					# Commit immediately so a job that succeeds is never re-evaluated (and
-					# never re-billed against the Groq quota) even if a later job in this
+					# never re-billed against the provider's quota) even if a later job in this
 					# same cycle fails or hits a rate limit.
 					session.commit()
 					evaluated_count += 1
 				except RateLimitError as error:
-					retry_after = _retry_after_seconds(error)
 					job_log.action(
 						"cycle_stopped_rate_limited",
 						evaluated_count=evaluated_count,
-						retry_after=retry_after,
+						retry_after=error.retry_after,
 					)
 					rate_limited = True
 					break
@@ -178,8 +180,9 @@ def _evaluate_one_job(
 	resume_text: str,
 	prompt_version_obj: Any,
 	prompt_version: str,
-	groq_client: Any,
-	groq_model: str,
+	llm_client: Any,
+	llm_model: str,
+	provider: str,
 	threshold: int,
 	log: AgentLogger,
 	metric_step: int,
@@ -191,9 +194,9 @@ def _evaluate_one_job(
 	job_detail = fetch_job_detail(job_url)
 	job_detail["company_name"] = company_name
 
-	log.action("llm_call_start", model=groq_model, prompt_version=prompt_version)
+	log.action("llm_call_start", provider=provider, model=llm_model, prompt_version=prompt_version)
 	prompt = render_prompt(prompt_version_obj, resume=resume_text, job=job_detail)
-	result = evaluate_match(groq_client, model=groq_model, prompt=prompt)
+	result = evaluate_match(llm_client, model=llm_model, prompt=prompt, provider=provider)
 
 	is_match = result["match_score"] >= threshold
 	session.add(
@@ -204,7 +207,7 @@ def _evaluate_one_job(
 			reasoning=result["reasoning"],
 			prompt_name=PROMPT_NAME,
 			prompt_version=prompt_version,
-			model_name=groq_model,
+			model_name=llm_model,
 		)
 	)
 	mlflow.log_metrics(

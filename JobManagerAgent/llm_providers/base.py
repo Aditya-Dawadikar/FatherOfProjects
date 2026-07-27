@@ -1,29 +1,22 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 from typing import Any
-
-from groq import Groq
-
-from env_utils import load_env_value
-
-
-LOGGER = logging.getLogger(__name__)
-DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
 class MatchResponseError(RuntimeError):
 	pass
 
 
-def load_groq_model() -> str:
-	return load_env_value("GROQ_MODEL", DEFAULT_GROQ_MODEL)
+class RateLimitError(RuntimeError):
+	"""Provider-agnostic rate-limit signal. Every provider module catches its own SDK's
+	rate-limit exception and re-raises this instead, so matcher.py/run_offline_eval.py never
+	need a per-provider except clause."""
 
-
-def build_client() -> Groq:
-	return Groq(api_key=load_env_value("GROQ_API_KEY"))
+	def __init__(self, message: str, *, retry_after: float | None = None) -> None:
+		super().__init__(message)
+		self.retry_after = retry_after
 
 
 def _text_or_blank(value: Any) -> str:
@@ -75,14 +68,3 @@ def parse_match_response(text: str) -> dict[str, Any]:
 	reasoning = str(parsed.get("reasoning") or "").strip()
 
 	return {"match_score": clamped_score, "reasoning": reasoning}
-
-
-def evaluate_match(client: Groq, *, model: str, prompt: str) -> dict[str, Any]:
-	response = client.chat.completions.create(
-		model=model,
-		messages=[{"role": "user", "content": prompt}],
-		temperature=0,
-		response_format={"type": "json_object"},
-	)
-	content = response.choices[0].message.content or ""
-	return parse_match_response(content)

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 
-# Mirrors exactly what groq_client.render_prompt() reads off a job dict (see crawler.fetch_job_detail
+# Mirrors exactly what llm_providers.render_prompt() reads off a job dict (see crawler.fetch_job_detail
 # for where these come from on the live path) -- an eval case's "job" object stands in for a crawled
 # job page, so a case is fully self-contained and never depends on a live URL still being reachable.
 REQUIRED_JOB_FIELDS = (
