@@ -6,7 +6,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
-ENV_FILE = Path(__file__).with_name(".env")
+# Anchored off this file's own location (utils/env_utils.py -> JobManagerAgent/), not
+# with_name(), which broke when this module moved into utils/ during the package reorg and kept
+# resolving to a nonexistent utils/.env. Computed locally rather than imported from
+# utils/config.py -- config.py itself imports load_env_value from here, so the reverse would be
+# circular.
+ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 def load_env_value(key: str, default: str | None = None) -> str:

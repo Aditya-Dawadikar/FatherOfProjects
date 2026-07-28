@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -9,11 +8,10 @@ from agents import run_matching_cycle_with_agent
 from core import run_matching_cycle
 from integrations.streaming import RedisStreamConsumer, RedisStreamPublisher, publish_event
 from utils.agent_logger import configure_logging, get_agent_logger, new_id
-from utils.env_utils import load_env_value
+from utils.env_utils import ENV_FILE, load_env_value
 from utils.mlflow_utils import get_tracking_uri
 
 
-ENV_FILE = Path(__file__).with_name(".env")
 load_dotenv(ENV_FILE)
 
 configure_logging()

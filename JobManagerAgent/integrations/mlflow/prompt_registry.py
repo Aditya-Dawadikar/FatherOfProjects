@@ -1,19 +1,15 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import mlflow
 from mlflow.entities.model_registry.prompt_version import PromptVersion
 
+from utils.config import PROMPT_ALIAS, PROMPT_FILE, PROMPT_NAME
 from utils.mlflow_utils import ensure_tracking_uri_configured
 
 
 LOGGER = logging.getLogger(__name__)
-
-PROMPT_NAME = "job_match_prompt"
-PROMPT_ALIAS = "production"
-PROMPT_FILE = Path(__file__).with_name("prompts") / "job_match_v1.txt"
 
 
 def get_active_prompt() -> PromptVersion:

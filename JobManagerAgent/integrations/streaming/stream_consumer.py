@@ -6,15 +6,17 @@ from redis import Redis
 from redis.exceptions import ConnectionError, ResponseError, TimeoutError
 
 from utils.agent_logger import get_agent_logger
+from utils.config import (
+	BLOCK_MS,
+	DEFAULT_CONSUMER_GROUP,
+	DEFAULT_CONSUMER_NAME,
+	DEFAULT_SOURCE_STREAM_NAME,
+	TRIGGER_EVENT_TYPES,
+)
 from utils.env_utils import load_env_value
 
 
 LOGGER = get_agent_logger(__name__)
-DEFAULT_SOURCE_STREAM_NAME = "webscraper:events"
-DEFAULT_CONSUMER_GROUP = "jobmanageragent-group"
-DEFAULT_CONSUMER_NAME = "jobmanageragent-1"
-TRIGGER_EVENT_TYPES = {"pipeline_completed"}
-BLOCK_MS = 10_000
 
 
 class RedisStreamConsumer:

@@ -8,13 +8,11 @@ from langchain_core.rate_limiters import BaseRateLimiter
 from redis import Redis
 
 from .agent_logger import get_agent_logger
+from .config import DEFAULT_RPM_CAP, WINDOW_SECONDS
 from .env_utils import load_env_value
 
 
 LOGGER = get_agent_logger(__name__)
-
-DEFAULT_RPM_CAP = 4
-WINDOW_SECONDS = 60.0
 
 
 def _cap_env_key(model: str) -> str:

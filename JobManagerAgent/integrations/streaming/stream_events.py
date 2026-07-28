@@ -8,11 +8,11 @@ from typing import Any
 from redis import Redis
 from redis.exceptions import RedisError
 
+from utils.config import DEFAULT_STREAM_NAME
 from utils.env_utils import load_env_value
 
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_STREAM_NAME = "jobmanageragent:events"
 
 
 def utc_now_iso() -> str:

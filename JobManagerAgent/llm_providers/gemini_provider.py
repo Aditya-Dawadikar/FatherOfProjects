@@ -8,28 +8,18 @@ from google.genai import types as genai_types
 from redis import Redis
 from redis.exceptions import RedisError
 
+from utils.config import (
+	DEFAULT_MODEL,
+	FALLBACK_MODEL,
+	MAX_OUTPUT_TOKENS,
+	PRIMARY_MODEL_COOLDOWN_KEY,
+	PRIMARY_MODEL_COOLDOWN_SECONDS,
+	THINKING_LEVEL,
+)
 from utils.env_utils import load_env_value
 from utils.rate_limiter import RedisRpmLimiter
 
 from .base import MatchResponseError, RateLimitError, TransientProviderError
-
-
-DEFAULT_MODEL = "gemini-3.5-flash"
-FALLBACK_MODEL = "gemini-3.6-flash"
-PRIMARY_MODEL_COOLDOWN_KEY = "jobmanageragent:gemini:3.5:cooldown"
-PRIMARY_MODEL_COOLDOWN_SECONDS = 600
-
-# gemini-3.x models think by default (usage_metadata.thoughts_token_count), which competes with
-# the visible JSON answer for the same output budget -- that silently truncated real responses
-# mid-JSON (see incident: MatchResponseError on a response with no closing brace anywhere, not
-# just in the logged 200-char preview). thinking_budget=0 was the first fix attempt, but it's the
-# pre-Gemini-3 control knob; Gemini 3+ models use thinking_level instead and largely ignore
-# thinking_budget, so thinking kept happening anyway (see incident #2: a STOP-finished response
-# still truncated mid-string). thinking_level="minimal" is the control that actually reaches
-# gemini-3.5/3.6-flash. MAX_OUTPUT_TOKENS is set generously on top of that as headroom, since
-# Gemini 3 thinking models aren't guaranteed to allow thinking all the way down to zero.
-MAX_OUTPUT_TOKENS = 8192
-THINKING_LEVEL = "minimal"
 
 
 _RPM_LIMITER: RedisRpmLimiter | None = None

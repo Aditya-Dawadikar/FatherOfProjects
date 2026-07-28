@@ -7,9 +7,7 @@ from sqlalchemy import Boolean, DateTime, Integer, Select, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.job_data import Base, JobListing
-
-
-DEFAULT_JOB_MATCH_TABLE_NAME = "job_matches"
+from utils.config import DEFAULT_JOB_MATCH_TABLE_NAME
 
 
 def load_job_match_table_name() -> str:

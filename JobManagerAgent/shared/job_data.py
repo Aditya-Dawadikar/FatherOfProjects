@@ -6,8 +6,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-
-DEFAULT_JOB_TABLE_NAME = "job_listings"
+from utils.config import DEFAULT_JOB_TABLE_NAME
 
 
 def load_job_table_name() -> str:

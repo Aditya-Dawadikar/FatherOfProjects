@@ -11,11 +11,19 @@ from langgraph.errors import GraphRecursionError
 from integrations.mlflow import PROMPT_NAME, get_active_prompt
 from integrations.streaming import RedisStreamPublisher, publish_event
 from llm_providers import build_client, load_provider_name
-from llm_providers.gemini_provider import DEFAULT_MODEL, MAX_OUTPUT_TOKENS, THINKING_LEVEL
 from shared.job_data import Base, create_db_engine, load_database_url
 from tools import build_agent_tools
 from utils.agent_logger import get_agent_logger, new_id
-from utils.config import load_match_threshold, load_max_jobs_per_cycle, load_resume
+from utils.config import (
+	DEFAULT_MODEL,
+	MAX_OUTPUT_TOKENS,
+	RECURSION_LIMIT_HEADROOM,
+	STEPS_PER_JOB,
+	THINKING_LEVEL,
+	load_match_threshold,
+	load_max_jobs_per_cycle,
+	load_resume,
+)
 from utils.env_utils import load_env_value
 from utils.mlflow_utils import ensure_tracking_uri_configured, get_tracking_uri, load_mlflow_experiment_name
 from utils.rate_limiter import LangChainRedisRpmLimiter
@@ -25,17 +33,6 @@ Mode = Literal["live", "backfill"]
 
 LOGGER = get_agent_logger(__name__)
 _ORDER_BY_MODE: dict[Mode, str] = {"live": "newest", "backfill": "oldest"}
-
-# Bounds the ReAct loop. Empirically, this LangGraph version costs ~2 recursion-limit "steps"
-# per AI-message turn (agent node + tool node), whether or not that turn makes a tool call --
-# confirmed by a scripted 3-job test (1 fetch turn + 3 tool-call turns/job + 1 final stop turn =
-# 11 turns) failing at limit=17 and succeeding at limit=18. Per job that's 3 tool calls
-# (crawl_job, evaluate_match, record_job_result) * 2 steps = 6, plus headroom covering the
-# initial fetch turn, the final stop turn, and slack for the model taking a couple of extra
-# reasoning-only turns. Without a cap, a model stuck reasoning in circles could burn the RPM
-# budget indefinitely on a single cycle.
-_RECURSION_LIMIT_HEADROOM = 14
-_STEPS_PER_JOB = 6
 
 
 def build_llm(model: str) -> ChatGoogleGenerativeAI:
@@ -162,7 +159,7 @@ def run_matching_cycle_with_agent(
 			}
 		)
 
-		recursion_limit = max_jobs * _STEPS_PER_JOB + _RECURSION_LIMIT_HEADROOM
+		recursion_limit = max_jobs * STEPS_PER_JOB + RECURSION_LIMIT_HEADROOM
 		incomplete = False
 		error_message: str | None = None
 		with mlflow.start_span(
