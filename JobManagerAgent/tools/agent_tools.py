@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import mlflow
 from langchain_core.tools import tool
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
@@ -71,12 +72,34 @@ def build_agent_tools(
 	# transcription path for a recorded result to drift from what score_job actually computed.
 	job_scores: dict[int, JobScore] = {}
 
+	def _trace_tool_call(tool_name: str, tool_args: dict[str, Any], func: Any) -> Any:
+		with mlflow.start_span(
+			name=f"tool:{tool_name}",
+			span_type="TOOL",
+			attributes={"tool_name": tool_name, "tool_args": str(tool_args)},
+		) as span:
+			span.set_inputs({"args": tool_args})
+			try:
+				result = func()
+			except Exception as error:
+				span.set_outputs({"error": str(error)})
+				raise
+			span.set_outputs({"result": result})
+			return result
+
 	@tool
 	def get_jobs_to_process() -> list[dict[str, Any]]:
 		"""Fetch the next batch of jobs that have not yet been evaluated. Each item has job_id,
 		job_role, and company_name only -- call crawl_job(job_id) next for each one to get the
 		full posting detail. Call this once at the start to get your work for this cycle; do not
 		call it again afterward."""
+		return _trace_tool_call(
+			"get_jobs_to_process",
+			{},
+			lambda: _get_jobs_to_process_impl(),
+		)
+
+	def _get_jobs_to_process_impl() -> list[dict[str, Any]]:
 		with Session(engine) as session:
 			candidates = db_get_jobs_to_process(session, limit=limit, order=order)
 		stats["candidate_count"] = len(candidates)
@@ -102,6 +125,13 @@ def build_agent_tools(
 		If the result contains an "error" key, do not call evaluate_match for that job_id --
 		either the posting is gone (404, already automatically recorded as a non-match) or it
 		could not be fetched at all; just move on to the next job."""
+		return _trace_tool_call(
+			"crawl_job",
+			{"job_id": job_id},
+			lambda: _crawl_job_impl(job_id),
+		)
+
+	def _crawl_job_impl(job_id: int) -> dict[str, Any]:
 		job_url = job_urls.get(job_id)
 		if job_id not in job_urls:
 			return {"error": f"unknown job_id={job_id}; call get_jobs_to_process first"}
@@ -142,6 +172,13 @@ def build_agent_tools(
 		"reasoning": str}. Call this once per successfully crawled job, then call
 		record_job_result(job_id) to persist it -- you do not need to pass the score back
 		yourself."""
+		return _trace_tool_call(
+			"evaluate_match",
+			{"job_id": job_id},
+			lambda: _evaluate_match_impl(job_id),
+		)
+
+	def _evaluate_match_impl(job_id: int) -> dict[str, Any]:
 		detail = job_details.get(job_id)
 		if detail is None:
 			return {"error": f"job_id={job_id} has not been crawled yet; call crawl_job first"}
@@ -172,6 +209,13 @@ def build_agent_tools(
 		once per job, immediately after evaluate_match succeeds for it -- do not call it more
 		than once for the same job_id, and never call it for a job_id evaluate_match returned an
 		error for."""
+		return _trace_tool_call(
+			"record_job_result",
+			{"job_id": job_id},
+			lambda: _record_job_result_impl(job_id),
+		)
+
+	def _record_job_result_impl(job_id: int) -> str:
 		score = job_scores.get(job_id)
 		if score is None:
 			return f"job_id={job_id} has not been evaluated yet; call evaluate_match first"
