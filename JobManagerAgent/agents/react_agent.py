@@ -11,7 +11,7 @@ from langgraph.errors import GraphRecursionError
 from integrations.mlflow import PROMPT_NAME, get_active_prompt
 from integrations.streaming import RedisStreamPublisher, publish_event
 from llm_providers import build_client, load_provider_name
-from llm_providers.gemini_provider import DEFAULT_MODEL, MAX_OUTPUT_TOKENS, THINKING_BUDGET
+from llm_providers.gemini_provider import DEFAULT_MODEL, MAX_OUTPUT_TOKENS, THINKING_LEVEL
 from shared.job_data import Base, create_db_engine, load_database_url
 from tools import build_agent_tools
 from utils.agent_logger import get_agent_logger, new_id
@@ -43,7 +43,7 @@ def build_llm(model: str) -> ChatGoogleGenerativeAI:
 	Actual job scoring happens through the evaluate_match tool instead, which calls
 	llm_providers.score_job -- the single scoring definition matcher.py and the offline eval
 	harness also use, inheriting its full safety net (RPM limiter, cooldown+fallback-to-
-	gemini-3.6-flash, the thinking_budget/max_output_tokens truncation fix, rate-limit retries)
+	gemini-3.6-flash, the thinking_level/max_output_tokens truncation fix, rate-limit retries)
 	without re-deriving any of it here.
 
 	This orchestration model still needs its own RPM protection and truncation fix, since it
@@ -55,7 +55,7 @@ def build_llm(model: str) -> ChatGoogleGenerativeAI:
 		google_api_key=load_env_value("GEMINI_API_KEY"),
 		temperature=0,
 		max_output_tokens=MAX_OUTPUT_TOKENS,
-		thinking_budget=THINKING_BUDGET,
+		thinking_level=THINKING_LEVEL,
 		rate_limiter=LangChainRedisRpmLimiter(model=model),
 	)
 
