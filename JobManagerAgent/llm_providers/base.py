@@ -2,7 +2,19 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Any
+
+
+@dataclass(frozen=True)
+class JobScore:
+	"""Result of scoring one job against a resume: what score_job() (see llm_providers/__init__.py)
+	returns, and the one shape every caller -- the live/backfill cycle, the ReAct agent's
+	evaluate_match tool, and the offline eval harness -- works with."""
+
+	match_score: int
+	reasoning: str
+	is_match: bool
 
 
 class MatchResponseError(RuntimeError):

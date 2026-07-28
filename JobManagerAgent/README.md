@@ -223,12 +223,12 @@ params/tags (`llm_provider`, `llm_model`) — so a provider or model swap shows 
 dimension in MLflow rather than being invisible.
 
 **Rate limits are quota- and plan-specific**, and can be per-minute *or* per-day (token-based).
-The live/backfill agent is paced by the `LLM_RPM_CAP__<MODEL>` budget in `rate_limiter.py`, not by
-a fixed sleep — see "Environment variables" below, and set it from your actual quota (e.g.
-https://aistudio.google.com/rate-limit for Gemini) rather than the shipped default, especially if
-the API key is shared with another application. `LLM_REQUEST_DELAY_SECONDS` still paces the
-offline eval harness the old way (a fixed sleep between calls); if you're seeing 429s there
-despite a generous delay, check the actual error message (it names the limit type) and the
+Every real Gemini call — live/backfill cycles, the ReAct agent, and the offline eval harness
+alike, since all three now go through the single `llm_providers.score_job`/`evaluate_match`
+pipeline — is paced by the `LLM_RPM_CAP__<MODEL>` budget in `rate_limiter.py`, not a fixed sleep.
+Set it from your actual quota (e.g. https://aistudio.google.com/rate-limit for Gemini) rather than
+the shipped default, especially if the API key is shared with another application. If you're still
+seeing 429s despite that, check the actual error message (it names the limit type) and the
 provider's usage dashboard.
 
 ## Prompt versioning
@@ -327,8 +327,8 @@ currently promoted alias) — use `local` to validate a prompt edit *before* the
 auto-promotes it via `prompt_registry.get_active_prompt()`. `--provider gemini` explicitly pins
 the provider for one run regardless of `LLM_PROVIDER` — currently `gemini` is the only accepted
 value. `--limit N` for a quick smoke test,
-`--model`/`--threshold`/`--request-delay`/`--experiment-name`/`--run-name` to override the
-corresponding env var for one run.
+`--model`/`--threshold`/`--experiment-name`/`--run-name` to override the corresponding env var
+for one run.
 
 Each run logs to the `MLFLOW_EVAL_EXPERIMENT_NAME` experiment (default `job_matching_evals`,
 deliberately separate from the live-cycle `job_matching` experiment since the metrics don't share
@@ -403,8 +403,6 @@ what actually limits throughput; a big batch would just tie up one cycle for man
 checking for new live-trigger events), `LLM_RPM_CAP__<MODEL>` (e.g.
 `LLM_RPM_CAP__GEMINI_3_5_FLASH`, default 4 — the per-model requests-per-minute budget enforced by
 `rate_limiter.py`; set this from your actual quota in the provider's console, not the default,
-especially if the API key is shared with another application), `LLM_PROVIDER` (`gemini` only —
-see "LLM provider" above), and `LLM_REQUEST_DELAY_SECONDS` (default 20 — paced sleep used only by
-the offline eval harness now; live/backfill matching cycles are paced by the RPM budget instead;
-note some providers also enforce a *daily* token quota
-that this can't help with — see "LLM provider" above).
+especially if the API key is shared with another application), and `LLM_PROVIDER` (`gemini` only —
+see "LLM provider" above). Note some providers also enforce a *daily* token quota that the RPM
+budget alone can't help with — see "LLM provider" above.

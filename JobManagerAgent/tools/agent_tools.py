@@ -7,6 +7,7 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from crawler import CrawlError, NotFoundCrawlError, fetch_job_detail
+from llm_providers import JobScore, MatchResponseError, RateLimitError, TransientProviderError, score_job
 
 from .db_tools import JobResult, Order
 from .db_tools import get_jobs_to_process as db_get_jobs_to_process
@@ -21,11 +22,23 @@ def build_agent_tools(
 	threshold: int,
 	prompt_name: str,
 	prompt_version: str,
+	prompt_version_obj: Any,
+	resume_text: str,
+	llm_client: Any,
 	model_name: str,
-) -> tuple[Any, Any, dict[str, Any]]:
-	"""Build the 2 LLM-facing tools for one agent cycle, bound to `engine`, a candidate ordering,
+	provider: str,
+) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
+	"""Build the 4 LLM-facing tools for one agent cycle, bound to `engine`, a candidate ordering,
 	and a batch size the agent doesn't get to choose (mode/order/limit stay under deterministic
-	control, same as the non-agentic cycle -- only per-job scoring judgment is the LLM's job).
+	control, same as the non-agentic cycle -- the LLM's job is deciding *which* job to work on
+	next and *when* to crawl/evaluate/record it, not reinventing scoring judgment or DB access).
+
+	evaluate_match wraps llm_providers.score_job -- the single scoring definition also used by
+	matcher.py's deterministic cycle and evals/run_offline_eval.py -- instead of letting the
+	ReAct model score freeform. That means a react_agent cycle's `prompt_version` metadata is
+	actually true (the real MLflow-registered prompt template did the scoring), and it inherits
+	gemini_provider.py's full safety net (RPM limiter, cooldown+fallback, the truncation fix)
+	rather than only the subset build_llm() wires into the ReAct model itself.
 
 	Each tool call opens its own short-lived Session rather than sharing one across calls:
 	LangGraph's ToolNode always dispatches tool execution through a thread pool (even for a
@@ -34,9 +47,9 @@ def build_agent_tools(
 	real thread-safety violation on Postgres. A fresh Session per call sidesteps this regardless
 	of which thread runs it.
 
-	Returns `(get_jobs_tool, record_result_tool, stats)`; `stats` is mutated by the tools as
-	they run so the caller can compute cycle-level metrics without re-parsing the agent's
-	message history afterward.
+	Returns `(get_jobs_tool, crawl_job_tool, evaluate_match_tool, record_result_tool, stats)`;
+	`stats` is mutated by the tools as they run so the caller can compute cycle-level metrics
+	without re-parsing the agent's message history afterward.
 	"""
 	stats: dict[str, Any] = {
 		"candidate_count": 0,
@@ -44,71 +57,133 @@ def build_agent_tools(
 		"matched_count": 0,
 		"not_found_jobs": [],
 		"crawl_failed_job_ids": [],
+		"evaluate_failed_job_ids": [],
 	}
+	# job_id -> job_url, populated by get_jobs_to_process and consulted by crawl_job -- keeps
+	# job_url out of the LLM's hands entirely (it only ever deals in job_id), so there's no way
+	# for a mistyped/hallucinated URL to reach the crawler.
+	job_urls: dict[int, str | None] = {}
+	# job_id -> crawled detail, populated by crawl_job and consulted by evaluate_match -- the LLM
+	# never has to echo the posting text back through tool arguments to get it scored.
+	job_details: dict[int, dict[str, Any]] = {}
+	# job_id -> JobScore, populated by evaluate_match and consulted by record_job_result -- the
+	# LLM never retypes a score/reasoning/is_match it already received, so there is no
+	# transcription path for a recorded result to drift from what score_job actually computed.
+	job_scores: dict[int, JobScore] = {}
 
 	@tool
 	def get_jobs_to_process() -> list[dict[str, Any]]:
-		"""Fetch the next batch of jobs that have not yet been evaluated. Each item includes the
-		full job description, required skills, experience level, salary/equity range, and other
-		details crawled from the posting -- everything needed to judge fit against the
-		candidate's resume in the system prompt. Jobs whose posting page is gone (404) are
-		automatically recorded as non-matches and are not included in the result; you don't need
-		to do anything about those. Call this once at the start to get your work for this cycle."""
+		"""Fetch the next batch of jobs that have not yet been evaluated. Each item has job_id,
+		job_role, and company_name only -- call crawl_job(job_id) next for each one to get the
+		full posting detail. Call this once at the start to get your work for this cycle; do not
+		call it again afterward."""
 		with Session(engine) as session:
 			candidates = db_get_jobs_to_process(session, limit=limit, order=order)
-			stats["candidate_count"] = len(candidates)
+		stats["candidate_count"] = len(candidates)
 
-			jobs: list[dict[str, Any]] = []
-			for candidate in candidates:
-				if not candidate.job_url:
-					stats["crawl_failed_job_ids"].append(candidate.job_id)
-					continue
-				try:
-					detail = fetch_job_detail(candidate.job_url)
-				except NotFoundCrawlError as error:
-					db_record_job_result(
-						session,
-						JobResult(
-							job_id=candidate.job_id,
-							match_score=0,
-							is_match=False,
-							reasoning=f"not_found_404 job_url={candidate.job_url}; {error}",
-							prompt_name=prompt_name,
-							prompt_version=prompt_version,
-							model_name=model_name,
-						),
-					)
-					stats["not_found_jobs"].append({"job_id": candidate.job_id, "job_url": candidate.job_url})
-					continue
-				except CrawlError:
-					stats["crawl_failed_job_ids"].append(candidate.job_id)
-					continue
-
-				jobs.append(
-					{
-						"job_id": candidate.job_id,
-						"job_role": candidate.job_role,
-						"company_name": candidate.company_name,
-						**detail,
-					}
-				)
-			return jobs
+		jobs: list[dict[str, Any]] = []
+		for candidate in candidates:
+			job_urls[candidate.job_id] = candidate.job_url
+			jobs.append(
+				{
+					"job_id": candidate.job_id,
+					"job_role": candidate.job_role,
+					"company_name": candidate.company_name,
+				}
+			)
+		return jobs
 
 	@tool
-	def record_job_result(job_id: int, match_score: int, reasoning: str) -> str:
-		"""Record your evaluation of one job against the resume. `match_score` is 0-100;
-		`reasoning` is a short explanation of the score. Call this exactly once per job returned
-		by get_jobs_to_process, after you've assessed it -- do not call it more than once for the
-		same job_id."""
-		is_match = match_score >= threshold
+	def crawl_job(job_id: int) -> dict[str, Any]:
+		"""Fetch the full posting detail for a job_id returned by get_jobs_to_process: full job
+		description, required skills, experience level, salary/equity range, and other fields.
+		Call this once per job_id, then call evaluate_match(job_id) next.
+
+		If the result contains an "error" key, do not call evaluate_match for that job_id --
+		either the posting is gone (404, already automatically recorded as a non-match) or it
+		could not be fetched at all; just move on to the next job."""
+		job_url = job_urls.get(job_id)
+		if job_id not in job_urls:
+			return {"error": f"unknown job_id={job_id}; call get_jobs_to_process first"}
+		if not job_url:
+			stats["crawl_failed_job_ids"].append(job_id)
+			return {"error": f"job_id={job_id} has no URL on file; skip it"}
+
+		try:
+			detail = fetch_job_detail(job_url)
+		except NotFoundCrawlError as error:
+			with Session(engine) as session:
+				db_record_job_result(
+					session,
+					JobResult(
+						job_id=job_id,
+						match_score=0,
+						is_match=False,
+						reasoning=f"not_found_404 job_url={job_url}; {error}",
+						prompt_name=prompt_name,
+						prompt_version=prompt_version,
+						model_name=model_name,
+					),
+				)
+			stats["not_found_jobs"].append({"job_id": job_id, "job_url": job_url})
+			return {"error": f"job_id={job_id} posting not found (404); automatically recorded as a non-match"}
+		except CrawlError as error:
+			stats["crawl_failed_job_ids"].append(job_id)
+			return {"error": f"job_id={job_id} could not be crawled: {error}"}
+
+		job_details[job_id] = detail
+		return detail
+
+	@tool
+	def evaluate_match(job_id: int) -> dict[str, Any]:
+		"""Score a job you've already crawled via crawl_job against the candidate's resume.
+		This calls score_job() -- the same scoring pipeline the non-agentic matching cycle and
+		the offline eval harness use, not your own judgment. Returns {"match_score": 0-100,
+		"reasoning": str}. Call this once per successfully crawled job, then call
+		record_job_result(job_id) to persist it -- you do not need to pass the score back
+		yourself."""
+		detail = job_details.get(job_id)
+		if detail is None:
+			return {"error": f"job_id={job_id} has not been crawled yet; call crawl_job first"}
+
+		try:
+			score = score_job(
+				client=llm_client,
+				model=model_name,
+				provider=provider,
+				prompt_version=prompt_version_obj,
+				resume=resume_text,
+				job=detail,
+				threshold=threshold,
+			)
+		except RateLimitError as error:
+			stats["evaluate_failed_job_ids"].append(job_id)
+			return {"error": f"rate limited while evaluating job_id={job_id}: {error}"}
+		except (MatchResponseError, TransientProviderError) as error:
+			stats["evaluate_failed_job_ids"].append(job_id)
+			return {"error": f"could not evaluate job_id={job_id}: {error}"}
+
+		job_scores[job_id] = score
+		return {"match_score": score.match_score, "reasoning": score.reasoning}
+
+	@tool
+	def record_job_result(job_id: int) -> str:
+		"""Persist the evaluation for a job you've already scored via evaluate_match. Call this
+		once per job, immediately after evaluate_match succeeds for it -- do not call it more
+		than once for the same job_id, and never call it for a job_id evaluate_match returned an
+		error for."""
+		score = job_scores.get(job_id)
+		if score is None:
+			return f"job_id={job_id} has not been evaluated yet; call evaluate_match first"
+
 		with Session(engine) as session:
 			written = db_record_job_result(
 				session,
 				JobResult(
 					job_id=job_id,
-					match_score=match_score,
-					is_match=is_match,
-					reasoning=reasoning,
+					match_score=score.match_score,
+					is_match=score.is_match,
+					reasoning=score.reasoning,
 					prompt_name=prompt_name,
 					prompt_version=prompt_version,
 					model_name=model_name,
@@ -116,9 +191,9 @@ def build_agent_tools(
 			)
 		if written:
 			stats["evaluated_count"] += 1
-			if is_match:
+			if score.is_match:
 				stats["matched_count"] += 1
-			return f"recorded job_id={job_id} match_score={match_score} is_match={is_match}"
+			return f"recorded job_id={job_id} match_score={score.match_score} is_match={score.is_match}"
 		return f"job_id={job_id} was already recorded (no-op)"
 
-	return get_jobs_to_process, record_job_result, stats
+	return get_jobs_to_process, crawl_job, evaluate_match, record_job_result, stats

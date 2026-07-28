@@ -1,25 +1,14 @@
 from __future__ import annotations
 
-import time
-from pathlib import Path
 from typing import Any, Literal
 
 import mlflow
 from sqlalchemy.orm import Session
 
 from agent_logger import AgentLogger, get_agent_logger, new_id
+from config import load_match_threshold, load_max_jobs_per_cycle, load_resume
 from crawler import CrawlError, NotFoundCrawlError, fetch_job_detail
-from env_utils import load_env_value
-from llm_providers import (
-	MatchResponseError,
-	RateLimitError,
-	TransientProviderError,
-	build_client,
-	evaluate_match,
-	load_model_name,
-	load_provider_name,
-	render_prompt,
-)
+from llm_providers import MatchResponseError, RateLimitError, TransientProviderError, build_client, load_model_name, load_provider_name, score_job
 from mlflow_utils import ensure_tracking_uri_configured, get_tracking_uri, load_mlflow_experiment_name
 from prompt_registry import PROMPT_NAME, get_active_prompt
 from shared.job_data import Base, create_db_engine, load_database_url
@@ -30,35 +19,8 @@ from tools import JobCandidate, JobResult, get_jobs_to_process, record_job_resul
 Mode = Literal["live", "backfill"]
 
 LOGGER = get_agent_logger(__name__)
-RESUME_FILE = Path(__file__).with_name("resume.md")
 
 _ORDER_BY_MODE: dict[Mode, str] = {"live": "newest", "backfill": "oldest"}
-
-# The LLM rate limiter (see rate_limiter.py) proactively paces calls under a self-imposed RPM
-# budget, so a RateLimitError reaching here should be rare -- it means the shared project quota
-# was consumed by something outside this process (e.g. another app on the same API key) within
-# the same window. Worth a couple of short retries before giving up on that one job for this
-# cycle: it stays unrecorded, so the next cycle (live or backfill) picks it back up for free via
-# the same idempotent query, instead of the whole batch being discarded like before.
-_RATE_LIMIT_RETRY_ATTEMPTS = 2
-_RATE_LIMIT_DEFAULT_BACKOFF_SECONDS = 15.0
-
-
-def load_resume() -> str:
-	if not RESUME_FILE.exists():
-		raise FileNotFoundError(f"{RESUME_FILE} not found; fill in your resume/skills before running the agent")
-	return RESUME_FILE.read_text(encoding="utf-8")
-
-
-def load_match_threshold() -> int:
-	return int(load_env_value("MATCH_THRESHOLD", "70"))
-
-
-def load_max_jobs_per_cycle() -> int:
-	# Kept small on purpose: real throughput is now capped at a few requests/minute by the LLM
-	# rate limiter, so a big batch just ties up one cycle for many minutes without checking for
-	# new live-trigger events. Smaller batches keep live and backfill work interleaved.
-	return int(load_env_value("MAX_JOBS_PER_CYCLE", "5"))
 
 
 def _empty_result() -> dict[str, Any]:
@@ -292,21 +254,25 @@ def _evaluate_and_record_one_job(
 	job_detail["company_name"] = candidate.company_name
 
 	log.action("llm_call_start", provider=provider, model=llm_model, prompt_version=prompt_version)
-	prompt = render_prompt(prompt_version_obj, resume=resume_text, job=job_detail)
-	result = _evaluate_with_rate_limit_retries(
-		llm_client=llm_client, llm_model=llm_model, prompt=prompt, provider=provider, log=log
+	score = score_job(
+		client=llm_client,
+		model=llm_model,
+		provider=provider,
+		prompt_version=prompt_version_obj,
+		resume=resume_text,
+		job=job_detail,
+		threshold=threshold,
 	)
 
-	is_match = result["match_score"] >= threshold
 	# Commit immediately so a job that succeeds is never re-evaluated (and never re-billed
 	# against the provider's quota) even if a later job in this same cycle fails.
 	written = record_job_result(
 		session,
 		JobResult(
 			job_id=candidate.job_id,
-			match_score=result["match_score"],
-			is_match=is_match,
-			reasoning=result["reasoning"],
+			match_score=score.match_score,
+			is_match=score.is_match,
+			reasoning=score.reasoning,
 			prompt_name=PROMPT_NAME,
 			prompt_version=prompt_version,
 			model_name=llm_model,
@@ -315,26 +281,10 @@ def _evaluate_and_record_one_job(
 	if not written:
 		log.action("match_already_recorded", job_role=candidate.job_role)
 	else:
-		log.action("match_recorded", job_role=candidate.job_role, match_score=result["match_score"], is_match=is_match)
+		log.action("match_recorded", job_role=candidate.job_role, match_score=score.match_score, is_match=score.is_match)
 
-	mlflow.log_metrics({"match_score": result["match_score"], "is_match": int(is_match)}, step=metric_step)
-	return is_match
-
-
-def _evaluate_with_rate_limit_retries(
-	*, llm_client: Any, llm_model: str, prompt: str, provider: str, log: AgentLogger
-) -> dict[str, Any]:
-	attempt = 0
-	while True:
-		try:
-			return evaluate_match(llm_client, model=llm_model, prompt=prompt, provider=provider)
-		except RateLimitError as error:
-			attempt += 1
-			if attempt > _RATE_LIMIT_RETRY_ATTEMPTS:
-				raise
-			backoff = error.retry_after or _RATE_LIMIT_DEFAULT_BACKOFF_SECONDS
-			log.sleeping(backoff, reason="rate_limit_retry", attempt=attempt)
-			time.sleep(backoff)
+	mlflow.log_metrics({"match_score": score.match_score, "is_match": int(score.is_match)}, step=metric_step)
+	return score.is_match
 
 
 def _record_unavailable_job(

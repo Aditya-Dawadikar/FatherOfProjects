@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -22,18 +21,17 @@ import mlflow  # noqa: E402
 from mlflow.entities.model_registry.prompt_version import PromptVersion  # noqa: E402
 
 from agent_logger import configure_logging, get_agent_logger, new_id  # noqa: E402
+from config import load_match_threshold, load_resume  # noqa: E402
 from evals.dataset import DatasetError, EvalCase, load_golden_dataset  # noqa: E402
 from llm_providers import (  # noqa: E402
 	MatchResponseError,
 	RateLimitError,
 	TransientProviderError,
 	build_client,
-	evaluate_match,
 	load_model_name,
 	load_provider_name,
-	render_prompt,
+	score_job,
 )
-from matcher import load_match_threshold, load_request_delay_seconds, load_resume  # noqa: E402
 from mlflow_utils import ensure_tracking_uri_configured, get_tracking_uri, load_mlflow_eval_experiment_name  # noqa: E402
 from prompt_registry import PROMPT_ALIAS, PROMPT_FILE, PROMPT_NAME  # noqa: E402
 
@@ -74,11 +72,18 @@ def _run_one_case(
 	threshold: int,
 ) -> dict[str, Any]:
 	resume_text = case.resume if case.resume is not None else default_resume
-	prompt = render_prompt(prompt_version_obj, resume=resume_text, job=case.job)
-	result = evaluate_match(llm_client, model=llm_model, prompt=prompt, provider=provider)
+	score = score_job(
+		client=llm_client,
+		model=llm_model,
+		provider=provider,
+		prompt_version=prompt_version_obj,
+		resume=resume_text,
+		job=case.job,
+		threshold=threshold,
+	)
 
-	predicted_score = result["match_score"]
-	predicted_is_match = predicted_score >= threshold
+	predicted_score = score.match_score
+	predicted_is_match = score.is_match
 	correct = predicted_is_match == case.expected_is_match
 
 	score_in_range = None
@@ -94,7 +99,7 @@ def _run_one_case(
 		"expected_score_min": case.expected_score_min,
 		"expected_score_max": case.expected_score_max,
 		"score_in_range": score_in_range,
-		"reasoning": result["reasoning"],
+		"reasoning": score.reasoning,
 		"error": None,
 	}
 
@@ -184,7 +189,6 @@ def run_offline_eval(
 	provider: str | None,
 	model: str | None,
 	threshold: int | None,
-	request_delay: float | None,
 	experiment_name: str | None,
 	run_name: str | None,
 	limit: int | None,
@@ -202,7 +206,6 @@ def run_offline_eval(
 	resolved_provider = provider or load_provider_name()
 	resolved_model = model or load_model_name(resolved_provider)
 	resolved_threshold = threshold if threshold is not None else load_match_threshold()
-	resolved_delay = request_delay if request_delay is not None else load_request_delay_seconds()
 	llm_client = build_client(resolved_provider)
 
 	ensure_tracking_uri_configured()
@@ -255,10 +258,8 @@ def run_offline_eval(
 			)
 			mlflow.log_artifact(str(dataset_path))
 
-			for index, case in enumerate(cases):
+			for case in cases:
 				case_log = log.bind(case_id=case.id)
-				if index > 0 and resolved_delay > 0:
-					time.sleep(resolved_delay)
 
 				try:
 					with mlflow.start_span(
@@ -296,9 +297,12 @@ def run_offline_eval(
 					)
 					rows.append(row)
 				except RateLimitError as error:
-					case_log.action("eval_stopped_rate_limited", error=str(error), retry_after=error.retry_after)
+					# score_job() already retries a rate limit with backoff before raising, so
+					# reaching here means retries are exhausted for this case specifically --
+					# same "skip and move on" response as the live/backfill cycle, not aborting
+					# the rest of the dataset over one case.
+					case_log.action("case_rate_limited", error=str(error), retry_after=error.retry_after)
 					rows.append(_error_row(case, "rate_limited"))
-					break
 				except (MatchResponseError, TransientProviderError) as error:
 					case_log.action("case_errored", error=str(error))
 					rows.append(_error_row(case, str(error)))
@@ -332,9 +336,6 @@ def _parse_args() -> argparse.Namespace:
 	)
 	parser.add_argument("--model", default=None, help="Overrides the active provider's model env var for this run.")
 	parser.add_argument("--threshold", type=int, default=None, help="Overrides MATCH_THRESHOLD for this run.")
-	parser.add_argument(
-		"--request-delay", type=float, default=None, help="Overrides LLM_REQUEST_DELAY_SECONDS for this run."
-	)
 	parser.add_argument("--experiment-name", default=None, help="Overrides MLFLOW_EVAL_EXPERIMENT_NAME.")
 	parser.add_argument("--run-name", default=None, help="MLflow run name; defaults to eval-<eval_id>.")
 	parser.add_argument("--limit", type=int, default=None, help="Only score the first N cases (smoke testing).")
@@ -350,7 +351,6 @@ def main() -> None:
 			provider=args.provider,
 			model=args.model,
 			threshold=args.threshold,
-			request_delay=args.request_delay,
 			experiment_name=args.experiment_name,
 			run_name=args.run_name,
 			limit=args.limit,
