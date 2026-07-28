@@ -232,6 +232,8 @@ MLflow logging code.
 
 ## Experiment tracking
 
+For a deeper design write-up of the eval and MLflow flow, see [docs/evals-mlflow-design.md](docs/evals-mlflow-design.md).
+
 Every call to `run_matching_cycle()` (`matcher.py`) opens one MLflow run, under the experiment
 named by `MLFLOW_EXPERIMENT_NAME` (default `job_matching`), against the same Tracking Server used
 for prompt versioning:
