@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from evals.dataset import DatasetError
 from evals.run_offline_eval import run_offline_eval
@@ -26,14 +26,37 @@ _EVALS_DIR = (PROJECT_ROOT / "evals").resolve()
 
 
 class EvalTriggerRequest(BaseModel):
-	dataset: str = "evals/golden_dataset.jsonl"
-	prompt_source: Literal["production", "local"] = "production"
-	provider: str | None = None
-	model: str | None = None
-	threshold: int | None = None
-	experiment_name: str | None = None
-	run_name: str | None = None
-	limit: int | None = None
+	dataset: str = Field(
+		default="evals/golden_dataset.jsonl",
+		description="Path to a golden-dataset JSONL file, relative to evals/ (must resolve inside "
+		"it -- absolute paths and `..` are rejected).",
+	)
+	prompt_source: Literal["production", "local"] = Field(
+		default="production",
+		description="'production' read-only-loads the MLflow-registered prompt at the "
+		"'production' alias. 'local' scores prompts/job_match_v1.txt as it sits on disk right "
+		"now, without registering/promoting it -- use this to validate an edit before the next "
+		"live cycle auto-promotes it.",
+	)
+	provider: str | None = Field(default=None, description="Overrides LLM_PROVIDER for this run. Currently 'gemini' is the only accepted value.")
+	model: str | None = Field(default=None, description="Overrides the active provider's model env var for this run.")
+	threshold: int | None = Field(default=None, description="Overrides MATCH_THRESHOLD (0-100) for this run.")
+	experiment_name: str | None = Field(default=None, description="Overrides MLFLOW_EVAL_EXPERIMENT_NAME for this run.")
+	run_name: str | None = Field(default=None, description="MLflow run name; defaults to this trigger's eval_id.")
+	limit: int | None = Field(
+		default=None,
+		description="Only score the first N cases. Recommended when testing via this page -- "
+		"omitting it scores the entire dataset (60 cases in golden_dataset.jsonl), which makes "
+		"that many real, billed Gemini calls and can take 10+ minutes under the default RPM cap.",
+	)
+
+	model_config = {
+		"json_schema_extra": {
+			"examples": [
+				{"dataset": "evals/golden_dataset.example.jsonl", "prompt_source": "local", "limit": 1}
+			]
+		}
+	}
 
 
 class EvalTriggerResponse(BaseModel):
@@ -130,7 +153,7 @@ def _to_status_response(record: _EvalRunRecord) -> EvalStatusResponse:
 	)
 
 
-@router.post("", status_code=202)
+@router.post("", status_code=202, summary="Trigger an offline eval run")
 def trigger_eval(payload: EvalTriggerRequest) -> EvalTriggerResponse:
 	"""Kicks off evals/run_offline_eval.py's run_offline_eval() on a background thread and
 	returns immediately -- a full run against the real golden dataset can take 10+ minutes under
@@ -165,8 +188,13 @@ def trigger_eval(payload: EvalTriggerRequest) -> EvalTriggerResponse:
 	return EvalTriggerResponse(eval_id=eval_id, status="running")
 
 
-@router.get("/{eval_id}")
+@router.get("/{eval_id}", summary="Poll an eval run's status/result")
 def get_eval(eval_id: str) -> EvalStatusResponse:
+	"""`status` is "running" until the background thread finishes. On "completed", `result` holds
+	the same summary dict the CLI prints (accuracy/precision/recall/f1/...). On "failed", `error`
+	holds the exception message -- check this first if a run seems stuck, since a bad dataset or
+	an unreachable MLflow tracking server surfaces here rather than as an HTTP error (the trigger
+	request already returned 202 by the time either of those would be discovered)."""
 	with _RUNS_LOCK:
 		record = _RUNS.get(eval_id)
 	if record is None:
@@ -174,8 +202,10 @@ def get_eval(eval_id: str) -> EvalStatusResponse:
 	return _to_status_response(record)
 
 
-@router.get("")
+@router.get("", summary="List eval runs since this process started")
 def list_evals() -> list[EvalStatusResponse]:
+	"""In-memory only -- a server restart clears this list. Find older runs in the MLflow
+	`job_matching_evals` experiment instead, by run_name (the eval_id, unless overridden)."""
 	with _RUNS_LOCK:
 		records = list(_RUNS.values())
 	return [_to_status_response(record) for record in records]

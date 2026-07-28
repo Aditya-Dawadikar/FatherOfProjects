@@ -48,7 +48,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
-	app = FastAPI(title="JobManagerAgent", lifespan=lifespan)
+	app = FastAPI(
+		title="JobManagerAgent",
+		description=(
+			"The live matching agent runs on a background thread and isn't controlled through "
+			"this API. **/evals** triggers the offline eval harness -- use the 'Try it out' "
+			"button below; the default example scores 1 case from the tiny example dataset "
+			"(cheap/fast). Omitting `limit` on a real request scores the full golden dataset: "
+			"real, billed Gemini calls, 10+ minutes."
+		),
+		lifespan=lifespan,
+	)
 	app.include_router(eval_runs_router)
 
 	@app.get("/health")
