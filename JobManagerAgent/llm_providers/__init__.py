@@ -115,10 +115,9 @@ def score_job(
 ) -> JobScore:
 	"""The single definition of 'evaluate one job against the resume': renders the active prompt
 	template, scores it via evaluate_match (which already retries transient/rate-limit failures),
-	and applies the match threshold. Used identically by the deterministic live/backfill cycle
-	(matcher.py), the ReAct agent's evaluate_match tool (tools/agent_tools.py), and the offline
-	eval harness (evals/run_offline_eval.py) -- there is exactly one place "is this a match"
-	gets decided, so the three can never quietly drift apart.
+	and applies the match threshold. Used identically by the ReAct agent's evaluate_match tool
+	(tools/agent_tools.py) and the offline eval harness (evals/run_offline_eval.py) -- there is
+	exactly one place "is this a match" gets decided, so the two can never quietly drift apart.
 	"""
 	prompt = render_prompt(prompt_version, resume=resume, job=job)
 	result = evaluate_match(client, model=model, prompt=prompt, provider=provider)

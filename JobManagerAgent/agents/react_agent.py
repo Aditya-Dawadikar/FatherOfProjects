@@ -38,10 +38,10 @@ _ORDER_BY_MODE: dict[Mode, str] = {"live": "newest", "backfill": "oldest"}
 def build_llm(model: str) -> ChatGoogleGenerativeAI:
 	"""The model driving the ReAct loop's own orchestration decisions (which tool to call next).
 	Actual job scoring happens through the evaluate_match tool instead, which calls
-	llm_providers.score_job -- the single scoring definition matcher.py and the offline eval
-	harness also use, inheriting its full safety net (RPM limiter, cooldown+fallback-to-
-	gemini-3.6-flash, the thinking_level/max_output_tokens truncation fix, rate-limit retries)
-	without re-deriving any of it here.
+	llm_providers.score_job -- the single scoring definition the offline eval harness also uses,
+	inheriting its full safety net (RPM limiter, cooldown+fallback-to-gemini-3.6-flash, the
+	thinking_level/max_output_tokens truncation fix, rate-limit retries) without re-deriving any
+	of it here.
 
 	This orchestration model still needs its own RPM protection and truncation fix, since it
 	makes its own real calls to decide each tool call -- reused here rather than re-derived, but
@@ -91,7 +91,7 @@ def run_matching_cycle_with_agent(
 	mode: Mode = "live",
 ) -> dict[str, Any]:
 	cycle_id = cycle_id or new_id()
-	log = LOGGER.bind(cycle_id=cycle_id, mode=mode, engine="react_agent")
+	log = LOGGER.bind(cycle_id=cycle_id, mode=mode)
 
 	engine = create_db_engine(load_database_url())
 	Base.metadata.create_all(engine)
@@ -144,7 +144,6 @@ def run_matching_cycle_with_agent(
 			{
 				"cycle_id": cycle_id,
 				"mode": mode,
-				"engine": "react_agent",
 				"prompt_name": PROMPT_NAME,
 				"llm_provider": "gemini",
 			}
@@ -216,5 +215,5 @@ def run_matching_cycle_with_agent(
 		mlflow.flush_trace_async_logging(terminate=False)
 
 	log.action("cycle_complete", **result)
-	publish_event(publisher, "matching_cycle_completed", cycle_id=cycle_id, mode=mode, engine="react_agent", **result)
+	publish_event(publisher, "matching_cycle_completed", cycle_id=cycle_id, mode=mode, **result)
 	return result

@@ -23,7 +23,7 @@ class MatchResponseError(RuntimeError):
 
 class RateLimitError(RuntimeError):
 	"""Provider-agnostic rate-limit signal. Every provider module catches its own SDK's
-	rate-limit exception and re-raises this instead, so matcher.py/run_offline_eval.py never
+	rate-limit exception and re-raises this instead, so react_agent.py/run_offline_eval.py never
 	need a per-provider except clause."""
 
 	def __init__(self, message: str, *, retry_after: float | None = None) -> None:

@@ -74,65 +74,59 @@ can't get the consumer stuck reprocessing it forever.
 **5. `on_trigger` runs another matching cycle**, this time with `reason="pipeline_completed"`,
 `mode="live"` — same code path as the boot-time one.
 
-**6. Inside `run_matching_cycle(mode=...)` (`matcher.py`), per cycle:**
+**6. Inside `run_matching_cycle_with_agent(mode=...)` (`react_agent.py`), per cycle:**
    - Opens a DB session against `DATABASE_URL`/`POSTGRES_URL` and ensures the ORM tables exist
      (`Base.metadata.create_all`).
-   - Calls the `get_jobs_to_process` tool (`tools/db_tools.py`): every `job_listings.job_id` that
-     has **no** row in `job_matches`, capped at `MAX_JOBS_PER_CYCLE` — ordered newest-updated
-     first for `mode="live"`, oldest-updated first for `mode="backfill"`. This anti-join is what
-     makes cycles idempotent/resumable regardless of mode — a job is only ever evaluated once,
-     ever, and it doesn't matter whether a live cycle or a backfill cycle is the one that reaches
-     it. If there are no candidates, the cycle returns immediately without opening an MLflow run.
    - Loads `resume.md` verbatim (this is the literal text sent to the LLM every time) and calls
      `get_active_prompt()` (`prompt_registry.py`): reads `prompts/job_match_v1.txt` off disk,
      compares it against the MLflow prompt version currently aliased `production`, and if the
      file changed (or nothing is registered yet), registers a new version and re-points the alias
      — so editing the prompt file is the entire versioning workflow, no manual step.
-   - For each candidate job, `_evaluate_and_record_one_job`:
-     - `crawler.fetch_job_detail(job_url)` — GETs the job's detail page with a browser-like
-       `User-Agent`, regexes out the `data-page="..."` attribute (a server-rendered JSON blob),
-       HTML-unescapes and JSON-decodes it, and pulls `title`/`descriptionHtml`→text/
+   - Builds the 4 tools for this one cycle (`tools/agent_tools.py`'s `build_agent_tools`), bound to
+     this cycle's DB engine, `mode`-derived ordering, `MAX_JOBS_PER_CYCLE` limit, and
+     `MATCH_THRESHOLD` — the agent doesn't get to choose any of those, only *which* job to work on
+     next and *when* to call each tool:
+     - `get_jobs_to_process` — same anti-join query as before (`tools/db_tools.py`): every
+       `job_listings.job_id` with **no** row in `job_matches`, capped at `MAX_JOBS_PER_CYCLE`,
+       newest-updated first for `mode="live"`, oldest-updated first for `mode="backfill"`. This is
+       what makes cycles idempotent/resumable regardless of mode.
+     - `crawl_job(job_id)` — `crawler.fetch_job_detail(job_url)`: GETs the job's detail page with a
+       browser-like `User-Agent`, regexes out the `data-page="..."` attribute (a server-rendered
+       JSON blob), HTML-unescapes and JSON-decodes it, and pulls `title`/`descriptionHtml`→text/
        `interviewProcessHtml`→text/`skills`/`minExperience`/`salaryRange`/etc. out of
-       `payload.props.job`. Any failure here (network error, missing payload) raises
-       `CrawlError`.
-     - `llm_providers.render_prompt` fills the MLflow prompt template's `{{variable}}` placeholders
-       with the resume text and every field pulled from the job detail.
-     - `llm_providers.evaluate_match` dispatches to `gemini_provider.py`'s `call_model`, which
-       first acquires a slot from `rate_limiter.py`'s per-model requests-per-minute budget
-       (`LLM_RPM_CAP__<MODEL>`, a Redis sliding window shared across live cycles, backfill
-       cycles, and offline evals) — blocking briefly if that model's budget is currently spent —
-       then calls the provider's API with `temperature=0` and JSON-mode output;
-       `parse_match_response` then extracts `{match_score, reasoning}` from the reply, tolerating
-       a model that wraps the JSON in prose (regex-extracts the first `{...}` block) but raising
-       `MatchResponseError` if no valid score can be found.
-     - The result is written back via the `record_job_result` tool (`tools/db_tools.py`): a
-       `JobMatch` row with `is_match = match_score >= MATCH_THRESHOLD`, the prompt name/version,
-       and the model name — **committed immediately**, before moving to the next job. This means
-       a job that succeeds is permanently recorded even if a later job in the same cycle fails.
-       The tool treats a duplicate `job_id` (e.g. a live and a backfill cycle both reaching the
-       same job) as a safe no-op via the table's primary key, not an error.
-   - Error handling per job: a `RateLimitError` (each provider module maps its own SDK's
-     rate-limit exception into this common one — see "LLM provider" below) is retried up to twice
-     with backoff (respecting the provider's `retry_after` if given) before that one job is
-     skipped and the cycle **continues to the next candidate** — the rate limiter above means this
-     should be rare, and typically only happens when something outside this process (e.g. another
-     application sharing the same API key) consumed quota in the same window. A
-     `TransientProviderError` (5xx / overloaded / timed out / connection dropped — e.g. Gemini's
-     "currently experiencing high demand" 503) is different: `evaluate_match` itself retries it up
-     to 3 times with exponential backoff (2s/4s/8s) *before* it ever reaches this level, since that
-     kind of failure often clears within seconds; only if it's still failing after those retries
-     does it fall through to here. Both that and `CrawlError`/`MatchResponseError` count the job as
-     failed and move on — it stays unevaluated and will be retried on a future cycle (live or
-     backfill).
+       `payload.props.job`. A 404 is recorded immediately as a non-match (`reasoning` prefixed
+       `not_found_404 ...`) and returned to the agent as an error to skip; any other crawl failure
+       is also returned as an error rather than raised, so one bad job can't crash the cycle.
+     - `evaluate_match(job_id)` — **not** the LLM's own judgment: it calls
+       `llm_providers.score_job`, the exact same scoring pipeline the offline eval harness uses.
+       That renders the active MLflow prompt template with the resume + crawled job fields, then
+       `gemini_provider.py`'s `call_model` acquires a slot from `rate_limiter.py`'s per-model
+       requests-per-minute budget (`LLM_RPM_CAP__<MODEL>`, a Redis sliding window shared with
+       offline evals), calls the API with `temperature=0` and JSON-mode output, and
+       `parse_match_response` extracts `{match_score, reasoning}` — tolerating a model that wraps
+       the JSON in prose, but raising `MatchResponseError` if no valid score can be found.
+     - `record_job_result(job_id)` — persists what `evaluate_match` already computed (the agent
+       never retypes a score) as a `JobMatch` row with `is_match = match_score >= MATCH_THRESHOLD`,
+       **committed immediately**, so a job that succeeds stays recorded even if a later job in the
+       same cycle fails. A duplicate `job_id` (e.g. live and backfill both reaching the same job)
+       is a safe no-op via the table's primary key, not an error.
+   - Builds the orchestrator LLM (`build_llm`) and a LangGraph ReAct agent (`create_agent`) over
+     those 4 tools, with a system prompt spelling out the exact call order (get_jobs_to_process
+     once, then crawl → evaluate → record per job, skipping a job_id on any tool error) — then
+     invokes it once per cycle with `recursion_limit = max_jobs * STEPS_PER_JOB +
+     RECURSION_LIMIT_HEADROOM`, bounding how many turns a model that gets stuck reasoning in
+     circles can burn before the cycle is cut off (`GraphRecursionError`, caught and treated as an
+     incomplete-not-crashed cycle — whatever jobs weren't reached stay unevaluated for next time).
+   - `RateLimitError`/`TransientProviderError`/`MatchResponseError` raised inside `evaluate_match`
+     are already retried with backoff by `llm_providers.evaluate_match` itself (up to 2 rate-limit
+     retries, up to 3 transient retries) before the tool ever returns; if still failing, the tool
+     returns `{"error": ...}` to the agent instead of raising, so the agent just skips that job_id
+     and moves on rather than the whole cycle aborting.
    - At the end, publishes `matching_cycle_completed` (or `matching_cycle_failed`, from
      `run_cycle_safely`'s outer `except`) to `jobmanageragent:events` with `mode` plus counts:
      `candidate_count`, `evaluated_count`, `matched_count`, `failed_count`, `not_found_count`,
-     `rate_limited`, plus `not_found_jobs_sample` (up to 10 structured entries with
+     `incomplete`, plus `not_found_jobs_sample` (up to 10 structured entries with
      `job_id/job_url/job_role/company_name/reason`) for quick verification.
-   - For each scraped listing whose detail URL returns 404, publishes a dedicated
-     `matching_job_url_not_found` event (with cycle and job metadata) and writes a `JobMatch`
-     row with `reasoning` prefixed by `not_found_404 ...`, so these items are visible in both
-     stream telemetry and Postgres.
 
 **7. Loop back to step 3** and block again — either for the next `pipeline_completed` event, or
 another idle timeout that starts another backfill cycle.
@@ -146,16 +140,23 @@ WebScraper cron job
 JobManagerAgent (long-running process)
    ├─ boot: run one mode="live" matching cycle immediately (catch-up)
    └─ XREADGROUP (blocking, consumer group) on webscraper:events
-        ├─ on pipeline_completed → run_matching_cycle(mode="live")
-        └─ on idle timeout       → run_matching_cycle(mode="backfill")
-             ├─ get_jobs_to_process tool: job_listings LEFT ANTI JOIN job_matches
-             │     (capped; newest-first for live, oldest-first for backfill)
-             ├─ per job: rate_limiter.acquire(model) [blocks under the RPM budget if needed]
-             │            → crawl job_url → render prompt (resume + job fields)
-             │            → LLM call (Gemini) → parse {match_score, reasoning}
-             │            → record_job_result tool: INSERT job_matches row → commit immediately
-             ├─ RateLimitError: retry the one job a couple times, then skip+continue (not abort)
-             ├─ skip+continue on CrawlError / MatchResponseError (retried next cycle)
+        ├─ on pipeline_completed → run_matching_cycle_with_agent(mode="live")
+        └─ on idle timeout       → run_matching_cycle_with_agent(mode="backfill")
+             ├─ LangGraph ReAct agent, 4 tools, invoked once, recursion_limit-bounded:
+             │     get_jobs_to_process (once)  → job_listings LEFT ANTI JOIN job_matches
+             │                                    (capped; newest-first for live, oldest-first
+             │                                    for backfill)
+             │     crawl_job(job_id)            → fetch + parse job posting detail
+             │     evaluate_match(job_id)       → score_job(): rate_limiter.acquire(model)
+             │                                    [blocks under the RPM budget if needed] →
+             │                                    render prompt → LLM call (Gemini) → parse
+             │                                    {match_score, reasoning} -- not the agent's
+             │                                    own judgment
+             │     record_job_result(job_id)    → INSERT job_matches row → commit immediately
+             ├─ any tool error (rate limit / crawl / parse failure, retried inline first) →
+             │     that tool returns {"error": ...}, agent skips the job_id and continues
+             ├─ GraphRecursionError (stuck reasoning) → cycle ends early, marked incomplete
+             │     -- unreached jobs stay unevaluated for the next cycle, not lost
              └─ XADD jobmanageragent:events {event_type: matching_cycle_completed, mode, counts...}
 ```
 
@@ -205,8 +206,8 @@ be `gemini`; anything else raises `ValueError`) and `_provider_module()` resolve
   `gemini-3.6-flash`) for a configurable window after the primary model errors, and — before
   every actual network call, primary or fallback — acquiring a slot from `rate_limiter.py`'s
   per-model requests-per-minute budget (see "Environment variables" below).
-- `llm_providers/__init__.py` — the facade `matcher.py`/`evals/run_offline_eval.py` actually
-  import: `load_provider_name()`, and `build_client()`/`load_model_name()`/`evaluate_match()` all
+- `llm_providers/__init__.py` — the facade `tools/agent_tools.py`/`evals/run_offline_eval.py`
+  actually import: `load_provider_name()`, and `build_client()`/`load_model_name()`/`evaluate_match()` all
   dispatch through `gemini_provider`, accepting an explicit `provider=` override (used by the
   eval harness's `--provider` flag, though `gemini` is currently the only accepted value there
   too). `evaluate_match()` also retries a `TransientProviderError` up to 3 times with exponential
@@ -223,9 +224,11 @@ params/tags (`llm_provider`, `llm_model`) — so a provider or model swap shows 
 dimension in MLflow rather than being invisible.
 
 **Rate limits are quota- and plan-specific**, and can be per-minute *or* per-day (token-based).
-Every real Gemini call — live/backfill cycles, the ReAct agent, and the offline eval harness
-alike, since all three now go through the single `llm_providers.score_job`/`evaluate_match`
-pipeline — is paced by the `LLM_RPM_CAP__<MODEL>` budget in `rate_limiter.py`, not a fixed sleep.
+Every real Gemini call — the ReAct agent's `evaluate_match` tool and the offline eval harness
+alike, since both go through the single `llm_providers.score_job`/`evaluate_match` pipeline — is
+paced by the `LLM_RPM_CAP__<MODEL>` budget in `rate_limiter.py`, not a fixed sleep. The
+orchestrator LLM driving the agent's own tool-call decisions (`build_llm` in `react_agent.py`)
+draws from the same per-model Redis budget too, via `LangChainRedisRpmLimiter`.
 Set it from your actual quota (e.g. https://aistudio.google.com/rate-limit for Gemini) rather than
 the shipped default, especially if the API key is shared with another application. If you're still
 seeing 429s despite that, check the actual error message (it names the limit type) and the
@@ -256,16 +259,17 @@ MLflow logging code.
 
 For a deeper design write-up of the eval and MLflow flow, see [docs/evals-mlflow-design.md](docs/evals-mlflow-design.md).
 
-Every call to `run_matching_cycle(mode=...)` (`matcher.py`) that finds at least one candidate job
-opens one MLflow run, under the experiment named by `MLFLOW_EXPERIMENT_NAME` (default
-`job_matching`), against the same Tracking Server used for prompt versioning:
+Every call to `run_matching_cycle_with_agent(mode=...)` (`react_agent.py`) opens one MLflow run —
+whether or not it finds any candidate jobs, since candidates aren't known until the agent's first
+tool call, by which point the run has already started — under the experiment named by
+`MLFLOW_EXPERIMENT_NAME` (default `job_matching`), against the same Tracking Server used for
+prompt versioning:
 
 - **Params** (logged once per run): `prompt_version`, `llm_provider`, `llm_model`,
   `match_threshold`, `max_jobs_per_cycle`.
-- **Per-job metrics** (logged with `step` = the job's index in the cycle, so a run's chart shows
-  score progression across the cycle): `match_score`, `is_match`.
 - **Cycle-level metrics** (logged once, at the end of the run): `candidate_count`,
-  `evaluated_count`, `matched_count`, `failed_count`, `not_found_count`, `rate_limited`.
+  `evaluated_count`, `matched_count`, `failed_count`, `not_found_count`, `incomplete` (the
+  `GraphRecursionError` cutoff fired before every candidate was reached).
 
 The run is tagged with `cycle_id` and `mode` (`live` or `backfill` — filter the MLflow runs table
 by this to review either separately, and watch `candidate_count` trend downward on `backfill`
@@ -276,11 +280,18 @@ back to logs or dashboard data for the same cycle.
 ### Traces (end-to-end visibility)
 
 Runs/metrics alone do **not** create MLflow Traces; traces only appear when the code creates
-spans (`mlflow.start_span` / `@mlflow.trace`). The live agent and eval harness now emit:
+spans (`mlflow.start_span` / `@mlflow.trace`). The agent and eval harness now emit:
 
-- Root span per run (`matching_cycle`, `offline_eval`) linked to the active MLflow run id.
-- Child span per item (`evaluate_job` for live jobs, `eval_case` for eval cases).
-- Inputs/outputs on spans so each step's request/result shape is inspectable in Trace view.
+- Root span per run (`matching_cycle_agent` span_type=AGENT for the live agent, `offline_eval`
+  span_type=EVALUATOR for evals) linked to the active MLflow run id.
+- Child span per tool call for the live agent (`tools/agent_tools.py`): `tool:get_jobs_to_process`
+  (once per cycle), then `tool:crawl_job` / `tool:evaluate_match` / `tool:record_job_result` per
+  job — span_type=TOOL, inputs=the tool's arguments, outputs=its return value or `{"error": ...}`.
+  For evals, one `eval_case` span_type=TASK per dataset row instead.
+- Inputs/outputs on spans so each step's request/result shape is inspectable in Trace view — this
+  is the place to check whether `evaluate_match` actually got a clean `{match_score, reasoning}`
+  back or an `error` (e.g. from the Gemini truncation issue — see `gemini_provider.py`'s
+  `MAX_OUTPUT_TOKENS`/`THINKING_LEVEL` comment).
 
 Tracing env knobs:
 
@@ -370,13 +381,16 @@ anywhere in the codebase needs to change.
   process (same `data-page` JSON payload technique `WebScraper` uses for the listing page).
 - `llm_providers/` — renders the active prompt and calls whichever provider `LLM_PROVIDER`
   selects, returning `{match_score, reasoning}`. See "LLM provider" above.
-- `matcher.py` — orchestrates one evaluation pass in either `mode="live"` (newest-first) or
-  `mode="backfill"` (oldest-first). Commits each job's `job_matches` row immediately after
-  evaluating it (not once at the end of the batch) via the `record_job_result` tool, skips and
-  retries next cycle on a per-job crawl/LLM-parsing failure, and retries a rate-limited job a
-  couple of times before skipping just that one and continuing — the RPM budget (see
-  `rate_limiter.py` below) is what's meant to keep the batch from getting rate-limited in the
-  first place.
+- `agents/react_agent.py` — builds and invokes the LangGraph ReAct agent for one cycle, either
+  `mode="live"` (newest-first) or `mode="backfill"` (oldest-first): loads the resume/prompt,
+  builds the 4 tools and the orchestrator LLM, then runs the agent under a bounded
+  `recursion_limit` so a model stuck reasoning in circles can't burn the RPM budget indefinitely.
+- `tools/agent_tools.py` — the 4 tools themselves (`get_jobs_to_process`, `crawl_job`,
+  `evaluate_match`, `record_job_result`), each traced as its own MLflow span. `evaluate_match`
+  wraps `llm_providers.score_job` rather than letting the model score freeform; commits each
+  job's `job_matches` row immediately after `record_job_result` (not once at the end of the
+  batch), and returns `{"error": ...}` instead of raising on a per-job crawl/LLM-parsing/rate-limit
+  failure, so the agent skips just that job_id and continues rather than the whole cycle aborting.
 - `rate_limiter.py` — Redis-backed sliding-window requests-per-minute budget, one per LLM model,
   shared by live cycles, backfill cycles, and offline evals so none of them can push total usage
   past a self-imposed cap that's deliberately set below the provider's real quota.

@@ -14,10 +14,12 @@ This document covers the live matching flow, the offline golden-dataset eval har
 
 The design covers:
 
-- live matching cycles in [../matcher.py](../matcher.py)
+- live matching cycles in [../agents/react_agent.py](../agents/react_agent.py) (cycle orchestration)
+  and [../tools/agent_tools.py](../tools/agent_tools.py) (the 4 tools, each its own span)
 - offline eval runs in [../evals/run_offline_eval.py](../evals/run_offline_eval.py)
-- shared MLflow configuration in [../mlflow_utils.py](../mlflow_utils.py)
-- prompt registration and aliasing in [../prompt_registry.py](../prompt_registry.py)
+- shared MLflow configuration in [../utils/mlflow_utils.py](../utils/mlflow_utils.py)
+- prompt registration and aliasing in
+  [../integrations/mlflow/prompt_registry.py](../integrations/mlflow/prompt_registry.py)
 
 ## Why this matters
 
@@ -93,17 +95,18 @@ What is logged:
   - matched_count
   - failed_count
   - not_found_count
-  - rate_limited
-- Per-job metrics
-  - match_score
-  - is_match
-  - logged with the job index as the MLflow step so the run can show score progression over the cycle
+  - incomplete (the agent's recursion limit was hit before every candidate was reached)
+
+Per-job `match_score`/`is_match` are **not** logged as run metrics -- they're only visible inside
+the `tool:evaluate_match` span's outputs (see "Traces and spans" below), since scoring now happens
+inside a tool call rather than a loop iteration the cycle code controls directly.
 
 Why it matters:
 
 - each cycle becomes a first-class experiment record
 - the run can show how many jobs were considered, how many were scored, and how many matched
-- per-job metrics make it possible to inspect whether a run degraded mid-cycle or whether the quality profile changed across the batch
+- per-job trace data (in spans, not run metrics) makes it possible to inspect whether a run
+  degraded mid-cycle or whether the quality profile changed across the batch
 
 ### Rate limiting and backfill
 
@@ -123,11 +126,12 @@ Two changes address this, both visible in MLflow:
   deliberately below the provider's actual quota (checked in the provider's own console, not
   hardcoded from guesswork) because the API key is shared with another application; leaving
   headroom means this agent's usage alone should never be the reason the shared quota is
-  exhausted. A `RateLimitError` reaching `matcher.py` should now be rare -- it means something
-  outside this process consumed quota in the same window -- and is handled with a couple of short
-  retries on that one job rather than aborting the rest of the cycle's batch.
-- **`mode`-tagged cycles instead of live-only cycles.** `run_matching_cycle(mode=...)` now runs in
-  two modes against the exact same idempotent query, ordered differently:
+  exhausted. A `RateLimitError` reaching the `evaluate_match` tool should now be rare -- it means
+  something outside this process consumed quota in the same window -- and is handled with a
+  couple of short retries on that one job before the tool returns `{"error": ...}` and the agent
+  moves on to the next job, rather than aborting the rest of the cycle's batch.
+- **`mode`-tagged cycles instead of live-only cycles.** `run_matching_cycle_with_agent(mode=...)`
+  now runs in two modes against the exact same idempotent query, ordered differently:
   - `mode="live"` (`reason="pipeline_completed"` / `"startup"`): newest-updated jobs first, so
     freshly scraped listings get evaluated promptly.
   - `mode="backfill"` (`reason="idle_backfill"`): oldest-updated jobs first, so the tail of the
@@ -141,8 +145,8 @@ Two changes address this, both visible in MLflow:
   trend downward on `mode="backfill"` runs.
 
 Both the query (`get_jobs_to_process`) and the write (`record_job_result`) are small, explicit
-functions in `tools/db_tools.py` rather than SQL inlined into `matcher.py` -- the same two calls
-back every mode, so there is exactly one place that defines "what counts as unevaluated" and
+functions in `tools/db_tools.py` rather than SQL inlined into the agent's tools -- the same two
+calls back every mode, so there is exactly one place that defines "what counts as unevaluated" and
 "how a result gets persisted," which is also what keeps live and backfill cycles safely
 interchangeable: a job picked up by one mode can never be re-picked by the other once recorded.
 
@@ -194,15 +198,19 @@ Both the live and offline flows create MLflow tracing spans.
 
 Current span structure:
 
-- live matching cycle span: matching_cycle
-- per-job span: evaluate_job
-- offline eval span: offline_eval
-- per-case span: eval_case
+- live matching cycle span: matching_cycle_agent (span_type=AGENT)
+- per-tool-call spans, one per tool invocation: tool:get_jobs_to_process (once per cycle),
+  tool:crawl_job, tool:evaluate_match, tool:record_job_result (span_type=TOOL, one of each per job)
+- offline eval span: offline_eval (span_type=EVALUATOR)
+- per-case span: eval_case (span_type=TASK)
 
 What is captured:
 
-- span inputs such as cycle id, job url, expected match flags, and threshold
-- span outputs such as the final status or evaluation summary
+- cycle-span inputs such as cycle id, mode, max_jobs_per_cycle, threshold, and recursion_limit;
+  outputs are the cycle's final result summary
+- tool-span inputs are that tool's own arguments (e.g. `job_id`); outputs are its return value --
+  for `tool:evaluate_match`, that's `{match_score, reasoning}` on success or `{"error": ...}` on
+  failure, which is the first place to check when a job silently didn't get scored
 - trace IDs that can be correlated with logs
 
 Why it matters:
@@ -214,17 +222,17 @@ Why it matters:
 
 ### Live matching flow
 
-1. The cycle queries candidates via the `get_jobs_to_process` tool (`tools/db_tools.py`), ordered
-   newest-first for `mode="live"` or oldest-first for `mode="backfill"`. If there are no
-   candidates, the cycle returns immediately without opening an MLflow run, so a fully caught-up
-   agent doesn't spam MLflow with empty runs.
-2. It loads the active prompt and model configuration, then starts an MLflow run and records run
-   metadata, including the `mode` tag.
-3. For each job: the LLM call goes through the RPM rate limiter first (see "Rate limiting and
-   backfill" above), which blocks briefly if the model's per-minute budget is currently spent,
-   then the result is written back via the `record_job_result` tool and per-job metrics are
-   logged with the current step.
-4. At the end of the cycle, it logs aggregate metrics and closes the run.
+1. `react_agent.py` loads the active prompt/model configuration and starts an MLflow run and
+   records run metadata (including the `mode` tag) **before** any candidates are known -- the
+   agent's first tool call, `get_jobs_to_process` (`tools/db_tools.py`, ordered newest-first for
+   `mode="live"` or oldest-first for `mode="backfill"`), is what actually discovers
+   `candidate_count`. A fully caught-up agent (0 candidates) still opens and closes a run; it just
+   invokes the LangGraph agent, which calls no further tools and finishes immediately.
+2. The LangGraph ReAct agent is invoked once, bounded by `recursion_limit`. For each job it works:
+   the LLM call inside `tool:evaluate_match` goes through the RPM rate limiter first (see "Rate
+   limiting and backfill" above), which blocks briefly if the model's per-minute budget is
+   currently spent, then the result is written back via the `tool:record_job_result` call.
+3. At the end of the cycle, it logs aggregate metrics and closes the run.
 
 ### Offline eval flow
 
@@ -297,8 +305,8 @@ A parent span is created around the whole operation.
 
 Instrumentation captured:
 
-- a workflow span such as matching_cycle or offline_eval
-- span inputs such as cycle id, job selection limit, threshold, or dataset properties
+- a workflow span such as matching_cycle_agent or offline_eval
+- span inputs such as cycle id, job selection limit, threshold, recursion_limit, or dataset properties
 - span outputs such as the final summary or cycle result
 
 Why it matters:
@@ -312,10 +320,14 @@ Each job or eval case is evaluated independently.
 
 Instrumentation captured:
 
-- a child span for each item: evaluate_job for live jobs, eval_case for offline cases
-- the job or case identifier as span attributes
-- inputs such as the URL, role, company, expected match flag, or threshold
-- outputs such as predicted score, predicted match flag, and correctness
+- for live jobs: one child span per tool call the agent makes for that job --
+  tool:crawl_job, tool:evaluate_match, tool:record_job_result -- rather than one combined
+  per-job span, since each step is now a separate, independently-failable tool invocation
+- for offline cases: one eval_case span, same as before
+- inputs are each tool's own arguments (chiefly `job_id`) for live jobs, or expected match
+  flag/threshold for eval cases
+- outputs are that tool's return value for live jobs (predicted score/reasoning, or an
+  `{"error": ...}`), or predicted score/match flag/correctness for eval cases
 
 Why it matters:
 
@@ -328,16 +340,16 @@ As each item finishes, the agent emits metrics.
 
 Instrumentation captured:
 
-- per-item metrics for live runs:
-  - match_score
-  - is_match
+- live runs do **not** log per-item metrics via `mlflow.log_metrics` -- per-job match_score/
+  reasoning are visible only in the `tool:evaluate_match` span's outputs (see "Per-item
+  evaluation" above), not as run metrics
 - run-level aggregates for live runs:
   - candidate_count
   - evaluated_count
   - matched_count
   - failed_count
   - not_found_count
-  - rate_limited
+  - incomplete
 - summary metrics for eval runs:
   - accuracy
   - precision

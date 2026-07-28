@@ -30,16 +30,16 @@ def build_agent_tools(
 	provider: str,
 ) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
 	"""Build the 4 LLM-facing tools for one agent cycle, bound to `engine`, a candidate ordering,
-	and a batch size the agent doesn't get to choose (mode/order/limit stay under deterministic
-	control, same as the non-agentic cycle -- the LLM's job is deciding *which* job to work on
-	next and *when* to crawl/evaluate/record it, not reinventing scoring judgment or DB access).
+	and a batch size the agent doesn't get to choose (mode/order/limit are fixed by the caller --
+	the LLM's job is deciding *which* job to work on next and *when* to crawl/evaluate/record it,
+	not reinventing scoring judgment or DB access).
 
 	evaluate_match wraps llm_providers.score_job -- the single scoring definition also used by
-	matcher.py's deterministic cycle and evals/run_offline_eval.py -- instead of letting the
-	ReAct model score freeform. That means a react_agent cycle's `prompt_version` metadata is
-	actually true (the real MLflow-registered prompt template did the scoring), and it inherits
-	gemini_provider.py's full safety net (RPM limiter, cooldown+fallback, the truncation fix)
-	rather than only the subset build_llm() wires into the ReAct model itself.
+	evals/run_offline_eval.py -- instead of letting the ReAct model score freeform. That means a
+	cycle's `prompt_version` metadata is actually true (the real MLflow-registered prompt template
+	did the scoring), and it inherits gemini_provider.py's full safety net (RPM limiter,
+	cooldown+fallback, the truncation fix) rather than only the subset build_llm() wires into the
+	ReAct model itself.
 
 	Each tool call opens its own short-lived Session rather than sharing one across calls:
 	LangGraph's ToolNode always dispatches tool execution through a thread pool (even for a

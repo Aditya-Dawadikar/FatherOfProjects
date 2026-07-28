@@ -19,7 +19,7 @@ def _is_sqlite_uri(uri: str) -> bool:
 def ensure_tracking_uri_configured() -> None:
 	"""Point the mlflow client at MLFLOW_TRACKING_URI, once per process.
 
-	Shared by prompt_registry.py (prompt versioning) and matcher.py (experiment
+	Shared by prompt_registry.py (prompt versioning) and react_agent.py (experiment
 	tracking) so both talk to the same MLflow Tracking Server without racing to
 	set the URI twice.
 	"""
