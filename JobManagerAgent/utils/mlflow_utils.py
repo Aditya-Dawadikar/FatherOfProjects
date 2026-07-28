@@ -4,7 +4,7 @@ import logging
 
 import mlflow
 
-from env_utils import load_env_value
+from .env_utils import load_env_value
 
 
 _tracking_uri_configured = False

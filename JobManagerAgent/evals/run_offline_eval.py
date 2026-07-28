@@ -20,9 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import mlflow  # noqa: E402
 from mlflow.entities.model_registry.prompt_version import PromptVersion  # noqa: E402
 
-from agent_logger import configure_logging, get_agent_logger, new_id  # noqa: E402
-from config import load_match_threshold, load_resume  # noqa: E402
 from evals.dataset import DatasetError, EvalCase, load_golden_dataset  # noqa: E402
+from integrations.mlflow import PROMPT_ALIAS, PROMPT_FILE, PROMPT_NAME  # noqa: E402
 from llm_providers import (  # noqa: E402
 	MatchResponseError,
 	RateLimitError,
@@ -32,8 +31,9 @@ from llm_providers import (  # noqa: E402
 	load_provider_name,
 	score_job,
 )
-from mlflow_utils import ensure_tracking_uri_configured, get_tracking_uri, load_mlflow_eval_experiment_name  # noqa: E402
-from prompt_registry import PROMPT_ALIAS, PROMPT_FILE, PROMPT_NAME  # noqa: E402
+from utils.agent_logger import configure_logging, get_agent_logger, new_id  # noqa: E402
+from utils.config import load_match_threshold, load_resume  # noqa: E402
+from utils.mlflow_utils import ensure_tracking_uri_configured, get_tracking_uri, load_mlflow_eval_experiment_name  # noqa: E402
 
 
 configure_logging()

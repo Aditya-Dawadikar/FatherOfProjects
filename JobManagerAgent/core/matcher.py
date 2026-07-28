@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from integrations.mlflow import PROMPT_NAME, get_active_prompt
 from integrations.streaming import RedisStreamPublisher, publish_event
-from llm_providers import MatchResponseError, RateLimitError, TransientProviderError, build_client, load_model_name, load_provider_name, score_job
 from services import CrawlError, NotFoundCrawlError, fetch_job_detail
+from llm_providers import MatchResponseError, RateLimitError, TransientProviderError, build_client, load_model_name, load_provider_name, score_job
 from shared.job_data import Base, create_db_engine, load_database_url
 from tools import JobCandidate, JobResult, get_jobs_to_process, record_job_result
 from utils.agent_logger import AgentLogger, get_agent_logger, new_id

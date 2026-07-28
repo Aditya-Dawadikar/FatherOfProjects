@@ -8,7 +8,6 @@ from langchain_core.messages import HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.errors import GraphRecursionError
 
-from agents import run_matching_cycle_with_agent
 from integrations.mlflow import PROMPT_NAME, get_active_prompt
 from integrations.streaming import RedisStreamPublisher, publish_event
 from llm_providers import build_client, load_provider_name

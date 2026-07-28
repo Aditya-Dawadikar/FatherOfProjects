@@ -8,8 +8,8 @@ from google.genai import types as genai_types
 from redis import Redis
 from redis.exceptions import RedisError
 
-from env_utils import load_env_value
-from rate_limiter import RedisRpmLimiter
+from utils.env_utils import load_env_value
+from utils.rate_limiter import RedisRpmLimiter
 
 from .base import MatchResponseError, RateLimitError, TransientProviderError
 

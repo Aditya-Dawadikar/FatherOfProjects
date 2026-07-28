@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from env_utils import load_env_value
+from .env_utils import load_env_value
 
 
 RESUME_FILE = Path(__file__).with_name("resume.md")

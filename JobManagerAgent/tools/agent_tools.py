@@ -6,8 +6,8 @@ from langchain_core.tools import tool
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from crawler import CrawlError, NotFoundCrawlError, fetch_job_detail
 from llm_providers import JobScore, MatchResponseError, RateLimitError, TransientProviderError, score_job
+from services import CrawlError, NotFoundCrawlError, fetch_job_detail
 
 from .db_tools import JobResult, Order
 from .db_tools import get_jobs_to_process as db_get_jobs_to_process
