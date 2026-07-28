@@ -46,7 +46,17 @@ class RedisStreamConsumer:
 				raise
 			LOGGER.info("Consumer group %s already exists on stream %s", self._group_name, self._stream_name)
 
-	def run_forever(self, on_trigger: Callable[[dict[str, Any]], None]) -> None:
+	def run_forever(
+		self,
+		on_trigger: Callable[[dict[str, Any]], None],
+		on_idle: Callable[[], None] | None = None,
+	) -> None:
+		"""Blocks up to BLOCK_MS waiting for a `pipeline_completed` event and handles it via
+		`on_trigger`. When the block times out with nothing to read, the agent isn't idle -- it
+		calls `on_idle` (if given) to do one unit of backfill work on the historical backlog
+		before polling again, so it stays continuously occupied instead of doing nothing between
+		live triggers.
+		"""
 		self.ensure_group()
 		LOGGER.info(
 			"Listening on stream=%s group=%s consumer=%s",
@@ -70,11 +80,19 @@ class RedisStreamConsumer:
 				)
 				continue
 			if not response:
+				if on_idle is not None:
+					self._handle_idle(on_idle)
 				continue
 
 			for _, entries in response:
 				for entry_id, fields in entries:
 					self._handle_entry(entry_id, fields, on_trigger)
+
+	def _handle_idle(self, on_idle: Callable[[], None]) -> None:
+		try:
+			on_idle()
+		except Exception:
+			LOGGER.exception("Backfill idle tick failed")
 
 	def _handle_entry(self, entry_id: str, fields: dict[str, str], on_trigger: Callable[[dict[str, Any]], None]) -> None:
 		event_type = fields.get("event_type", "")

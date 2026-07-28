@@ -20,7 +20,7 @@ class LogSink(ABC):
 	"""A destination for log records. `configure_logging` picks one sink (by name, via the
 	LOG_SINK env var) and installs it as the only handler on the root logger, so every module
 	that logs through the stdlib `logging` package - including third-party libraries like
-	groq/urllib3/sqlalchemy - is routed through it uniformly.
+	google-genai/urllib3/sqlalchemy - is routed through it uniformly.
 
 	To add a future sink (e.g. shipping structured logs to a Prometheus/Grafana log pipeline
 	or Loki), add a subclass here and register it in SINK_REGISTRY below. No call site

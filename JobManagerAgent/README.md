@@ -6,26 +6,33 @@ score, reasoning, and whether it clears the bar — into a `job_matches` table. 
 at/above `MATCH_THRESHOLD` are worth applying to; the rest are recorded so they're never
 re-evaluated.
 
-The LLM call is behind a small provider abstraction (`llm_providers/`) — a self-hosted Ollama
-model (see sibling `OllamaServer/` service, the default), Groq, and Gemini are all supported
-today; switching between them is a one-line env var change (`LLM_PROVIDER`), and adding another
-provider means adding one more module. See "LLM provider" below.
+The LLM call is behind a small provider abstraction (`llm_providers/`) — Gemini is the only
+provider today; adding another means adding one more module. See "LLM provider" below.
 
 ## How it runs
 
-A persistent worker (not a cron job): on boot it runs one matching pass over any unevaluated
-jobs, then listens on `WebScraper`'s `webscraper:events` Redis Stream (via a consumer group)
-and re-runs the pass whenever a `pipeline_completed` event arrives from a fresh scrape.
+A persistent worker (not a cron job), always doing one of two things: on boot, and whenever a
+`pipeline_completed` event arrives on `WebScraper`'s `webscraper:events` Redis Stream, it runs a
+**live** matching cycle over the newest unevaluated jobs; whenever that stream is idle, instead of
+waiting doing nothing it runs a **backfill** cycle over the *oldest* unevaluated jobs, so the
+historical backlog always keeps draining. Both modes share the same idempotent query/write path
+(`tools/db_tools.py`) and the same LLM call budget (`rate_limiter.py`), so it's safe for either to
+pick up a job the other left behind.
 
 ```
 WebScraper (cron) --xadd--> webscraper:events --xreadgroup--> JobManagerAgent
                                                                      |
                                                      job_listings ---+--- crawler.py (fetch job_url)
                                                                      |
-                                                        resume.md ---+--- llm_providers/ (Ollama, Groq, or Gemini)
+                                                        resume.md ---+--- llm_providers/ (Gemini)
+                                                                     |
+                                                        rate_limiter.py (per-model RPM budget)
                                                                      |
                                                                      v
                                                               job_matches table
+
+event arrives  -> mode="live"     -> newest-unevaluated-first
+stream idle    -> mode="backfill" -> oldest-unevaluated-first
 ```
 
 ## The entire flow, step by step
@@ -37,10 +44,10 @@ isn't set, `from_env()` returns `None` and every publish becomes a no-op; the ag
 it just can't announce what it did.
 
 **2. Boot-time catch-up cycle.** Before touching Redis consumption at all, `main()` calls
-`run_cycle_safely(publisher, reason="startup")`, which immediately runs one full matching cycle
-(see step 4). This guarantees that any jobs written by `WebScraper` while JobManagerAgent was
-down (redeploys, crashes, etc.) get picked up on the next boot instead of waiting for a live
-`pipeline_completed` event.
+`run_cycle_safely(publisher, reason="startup", mode="live")`, which immediately runs one full
+matching cycle (see step 6). This guarantees that any jobs written by `WebScraper` while
+JobManagerAgent was down (redeploys, crashes, etc.) get picked up on the next boot instead of
+waiting for a live `pipeline_completed` event.
 
 **3. Enter the listen loop (`stream_consumer.py`).** `RedisStreamConsumer.run_forever` first
 calls `ensure_group()`, which does `XGROUP CREATE webscraper:events jobmanageragent-group $
@@ -49,7 +56,11 @@ MKSTREAM` — creating the stream/group if they don't exist, starting from "only
 loops forever on `XREADGROUP ... BLOCK 10000 COUNT 10`, i.e. "give me up to 10 new entries for
 this consumer, and block for up to 10s waiting if there are none." A `TimeoutError`/
 `ConnectionError` from that blocking read (e.g. a cloud provider silently dropping an idle
-socket) is caught and just retried rather than crashing the process.
+socket) is caught and just retried rather than crashing the process. **If the block times out
+with nothing to read, the agent is not idle** — it calls `on_idle`, which runs one
+`mode="backfill"` cycle over the oldest unevaluated jobs (step 6, oldest-first instead of
+newest-first) before blocking again, so historical backlog keeps draining whenever there's no
+live trigger to handle.
 
 **4. An event arrives.** `WebScraper`'s own cron pipeline (`job_runner.py`) writes a sequence of
 `stage_started`/`stage_completed` events and finally an `event_type=pipeline_completed` entry to
@@ -60,23 +71,24 @@ acknowledged (`XACK`) and ignored. Any exception raised while handling a trigger
 logged (not re-raised) and the entry is still ack'd in a `finally` — a bad/unexpected message
 can't get the consumer stuck reprocessing it forever.
 
-**5. `on_trigger` runs another matching cycle**, this time with `reason="pipeline_completed"` —
-same code path as the boot-time one.
+**5. `on_trigger` runs another matching cycle**, this time with `reason="pipeline_completed"`,
+`mode="live"` — same code path as the boot-time one.
 
-**6. Inside `run_matching_cycle` (`matcher.py`), per cycle:**
+**6. Inside `run_matching_cycle(mode=...)` (`matcher.py`), per cycle:**
    - Opens a DB session against `DATABASE_URL`/`POSTGRES_URL` and ensures the ORM tables exist
      (`Base.metadata.create_all`).
-   - Loads `resume.md` verbatim (this is the literal text sent to the LLM every time).
-   - Calls `get_active_prompt()` (`prompt_registry.py`): reads `prompts/job_match_v1.txt` off
-     disk, compares it against the MLflow prompt version currently aliased `production`, and if
-     the file changed (or nothing is registered yet), registers a new version and re-points the
-     alias — so editing the prompt file is the entire versioning workflow, no manual step.
-   - Runs `unevaluated_job_ids_stmt(max_jobs)` (`shared/job_match_data.py`): every
-     `job_listings.job_id` that has **no** row in `job_matches`, newest-updated first, capped at
-     `MAX_JOBS_PER_CYCLE`. This is what makes cycles idempotent/resumable — a job is only ever
-     evaluated once, ever, regardless of how many cycles run.
-   - For each candidate job, in order: sleep `LLM_REQUEST_DELAY_SECONDS` (except before the
-     first) to pace LLM calls, then `_evaluate_one_job`:
+   - Calls the `get_jobs_to_process` tool (`tools/db_tools.py`): every `job_listings.job_id` that
+     has **no** row in `job_matches`, capped at `MAX_JOBS_PER_CYCLE` — ordered newest-updated
+     first for `mode="live"`, oldest-updated first for `mode="backfill"`. This anti-join is what
+     makes cycles idempotent/resumable regardless of mode — a job is only ever evaluated once,
+     ever, and it doesn't matter whether a live cycle or a backfill cycle is the one that reaches
+     it. If there are no candidates, the cycle returns immediately without opening an MLflow run.
+   - Loads `resume.md` verbatim (this is the literal text sent to the LLM every time) and calls
+     `get_active_prompt()` (`prompt_registry.py`): reads `prompts/job_match_v1.txt` off disk,
+     compares it against the MLflow prompt version currently aliased `production`, and if the
+     file changed (or nothing is registered yet), registers a new version and re-points the alias
+     — so editing the prompt file is the entire versioning workflow, no manual step.
+   - For each candidate job, `_evaluate_and_record_one_job`:
      - `crawler.fetch_job_detail(job_url)` — GETs the job's detail page with a browser-like
        `User-Agent`, regexes out the `data-page="..."` attribute (a server-rendered JSON blob),
        HTML-unescapes and JSON-decodes it, and pulls `title`/`descriptionHtml`→text/
@@ -85,30 +97,35 @@ same code path as the boot-time one.
        `CrawlError`.
      - `llm_providers.render_prompt` fills the MLflow prompt template's `{{variable}}` placeholders
        with the resume text and every field pulled from the job detail.
-     - `llm_providers.evaluate_match` dispatches to whichever provider module `LLM_PROVIDER`
-       selects (`ollama_provider.py`, `groq_provider.py`, or `gemini_provider.py`), which calls
-       that provider's API with
-       `temperature=0` and JSON-mode output; `parse_match_response` then extracts
-       `{match_score, reasoning}` from the reply, tolerating a model that wraps the JSON in prose
-       (regex-extracts the first `{...}` block) but raising `MatchResponseError` if no valid score
-       can be found.
-     - A `JobMatch` row is added with `is_match = match_score >= MATCH_THRESHOLD`, the prompt
-       name/version, and the model name — then **committed immediately**, before moving to the
-       next job. This means a job that succeeds is permanently recorded even if a later job in
-       the same cycle fails or the batch is cut short by a rate limit.
+     - `llm_providers.evaluate_match` dispatches to `gemini_provider.py`'s `call_model`, which
+       first acquires a slot from `rate_limiter.py`'s per-model requests-per-minute budget
+       (`LLM_RPM_CAP__<MODEL>`, a Redis sliding window shared across live cycles, backfill
+       cycles, and offline evals) — blocking briefly if that model's budget is currently spent —
+       then calls the provider's API with `temperature=0` and JSON-mode output;
+       `parse_match_response` then extracts `{match_score, reasoning}` from the reply, tolerating
+       a model that wraps the JSON in prose (regex-extracts the first `{...}` block) but raising
+       `MatchResponseError` if no valid score can be found.
+     - The result is written back via the `record_job_result` tool (`tools/db_tools.py`): a
+       `JobMatch` row with `is_match = match_score >= MATCH_THRESHOLD`, the prompt name/version,
+       and the model name — **committed immediately**, before moving to the next job. This means
+       a job that succeeds is permanently recorded even if a later job in the same cycle fails.
+       The tool treats a duplicate `job_id` (e.g. a live and a backfill cycle both reaching the
+       same job) as a safe no-op via the table's primary key, not an error.
    - Error handling per job: a `RateLimitError` (each provider module maps its own SDK's
-     rate-limit exception into this common one — see "LLM provider" below) stops the whole cycle
-     early (`break`, preserving everything already committed) since retrying immediately would
-     just burn quota against a limit that isn't going away. A `TransientProviderError` (5xx /
-     overloaded / timed out / connection dropped — e.g. Gemini's "currently experiencing high
-     demand" 503) is different: `evaluate_match` itself retries it up to 3 times with exponential
-     backoff (2s/4s/8s) *before* it ever reaches this level, since that kind of failure often
-     clears within seconds; only if it's still failing after those retries does it fall through
-     to here. Both that and `CrawlError`/`MatchResponseError` roll back just that job's
-     uncommitted state, count it as failed, and move on — it stays unevaluated and will be
-     retried on the next cycle (startup or next `pipeline_completed`).
+     rate-limit exception into this common one — see "LLM provider" below) is retried up to twice
+     with backoff (respecting the provider's `retry_after` if given) before that one job is
+     skipped and the cycle **continues to the next candidate** — the rate limiter above means this
+     should be rare, and typically only happens when something outside this process (e.g. another
+     application sharing the same API key) consumed quota in the same window. A
+     `TransientProviderError` (5xx / overloaded / timed out / connection dropped — e.g. Gemini's
+     "currently experiencing high demand" 503) is different: `evaluate_match` itself retries it up
+     to 3 times with exponential backoff (2s/4s/8s) *before* it ever reaches this level, since that
+     kind of failure often clears within seconds; only if it's still failing after those retries
+     does it fall through to here. Both that and `CrawlError`/`MatchResponseError` count the job as
+     failed and move on — it stays unevaluated and will be retried on a future cycle (live or
+     backfill).
    - At the end, publishes `matching_cycle_completed` (or `matching_cycle_failed`, from
-     `run_cycle_safely`'s outer `except`) to `jobmanageragent:events` with counts:
+     `run_cycle_safely`'s outer `except`) to `jobmanageragent:events` with `mode` plus counts:
      `candidate_count`, `evaluated_count`, `matched_count`, `failed_count`, `not_found_count`,
      `rate_limited`, plus `not_found_jobs_sample` (up to 10 structured entries with
      `job_id/job_url/job_role/company_name/reason`) for quick verification.
@@ -117,7 +134,8 @@ same code path as the boot-time one.
      row with `reasoning` prefixed by `not_found_404 ...`, so these items are visible in both
      stream telemetry and Postgres.
 
-**7. Loop back to step 3** and block again until the next `pipeline_completed` event.
+**7. Loop back to step 3** and block again — either for the next `pipeline_completed` event, or
+another idle timeout that starts another backfill cycle.
 
 ```
 WebScraper cron job
@@ -126,16 +144,19 @@ WebScraper cron job
                     │
                     ▼
 JobManagerAgent (long-running process)
-   ├─ boot: run one matching cycle immediately (catch-up)
+   ├─ boot: run one mode="live" matching cycle immediately (catch-up)
    └─ XREADGROUP (blocking, consumer group) on webscraper:events
-        └─ on pipeline_completed → run_matching_cycle()
-             ├─ query job_listings LEFT ANTI JOIN job_matches → unevaluated jobs (capped, newest first)
-             ├─ per job: sleep(pacing) → crawl job_url → render prompt (resume + job fields)
-             │            → LLM call (Ollama, Groq, or Gemini) → parse {match_score, reasoning}
-             │            → INSERT job_matches row → commit immediately
-             ├─ stop early on provider RateLimitError (progress so far stays committed)
+        ├─ on pipeline_completed → run_matching_cycle(mode="live")
+        └─ on idle timeout       → run_matching_cycle(mode="backfill")
+             ├─ get_jobs_to_process tool: job_listings LEFT ANTI JOIN job_matches
+             │     (capped; newest-first for live, oldest-first for backfill)
+             ├─ per job: rate_limiter.acquire(model) [blocks under the RPM budget if needed]
+             │            → crawl job_url → render prompt (resume + job fields)
+             │            → LLM call (Gemini) → parse {match_score, reasoning}
+             │            → record_job_result tool: INSERT job_matches row → commit immediately
+             ├─ RateLimitError: retry the one job a couple times, then skip+continue (not abort)
              ├─ skip+continue on CrawlError / MatchResponseError (retried next cycle)
-             └─ XADD jobmanageragent:events {event_type: matching_cycle_completed, counts...}
+             └─ XADD jobmanageragent:events {event_type: matching_cycle_completed, mode, counts...}
 ```
 
 ## Setup
@@ -148,8 +169,7 @@ copy .env.example .env
 
 Fill in `.env`:
 - `DATABASE_URL` / `REDIS_URL` — same Postgres/Redis instance `WebScraper` uses.
-- `LLM_PROVIDER` — `ollama` (default, self-hosted, see sibling `OllamaServer/`), `groq`, or
-  `gemini`; only that provider's vars need filling in (see "LLM provider" below).
+- `LLM_PROVIDER` — `gemini` (the only supported value; see "LLM provider" below).
 - `MLFLOW_TRACKING_URI` — the MLflow Tracking Server that prompt versions are registered
   against (see sibling `MLflowServer/` service). Locally, run `serve.py` in `MLflowServer/`
   and point this at its `http://localhost:5000`; in production point it at the deployed
@@ -167,47 +187,49 @@ venv\Scripts\python main.py
 
 ## LLM provider
 
-Job scoring goes through `llm_providers/`, a small dispatch layer rather than a direct SDK call,
-so switching which model does the scoring is a one-line env var change instead of a code change:
+Job scoring goes through `llm_providers/`, a small dispatch layer rather than a direct SDK call.
+Gemini is the only supported provider today — `load_provider_name()` reads `LLM_PROVIDER` (must
+be `gemini`; anything else raises `ValueError`) and `_provider_module()` resolves it to
+`gemini_provider`:
 
 - `llm_providers/base.py` — provider-agnostic: `render_prompt` (fills the MLflow template),
   `parse_match_response` (extracts `{match_score, reasoning}` from a JSON reply, tolerant of a
-  model that wraps it in prose), `MatchResponseError`, and two common exceptions every provider
-  module raises instead of leaking its own SDK's exception type: `RateLimitError` (quota/429 —
-  won't clear by retrying seconds later) and `TransientProviderError` (5xx/overloaded/timed
-  out/connection dropped — often *does* clear within seconds).
-- `llm_providers/ollama_provider.py` / `groq_provider.py` / `gemini_provider.py` — each
-  implements `build_client()`, `load_model()`, and `call_model(client, *, model, prompt) -> str`,
-  and maps its own SDK's/API's exceptions into the shared ones: rate limits
-  (`groq.RateLimitError`, or Gemini's `ClientError` with `code == 429`) into `RateLimitError` —
-  Ollama, self-hosted with no quota, never raises this one; server-side failures
-  (`groq.InternalServerError`/`groq.APIConnectionError`, Gemini's `ServerError`, or a `requests`
-  connection/timeout error or 5xx from Ollama — typically "still starting up" or "still loading
-  the model into memory") into `TransientProviderError`.
+  model that wraps it in prose), `MatchResponseError`, and two common exceptions the provider
+  module raises instead of leaking the underlying SDK's exception type: `RateLimitError`
+  (quota/429 — won't clear by retrying seconds later) and `TransientProviderError`
+  (5xx/overloaded/timed out/connection dropped — often *does* clear within seconds).
+- `llm_providers/gemini_provider.py` — implements `build_client()`, `load_model()`, and
+  `call_model(client, *, model, prompt) -> str`. Maps Gemini's `ClientError` with `code == 429`
+  into `RateLimitError` and its `ServerError` into `TransientProviderError`. Also owns two other
+  things: a Redis-backed cooldown that switches to a fallback model (`GEMINI_MODEL` →
+  `gemini-3.6-flash`) for a configurable window after the primary model errors, and — before
+  every actual network call, primary or fallback — acquiring a slot from `rate_limiter.py`'s
+  per-model requests-per-minute budget (see "Environment variables" below).
 - `llm_providers/__init__.py` — the facade `matcher.py`/`evals/run_offline_eval.py` actually
-  import: `load_provider_name()` reads `LLM_PROVIDER` (`ollama`, `groq`, or `gemini`; defaults to
-  `ollama`), and `build_client()`/`load_model_name()`/`evaluate_match()` all dispatch to whichever
-  provider module that names, defaulting to it but accepting an explicit `provider=` override
-  (used by the eval harness's `--provider` flag to score the same dataset through a different
-  provider without touching `.env`). `evaluate_match()` also retries a `TransientProviderError` up
-  to 3 times with exponential backoff (2s/4s/8s) before letting it propagate — callers only see
-  one after retries are exhausted.
+  import: `load_provider_name()`, and `build_client()`/`load_model_name()`/`evaluate_match()` all
+  dispatch through `gemini_provider`, accepting an explicit `provider=` override (used by the
+  eval harness's `--provider` flag, though `gemini` is currently the only accepted value there
+  too). `evaluate_match()` also retries a `TransientProviderError` up to 3 times with exponential
+  backoff (2s/4s/8s) before letting it propagate — callers only see one after retries are
+  exhausted.
 
-Adding a fourth provider means adding one more `llm_providers/<name>_provider.py` with those three
-functions and registering it in `__init__.py`'s `_PROVIDERS` dict — no changes needed to
-`matcher.py`, the eval harness, or anything else that calls through the facade.
+Adding a second provider would mean adding another `llm_providers/<name>_provider.py` with those
+three functions and extending `_provider_module()`'s resolution — the shared exception/rendering
+contract in `base.py` is already provider-agnostic, only the dispatch is currently hardcoded to
+reject anything but `gemini`.
 
 Both the live agent and the eval harness log which provider/model produced a run as MLflow
-params/tags (`llm_provider`, `llm_model`) — so a provider swap shows up as a comparable dimension
-in MLflow rather than being invisible.
+params/tags (`llm_provider`, `llm_model`) — so a provider or model swap shows up as a comparable
+dimension in MLflow rather than being invisible.
 
-**Ollama is the default** since it has no per-request cost or rate limit — see sibling
-`OllamaServer/` for the service that hosts it, including the RAM/CPU footprint of running an 8B
-model on CPU (read that before deploying it). **Rate limits on the hosted providers are
-provider- and plan-specific**, and can be per-minute *or* per-day (token-based).
-`LLM_REQUEST_DELAY_SECONDS` only paces requests/minute — if you're seeing 429s from Groq/Gemini
+**Rate limits are quota- and plan-specific**, and can be per-minute *or* per-day (token-based).
+The live/backfill agent is paced by the `LLM_RPM_CAP__<MODEL>` budget in `rate_limiter.py`, not by
+a fixed sleep — see "Environment variables" below, and set it from your actual quota (e.g.
+https://aistudio.google.com/rate-limit for Gemini) rather than the shipped default, especially if
+the API key is shared with another application. `LLM_REQUEST_DELAY_SECONDS` still paces the
+offline eval harness the old way (a fixed sleep between calls); if you're seeing 429s there
 despite a generous delay, check the actual error message (it names the limit type) and the
-provider's usage dashboard rather than assuming pacing alone will fix it.
+provider's usage dashboard.
 
 ## Prompt versioning
 
@@ -234,19 +256,21 @@ MLflow logging code.
 
 For a deeper design write-up of the eval and MLflow flow, see [docs/evals-mlflow-design.md](docs/evals-mlflow-design.md).
 
-Every call to `run_matching_cycle()` (`matcher.py`) opens one MLflow run, under the experiment
-named by `MLFLOW_EXPERIMENT_NAME` (default `job_matching`), against the same Tracking Server used
-for prompt versioning:
+Every call to `run_matching_cycle(mode=...)` (`matcher.py`) that finds at least one candidate job
+opens one MLflow run, under the experiment named by `MLFLOW_EXPERIMENT_NAME` (default
+`job_matching`), against the same Tracking Server used for prompt versioning:
 
 - **Params** (logged once per run): `prompt_version`, `llm_provider`, `llm_model`,
-  `match_threshold`, `max_jobs_per_cycle`, `llm_request_delay_seconds`.
+  `match_threshold`, `max_jobs_per_cycle`.
 - **Per-job metrics** (logged with `step` = the job's index in the cycle, so a run's chart shows
   score progression across the cycle): `match_score`, `is_match`.
 - **Cycle-level metrics** (logged once, at the end of the run): `candidate_count`,
   `evaluated_count`, `matched_count`, `failed_count`, `not_found_count`, `rate_limited`.
 
-The run is tagged with `cycle_id` (matching the id in structured logs and the
-`matching_cycle_completed`/`matching_cycle_failed` Redis events) so a run can be cross-referenced
+The run is tagged with `cycle_id` and `mode` (`live` or `backfill` — filter the MLflow runs table
+by this to review either separately, and watch `candidate_count` trend downward on `backfill`
+runs as evidence the historical backlog is draining), matching the id in structured logs and the
+`matching_cycle_completed`/`matching_cycle_failed` Redis events, so a run can be cross-referenced
 back to logs or dashboard data for the same cycle.
 
 ### Traces (end-to-end visibility)
@@ -300,9 +324,9 @@ venv\Scripts\python evals\run_offline_eval.py --dataset evals\golden_dataset.jso
 Useful flags: `--prompt-source local` scores `prompts/job_match_v1.txt` as it currently sits on
 disk, without registering/promoting it in MLflow (the default, `production`, read-only-loads the
 currently promoted alias) — use `local` to validate a prompt edit *before* the next live cycle
-auto-promotes it via `prompt_registry.get_active_prompt()`. `--provider {groq,gemini}` scores the
-same dataset through a specific provider regardless of `LLM_PROVIDER` — handy for comparing two
-providers' MLflow runs on the exact same golden set. `--limit N` for a quick smoke test,
+auto-promotes it via `prompt_registry.get_active_prompt()`. `--provider gemini` explicitly pins
+the provider for one run regardless of `LLM_PROVIDER` — currently `gemini` is the only accepted
+value. `--limit N` for a quick smoke test,
 `--model`/`--threshold`/`--request-delay`/`--experiment-name`/`--run-name` to override the
 corresponding env var for one run.
 
@@ -321,10 +345,11 @@ directly, so the codebase always logs three things consistently:
 - **the input event** — every Redis stream entry read (`event_received`), whether or not it
   ends up triggering a cycle;
 - **the action taken** — `action=...` lines for what the agent decided to do (ignore an
-  event, start crawling a job, call the LLM, record a match, stop early on a rate limit, skip
+  event, start crawling a job, call the LLM, record a match, retry after a rate limit, skip
   a failed job, etc.);
-- **deliberate pauses** — `sleeping seconds=... reason=...` before the pacing delay between
-  Groq calls, so a quiet log stream during a cycle reads as "pacing" rather than "stuck".
+- **deliberate pauses** — `sleeping seconds=... reason=...` for the RPM budget wait
+  (`rate_limiter.py`) or a rate-limit retry backoff, so a quiet log stream during a cycle reads as
+  "pacing" rather than "stuck".
 
 Every line is timestamped (stdlib `asctime`) and carries correlation ids: a `cycle_id`
 (generated once per matching cycle, also included in the `matching_cycle_*` events published
@@ -345,21 +370,41 @@ anywhere in the codebase needs to change.
   process (same `data-page` JSON payload technique `WebScraper` uses for the listing page).
 - `llm_providers/` — renders the active prompt and calls whichever provider `LLM_PROVIDER`
   selects, returning `{match_score, reasoning}`. See "LLM provider" above.
-- `matcher.py` — orchestrates one evaluation pass. Commits each job's `job_matches` row
-  immediately after evaluating it (not once at the end of the batch), skips and retries next
-  cycle on a per-job crawl/LLM-parsing failure, and stops the cycle early — without losing
-  already-committed progress — if the provider returns a rate-limit error, rather than burning
-  through the rest of the batch against a limit that will just keep rejecting it.
+- `matcher.py` — orchestrates one evaluation pass in either `mode="live"` (newest-first) or
+  `mode="backfill"` (oldest-first). Commits each job's `job_matches` row immediately after
+  evaluating it (not once at the end of the batch) via the `record_job_result` tool, skips and
+  retries next cycle on a per-job crawl/LLM-parsing failure, and retries a rate-limited job a
+  couple of times before skipping just that one and continuing — the RPM budget (see
+  `rate_limiter.py` below) is what's meant to keep the batch from getting rate-limited in the
+  first place.
+- `rate_limiter.py` — Redis-backed sliding-window requests-per-minute budget, one per LLM model,
+  shared by live cycles, backfill cycles, and offline evals so none of them can push total usage
+  past a self-imposed cap that's deliberately set below the provider's real quota.
+- `tools/db_tools.py` — the two DB operations every cycle uses instead of inlining SQL:
+  `get_jobs_to_process` (the anti-join query, newest- or oldest-first) and `record_job_result`
+  (idempotent write — a duplicate `job_id` is a safe no-op via the table's primary key, not an
+  error). This is also what makes live and backfill cycles safely interchangeable: both go through
+  the same two functions, so "what counts as unevaluated" and "how a result gets persisted" are
+  each defined in exactly one place.
 - `stream_consumer.py` / `stream_events.py` — Redis Stream consumer/publisher counterparts to
-  `WebScraper`'s publisher.
-- `shared/job_match_data.py` — the `job_matches` SQLAlchemy model and the "unevaluated jobs"
-  query that makes re-runs idempotent.
+  `WebScraper`'s publisher. `RedisStreamConsumer.run_forever` also takes an `on_idle` callback,
+  invoked whenever the blocking read times out with nothing new — this is what drives backfill
+  cycles during quiet periods.
+- `shared/job_match_data.py` — the `job_matches` SQLAlchemy model. Its `unevaluated_job_ids_stmt`
+  helper predates `tools/db_tools.py` and is no longer used by the live agent (superseded by
+  `get_jobs_to_process`), but is left in place since it's part of `shared`'s public exports.
 - `evals/` — offline eval harness against a labeled golden dataset. See "Offline evals" above.
 
 ## Environment variables
 
 See `.env.example` for the full list, including `MATCH_THRESHOLD` (default 70),
-`MAX_JOBS_PER_CYCLE` (default 25, caps how many jobs one pass evaluates), `LLM_PROVIDER`
-(`ollama`, `groq`, or `gemini`), and `LLM_REQUEST_DELAY_SECONDS` (default 20 — paced sleep between
-consecutive LLM calls within a cycle; note some providers also enforce a *daily* token quota
+`MAX_JOBS_PER_CYCLE` (default 5 — kept small because the RPM budget below, not batch size, is
+what actually limits throughput; a big batch would just tie up one cycle for many minutes without
+checking for new live-trigger events), `LLM_RPM_CAP__<MODEL>` (e.g.
+`LLM_RPM_CAP__GEMINI_3_5_FLASH`, default 4 — the per-model requests-per-minute budget enforced by
+`rate_limiter.py`; set this from your actual quota in the provider's console, not the default,
+especially if the API key is shared with another application), `LLM_PROVIDER` (`gemini` only —
+see "LLM provider" above), and `LLM_REQUEST_DELAY_SECONDS` (default 20 — paced sleep used only by
+the offline eval harness now; live/backfill matching cycles are paced by the RPM budget instead;
+note some providers also enforce a *daily* token quota
 that this can't help with — see "LLM provider" above).

@@ -9,6 +9,7 @@ from redis import Redis
 from redis.exceptions import RedisError
 
 from env_utils import load_env_value
+from rate_limiter import RedisRpmLimiter
 
 from .base import RateLimitError, TransientProviderError
 
@@ -17,6 +18,20 @@ DEFAULT_MODEL = "gemini-3.5-flash"
 FALLBACK_MODEL = "gemini-3.6-flash"
 PRIMARY_MODEL_COOLDOWN_KEY = "jobmanageragent:gemini:3.5:cooldown"
 PRIMARY_MODEL_COOLDOWN_SECONDS = 600
+
+
+_RPM_LIMITER: RedisRpmLimiter | None = None
+
+
+def _rpm_limiter() -> RedisRpmLimiter:
+	# Lazy singleton: constructing RedisRpmLimiter requires REDIS_URL, and failing loudly the
+	# first time a call is actually attempted (rather than at import time, or silently, like
+	# the cooldown client below) is the right failure mode for something that exists to
+	# protect a quota shared with another application.
+	global _RPM_LIMITER
+	if _RPM_LIMITER is None:
+		_RPM_LIMITER = RedisRpmLimiter()
+	return _RPM_LIMITER
 
 
 _COOLDOWN_REDIS_CLIENT: Redis | None = None
@@ -82,6 +97,10 @@ def _set_primary_cooldown(error: Exception) -> None:
 
 
 def _generate_content(client: genai.Client, *, model: str, prompt: str) -> str:
+	# Single choke point for every actual network call this provider makes (primary and
+	# fallback both route through here), so the RPM budget is enforced no matter which branch
+	# of call_model/_call_fallback_model reached it.
+	_rpm_limiter().acquire(model)
 	response = client.models.generate_content(
 		model=model,
 		contents=prompt,

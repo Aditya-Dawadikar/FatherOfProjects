@@ -82,9 +82,9 @@ What is logged:
   - llm_model
   - match_threshold
   - max_jobs_per_cycle
-  - llm_request_delay_seconds
 - Tags
   - cycle_id
+  - mode (`live` or `backfill` -- see "Rate limiting and backfill" below)
   - prompt_name
   - llm_provider
 - Metrics
@@ -104,6 +104,47 @@ Why it matters:
 - each cycle becomes a first-class experiment record
 - the run can show how many jobs were considered, how many were scored, and how many matched
 - per-job metrics make it possible to inspect whether a run degraded mid-cycle or whether the quality profile changed across the batch
+
+### Rate limiting and backfill
+
+Two problems showed up once live MLflow data was actually reviewed: every finished run had
+`rate_limited=true` (the cycle was hitting the LLM provider's quota and breaking early nearly
+every time), and `candidate_count` was pinned at the `max_jobs_per_cycle` cap on every single run
+-- meaning the unevaluated backlog in `job_listings` was never shrinking, because newest-first
+candidate selection let a steady stream of freshly scraped jobs perpetually starve the tail of
+the backlog.
+
+Two changes address this, both visible in MLflow:
+
+- **Proactive rate limiting instead of reactive backoff.** `rate_limiter.py` enforces a
+  requests-per-minute budget per model (`LLM_RPM_CAP__<MODEL>`, e.g.
+  `LLM_RPM_CAP__GEMINI_3_5_FLASH`) via a Redis sliding window, shared across every call site --
+  live cycles, backfill cycles, and offline evals all draw from the same budget. The cap is set
+  deliberately below the provider's actual quota (checked in the provider's own console, not
+  hardcoded from guesswork) because the API key is shared with another application; leaving
+  headroom means this agent's usage alone should never be the reason the shared quota is
+  exhausted. A `RateLimitError` reaching `matcher.py` should now be rare -- it means something
+  outside this process consumed quota in the same window -- and is handled with a couple of short
+  retries on that one job rather than aborting the rest of the cycle's batch.
+- **`mode`-tagged cycles instead of live-only cycles.** `run_matching_cycle(mode=...)` now runs in
+  two modes against the exact same idempotent query, ordered differently:
+  - `mode="live"` (`reason="pipeline_completed"` / `"startup"`): newest-updated jobs first, so
+    freshly scraped listings get evaluated promptly.
+  - `mode="backfill"` (`reason="idle_backfill"`): oldest-updated jobs first, so the tail of the
+    backlog always makes progress. `stream_consumer.py`'s idle timeout (previously a no-op
+    `continue` when `XREADGROUP` returned nothing) now triggers one `mode="backfill"` cycle
+    instead of sitting idle, so the agent is continuously working the backlog whenever there is
+    no live trigger to handle.
+
+  Every run's `mode` tag makes it possible to filter the MLflow runs table to just live cycles or
+  just backfill cycles, and to see the backlog draining over time by watching `candidate_count`
+  trend downward on `mode="backfill"` runs.
+
+Both the query (`get_jobs_to_process`) and the write (`record_job_result`) are small, explicit
+functions in `tools/db_tools.py` rather than SQL inlined into `matcher.py` -- the same two calls
+back every mode, so there is exactly one place that defines "what counts as unevaluated" and
+"how a result gets persisted," which is also what keeps live and backfill cycles safely
+interchangeable: a job picked up by one mode can never be re-picked by the other once recorded.
 
 ### 4. Offline eval runs
 
@@ -173,9 +214,16 @@ Why it matters:
 
 ### Live matching flow
 
-1. The matching cycle loads the active prompt and model configuration.
-2. It starts an MLflow run and records run metadata.
-3. For each evaluated job, it logs per-job metrics with the current step.
+1. The cycle queries candidates via the `get_jobs_to_process` tool (`tools/db_tools.py`), ordered
+   newest-first for `mode="live"` or oldest-first for `mode="backfill"`. If there are no
+   candidates, the cycle returns immediately without opening an MLflow run, so a fully caught-up
+   agent doesn't spam MLflow with empty runs.
+2. It loads the active prompt and model configuration, then starts an MLflow run and records run
+   metadata, including the `mode` tag.
+3. For each job: the LLM call goes through the RPM rate limiter first (see "Rate limiting and
+   backfill" above), which blocks briefly if the model's per-minute budget is currently spent,
+   then the result is written back via the `record_job_result` tool and per-job metrics are
+   logged with the current step.
 4. At the end of the cycle, it logs aggregate metrics and closes the run.
 
 ### Offline eval flow
@@ -343,6 +391,16 @@ Live matching runs and offline evals use different experiment names. This preven
 
 The current design intentionally logs structured parameters, metrics, and artifacts rather than dumping large prompt or job payloads into MLflow. This keeps the tracking system practical and readable while still preserving the information needed for comparison and debugging.
 
+### Proactive rate limiting over reactive backoff
+
+Earlier, a cycle discovered it was rate-limited only after calling the provider and getting a
+429, then aborted the rest of its batch. That both wasted the request that triggered the 429 and
+discarded whatever candidates hadn't been reached yet, every single cycle. `rate_limiter.py`
+paces calls under a self-imposed per-model RPM budget before the call happens, so hitting the
+provider's real limit should be the exception, not the steady state -- and when it does happen
+(most likely from the other application sharing the same API key), the response is a couple of
+short retries on that one job rather than losing the rest of the batch.
+
 ### Correlation with operational systems
 
 Each run carries identifiers that can be correlated with the rest of the system:
@@ -361,6 +419,14 @@ To make the MLflow setup useful in practice:
 - keep the experiment names stable so dashboards and comparisons remain meaningful
 - use the same prompt version and provider/model combination when comparing runs
 - review both aggregate metrics and the per-case result table when investigating regressions
+- filter the runs table by the `mode` tag to review live and backfill cycles separately, and
+  watch `candidate_count` on `mode="backfill"` runs trend downward over time as evidence the
+  historical backlog is actually draining
+- set `LLM_RPM_CAP__<MODEL>` from the real per-project quota shown in the provider's own console
+  (for Gemini: https://aistudio.google.com/rate-limit), not from published defaults -- quotas are
+  account/tier-specific and, per Google's own docs, applied per project rather than per API key,
+  so if another application shares the same key/project it is already drawing from the same pool
+  this budget is protecting
 
 ## Summary
 
