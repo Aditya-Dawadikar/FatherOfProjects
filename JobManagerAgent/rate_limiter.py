@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 
+from langchain_core.rate_limiters import BaseRateLimiter
 from redis import Redis
 
 from agent_logger import get_agent_logger
@@ -74,3 +76,33 @@ class RedisRpmLimiter:
 			)
 			time.sleep(sleep_for)
 			waited += sleep_for
+
+
+class LangChainRedisRpmLimiter(BaseRateLimiter):
+	"""Adapts RedisRpmLimiter to LangChain's `rate_limiter=` hook on BaseChatModel, so a
+	ChatGoogleGenerativeAI instance draws from the exact same per-model Redis RPM budget as the
+	non-agentic call path in gemini_provider.py -- there is one budget per model, not one per
+	code path that happens to call the provider.
+
+	Every LangChain call site invokes `acquire`/`aacquire` with `blocking=True`, so the
+	`blocking=False` case is intentionally unimplemented (RedisRpmLimiter has no non-blocking
+	peek) rather than faked with a wrong answer.
+	"""
+
+	def __init__(self, model: str, limiter: RedisRpmLimiter | None = None) -> None:
+		self._model = model
+		self._limiter = limiter or RedisRpmLimiter()
+
+	def acquire(self, *, blocking: bool = True) -> bool:
+		if not blocking:
+			raise NotImplementedError("LangChainRedisRpmLimiter only supports blocking acquisition")
+		self._limiter.acquire(self._model)
+		return True
+
+	async def aacquire(self, *, blocking: bool = True) -> bool:
+		if not blocking:
+			raise NotImplementedError("LangChainRedisRpmLimiter only supports blocking acquisition")
+		# RedisRpmLimiter.acquire is a synchronous, sleep-based blocking call; run it off the
+		# event loop so an async caller doesn't stall other concurrent work while waiting.
+		await asyncio.to_thread(self._limiter.acquire, self._model)
+		return True

@@ -11,13 +11,22 @@ from redis.exceptions import RedisError
 from env_utils import load_env_value
 from rate_limiter import RedisRpmLimiter
 
-from .base import RateLimitError, TransientProviderError
+from .base import MatchResponseError, RateLimitError, TransientProviderError
 
 
 DEFAULT_MODEL = "gemini-3.5-flash"
 FALLBACK_MODEL = "gemini-3.6-flash"
 PRIMARY_MODEL_COOLDOWN_KEY = "jobmanageragent:gemini:3.5:cooldown"
 PRIMARY_MODEL_COOLDOWN_SECONDS = 600
+
+# gemini-3.x models think by default (usage_metadata.thoughts_token_count), which competes with
+# the visible JSON answer for the same output budget when max_output_tokens is left unset -- that
+# silently truncated real responses mid-JSON (see incident: MatchResponseError on a response with
+# no closing brace anywhere, not just in the logged 200-char preview). This task is a short,
+# deterministic classification+one-paragraph-reasoning output that gains nothing from extended
+# chain-of-thought, so thinking is disabled outright rather than just raising the token ceiling.
+MAX_OUTPUT_TOKENS = 2048
+THINKING_BUDGET = 0
 
 
 _RPM_LIMITER: RedisRpmLimiter | None = None
@@ -107,9 +116,30 @@ def _generate_content(client: genai.Client, *, model: str, prompt: str) -> str:
 		config=genai_types.GenerateContentConfig(
 			temperature=0,
 			response_mime_type="application/json",
+			max_output_tokens=MAX_OUTPUT_TOKENS,
+			thinking_config=genai_types.ThinkingConfig(thinking_budget=THINKING_BUDGET),
 		),
 	)
+	_raise_if_truncated(response, model=model)
 	return response.text or ""
+
+
+def _raise_if_truncated(response: genai_types.GenerateContentResponse, *, model: str) -> None:
+	candidates = response.candidates or []
+	if not candidates:
+		return
+
+	finish_reason = candidates[0].finish_reason
+	if finish_reason in (None, genai_types.FinishReason.STOP):
+		return
+
+	usage = response.usage_metadata
+	raise MatchResponseError(
+		f"Gemini response for model={model} did not finish normally "
+		f"(finish_reason={finish_reason}); thoughts_tokens="
+		f"{getattr(usage, 'thoughts_token_count', None)} output_tokens="
+		f"{getattr(usage, 'candidates_token_count', None)} max_output_tokens={MAX_OUTPUT_TOKENS}"
+	)
 
 
 def _should_try_fallback(*, model: str) -> bool:
