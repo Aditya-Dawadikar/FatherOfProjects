@@ -53,7 +53,11 @@ class EvalTriggerRequest(BaseModel):
 	model_config = {
 		"json_schema_extra": {
 			"examples": [
-				{"dataset": "evals/golden_dataset.example.jsonl", "prompt_source": "local", "limit": 1}
+				{
+					"dataset": "evals/golden_dataset.jsonl",
+	 				"prompt_source": "local",
+					"limit": "null"
+				}
 			]
 		}
 	}
