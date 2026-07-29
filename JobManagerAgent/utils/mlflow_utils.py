@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 
 import mlflow
+from mlflow.entities import LifecycleStage
+from mlflow.tracking import MlflowClient
 
 from .env_utils import load_env_value
 
@@ -39,6 +41,28 @@ def ensure_tracking_uri_configured() -> None:
 def get_tracking_uri() -> str:
 	ensure_tracking_uri_configured()
 	return mlflow.get_tracking_uri()
+
+
+def set_experiment_safely(experiment_name: str) -> None:
+	"""Like mlflow.set_experiment(), but tolerates an experiment that was soft-deleted (e.g. by
+	hand in the MLflow UI) while this process was running, instead of raising.
+
+	mlflow.set_experiment() only auto-creates a *missing* experiment -- a same-named one sitting
+	in the "deleted" lifecycle stage makes it raise ("Cannot set a deleted experiment ... as the
+	active experiment") instead of recovering, which otherwise takes down every live cycle and
+	eval run with the same error until someone notices and restores/renames it by hand. Since the
+	name is still taken by the deleted experiment, mlflow.set_experiment() can't just create a
+	fresh one under it either -- restoring the existing one is the only always-available fix via
+	the public client API (there's no "permanently delete" call to make room for a truly new one).
+	"""
+	client = MlflowClient()
+	experiment = client.get_experiment_by_name(experiment_name)
+	if experiment is not None and experiment.lifecycle_stage != LifecycleStage.ACTIVE:
+		LOGGER.warning(
+			"Experiment %r was deleted; restoring it so tracking can continue", experiment_name
+		)
+		client.restore_experiment(experiment.experiment_id)
+	mlflow.set_experiment(experiment_name)
 
 
 def load_mlflow_experiment_name() -> str:

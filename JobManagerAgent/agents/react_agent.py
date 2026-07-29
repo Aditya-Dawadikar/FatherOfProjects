@@ -25,7 +25,12 @@ from utils.config import (
 	load_resume,
 )
 from utils.env_utils import load_env_value
-from utils.mlflow_utils import ensure_tracking_uri_configured, get_tracking_uri, load_mlflow_experiment_name
+from utils.mlflow_utils import (
+	ensure_tracking_uri_configured,
+	get_tracking_uri,
+	load_mlflow_experiment_name,
+	set_experiment_safely,
+)
 from utils.rate_limiter import LangChainRedisRpmLimiter
 
 
@@ -112,7 +117,7 @@ def run_matching_cycle_with_agent(
 
 	ensure_tracking_uri_configured()
 	experiment_name = load_mlflow_experiment_name()
-	mlflow.set_experiment(experiment_name)
+	set_experiment_safely(experiment_name)
 	log.action("mlflow_target", tracking_uri=get_tracking_uri(), experiment_name=experiment_name)
 
 	get_jobs_tool, crawl_job_tool, evaluate_match_tool, record_result_tool, stats = build_agent_tools(

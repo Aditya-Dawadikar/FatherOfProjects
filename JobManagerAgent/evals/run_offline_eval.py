@@ -33,7 +33,12 @@ from llm_providers import (  # noqa: E402
 )
 from utils.agent_logger import configure_logging, get_agent_logger, new_id  # noqa: E402
 from utils.config import load_match_threshold, load_resume  # noqa: E402
-from utils.mlflow_utils import ensure_tracking_uri_configured, get_tracking_uri, load_mlflow_eval_experiment_name  # noqa: E402
+from utils.mlflow_utils import (  # noqa: E402
+	ensure_tracking_uri_configured,
+	get_tracking_uri,
+	load_mlflow_eval_experiment_name,
+	set_experiment_safely,
+)
 
 
 configure_logging()
@@ -210,7 +215,7 @@ def run_offline_eval(
 
 	ensure_tracking_uri_configured()
 	resolved_experiment_name = experiment_name or load_mlflow_eval_experiment_name()
-	mlflow.set_experiment(resolved_experiment_name)
+	set_experiment_safely(resolved_experiment_name)
 	log.action("mlflow_target", tracking_uri=get_tracking_uri(), experiment_name=resolved_experiment_name)
 
 	rows: list[dict[str, Any]] = []
