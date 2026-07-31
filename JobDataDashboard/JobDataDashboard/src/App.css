@@ -1,8 +1,8 @@
 .app-shell {
   min-height: 100svh;
   background:
-    radial-gradient(circle at top left, rgba(69, 150, 117, 0.18), transparent 34%),
-    radial-gradient(circle at top right, rgba(182, 116, 60, 0.15), transparent 28%),
+    radial-gradient(circle at top left, rgba(21, 128, 61, 0.10), transparent 38%),
+    radial-gradient(circle at top right, rgba(180, 130, 20, 0.07), transparent 30%),
     var(--bg);
 }
 
@@ -43,7 +43,7 @@
 .form-panel {
   border: 1px solid var(--line);
   background: var(--panel);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 16px 32px rgba(16, 30, 20, 0.08);
 }
 
 .status-card {
@@ -215,7 +215,7 @@
 
 .banner-error {
   background: var(--error-dim);
-  color: #ffd6d6;
+  color: var(--error);
 }
 
 .table-wrap {
@@ -238,7 +238,7 @@
 }
 
 .jobs-table thead {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--overlay);
 }
 
 .jobs-table tbody tr {
@@ -248,7 +248,7 @@
 
 .jobs-table tbody tr:hover,
 .jobs-table tbody tr.is-selected {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--overlay-strong);
 }
 
 .company-cell {
@@ -289,7 +289,7 @@
 
 .score-low {
   background: var(--error-dim);
-  color: #ffb3b3;
+  color: var(--error);
 }
 
 .match-badge {
@@ -307,7 +307,7 @@
 }
 
 .match-badge-no {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--overlay-strong);
   color: var(--muted);
 }
 
@@ -369,19 +369,19 @@
 }
 
 .ghost-button {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--overlay-strong);
   color: var(--text);
 }
 
 .primary-button {
   background: var(--accent);
-  color: #0f1712;
+  color: #ffffff;
   font-weight: 700;
 }
 
 .danger-button {
-  background: rgba(225, 109, 109, 0.18);
-  color: #ffd6d6;
+  background: var(--error-dim);
+  color: var(--error);
 }
 
 .danger-button-compact {
