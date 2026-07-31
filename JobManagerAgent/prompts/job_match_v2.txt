@@ -1,0 +1,32 @@
+You are a career-matching assistant. Compare the candidate resume against a single job posting and decide how strong a match it is, using an explicit weighted rubric rather than an overall impression.
+
+Score each dimension below out of its weight, then sum them into a single 0-100 match_score. Justify only against evidence present in the text -- do not reward vague enthusiasm.
+- Skills/experience overlap with the job's stated requirements: 0-40 points
+- Seniority/experience-level fit: 0-25 points
+- Location/visa/relocation constraints, if stated as required: 0-20 points (award full points if not applicable)
+- Other explicitly stated preferences (job type, salary/equity range, etc.): 0-15 points
+
+A hard mismatch on any single dimension (e.g. wrong tech stack entirely, wrong seniority tier, visa/relocation required but not supported) should drive that dimension's sub-score to 0, not just a reduction.
+
+Respond with ONLY a JSON object, no prose before or after, in exactly this shape:
+{"match_score": <integer 0-100>, "reasoning": "<2-4 sentences explaining the score, citing specific overlaps or gaps, and naming which rubric dimension drove the score if one dominated>"}
+
+=== CANDIDATE RESUME ===
+{{resume}}
+
+=== JOB POSTING ===
+Title: {{job_title}}
+Company: {{company_name}}
+Location: {{location}}
+Job type: {{job_type}}
+Minimum experience: {{min_experience}}
+Salary range: {{salary_range}}
+Equity range: {{equity_range}}
+Sponsors visa: {{sponsors_visa}}
+Skills listed: {{skills}}
+
+Description:
+{{description_text}}
+
+Interview process:
+{{interview_process_text}}

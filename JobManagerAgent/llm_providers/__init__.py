@@ -11,6 +11,7 @@ from .base import (
 	JobScore,
 	MatchResponseError,
 	RateLimitError,
+	TokenUsage,
 	TransientProviderError,
 	parse_match_response,
 	render_prompt,
@@ -21,6 +22,7 @@ __all__ = [
 	"JobScore",
 	"MatchResponseError",
 	"RateLimitError",
+	"TokenUsage",
 	"TransientProviderError",
 	"build_client",
 	"evaluate_match",
@@ -71,19 +73,26 @@ def build_client(provider: str | None = None) -> Any:
 	return _provider_module(provider).build_client()
 
 
-def evaluate_match(client: Any, *, model: str, prompt: str, provider: str | None = None) -> dict[str, Any]:
+def evaluate_match(
+	client: Any, *, model: str, prompt: str, provider: str | None = None
+) -> tuple[dict[str, Any], TokenUsage]:
 	"""Single LLM scoring call, with retries for the two recoverable failure modes a provider
 	call can hit: a transient server-side hiccup (fast exponential backoff) and a rate limit
 	(longer backoff, informed by the provider's retry_after when given). Both retry loops run
 	here so every caller -- the live/backfill cycle, the ReAct agent's evaluate_match tool, and
-	the offline eval harness -- gets the same resilience without redefining it."""
+	the offline eval harness -- gets the same resilience without redefining it.
+
+	Token usage is only available for the call that actually succeeds -- a retried attempt that
+	raised TransientProviderError/RateLimitError never got far enough to report usage, so those
+	tokens (if the provider billed any before erroring) aren't reflected here.
+	"""
 	module = _provider_module(provider)
 
 	transient_attempt = 0
 	rate_limit_attempt = 0
 	while True:
 		try:
-			text = module.call_model(client, model=model, prompt=prompt)
+			text, usage = module.call_model(client, model=model, prompt=prompt)
 			break
 		except TransientProviderError:
 			transient_attempt += 1
@@ -100,7 +109,7 @@ def evaluate_match(client: Any, *, model: str, prompt: str, provider: str | None
 			LOGGER.info("Rate limited, retrying in %.1fs (attempt %d)", delay, rate_limit_attempt)
 			time.sleep(delay)
 
-	return parse_match_response(text)
+	return parse_match_response(text), usage
 
 
 def score_job(
@@ -120,9 +129,10 @@ def score_job(
 	exactly one place "is this a match" gets decided, so the two can never quietly drift apart.
 	"""
 	prompt = render_prompt(prompt_version, resume=resume, job=job)
-	result = evaluate_match(client, model=model, prompt=prompt, provider=provider)
+	result, usage = evaluate_match(client, model=model, prompt=prompt, provider=provider)
 	return JobScore(
 		match_score=result["match_score"],
 		reasoning=result["reasoning"],
 		is_match=result["match_score"] >= threshold,
+		token_usage=usage,
 	)

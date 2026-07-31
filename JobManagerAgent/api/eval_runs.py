@@ -8,9 +8,12 @@ from typing import Any, Literal
 
 import mlflow
 from fastapi import APIRouter, HTTPException
+from mlflow import MlflowClient
+from mlflow.exceptions import MlflowException
 from pydantic import BaseModel, Field
 
 from evals.run_offline_eval import run_offline_eval
+from integrations.mlflow import PROMPT_NAME
 from utils.agent_logger import get_agent_logger, new_id
 from utils.config import PROJECT_ROOT
 from utils.mlflow_utils import ensure_tracking_uri_configured
@@ -55,6 +58,10 @@ _SUMMARY_METRIC_KEYS = (
 	"f1",
 	"score_in_range_rate",
 	"mean_predicted_score",
+	"total_prompt_tokens",
+	"total_completion_tokens",
+	"total_tokens",
+	"mean_tokens_per_case",
 )
 
 
@@ -70,6 +77,13 @@ class EvalTriggerRequest(BaseModel):
 		"'production' alias. 'local' scores prompts/job_match_v1.txt as it sits on disk right "
 		"now, without registering/promoting it -- use this to validate an edit before the next "
 		"live cycle auto-promotes it.",
+	)
+	prompt_version: int | None = Field(
+		default=None,
+		description="Only valid with prompt_source='production'. Pins a specific registered "
+		"version of the prompt (e.g. 2) instead of whichever version the 'production' alias "
+		"currently points to -- trigger one run per version against the same dataset to compare "
+		"how the prompt's behavior has drifted, via GET /evals.",
 	)
 	provider: str | None = Field(default=None, description="Overrides LLM_PROVIDER for this run. Currently 'gemini' is the only accepted value.")
 	model: str | None = Field(default=None, description="Overrides the active provider's model env var for this run.")
@@ -96,9 +110,49 @@ class EvalTriggerRequest(BaseModel):
 	}
 
 
+class EvalSweepRequest(BaseModel):
+	"""Same knobs as EvalTriggerRequest minus prompt_source/prompt_version/run_name -- a sweep
+	always scores every version registered for PROMPT_NAME in MLflow (see
+	integrations/mlflow/prompt_registry.py's register_prompt_variants(), which registers
+	prompts/job_match_v2.txt, job_match_v3.txt, etc. at server startup), so those are set per-run
+	internally rather than accepted here."""
+
+	dataset: str = Field(
+		default="evals/golden_dataset.jsonl",
+		description="Path to a golden-dataset JSONL file, relative to evals/ (must resolve inside "
+		"it -- absolute paths and `..` are rejected).",
+	)
+	provider: str | None = Field(default=None, description="Overrides LLM_PROVIDER for this run. Currently 'gemini' is the only accepted value.")
+	model: str | None = Field(default=None, description="Overrides the active provider's model env var for this run.")
+	threshold: int | None = Field(default=None, description="Overrides MATCH_THRESHOLD (0-100) for this run.")
+	experiment_name: str | None = Field(default=None, description="Overrides MLFLOW_EVAL_EXPERIMENT_NAME for this run.")
+	limit: int | None = Field(
+		default=None,
+		description="Only score the first N cases per version. Recommended when testing via this "
+		"page -- omitting it scores the entire dataset against every registered version, which "
+		"multiplies real, billed Gemini calls by the number of versions.",
+	)
+
+	model_config = {
+		"json_schema_extra": {
+			"examples": [
+				{
+					"dataset": "evals/golden_dataset.example.jsonl",
+					"limit": 1,
+				}
+			]
+		}
+	}
+
+
 class EvalTriggerResponse(BaseModel):
 	eval_id: str
 	status: Literal["running"]
+	prompt_version: int | None = Field(
+		default=None,
+		description="The specific registered prompt version this run was pinned to, if any -- "
+		"null means it used whatever 'production' currently points to.",
+	)
 
 
 class EvalStatusResponse(BaseModel):
@@ -139,6 +193,7 @@ def _run_eval_in_background(eval_id: str, dataset_path: Path, payload: EvalTrigg
 			eval_id=eval_id,
 			dataset_path=dataset_path,
 			prompt_source=payload.prompt_source,
+			prompt_version=payload.prompt_version,
 			provider=payload.provider,
 			model=payload.model,
 			threshold=payload.threshold,
@@ -209,20 +264,7 @@ def _run_to_status_response(run: Any, experiment_name_by_id: dict[str, str]) -> 
 	)
 
 
-@router.post("", status_code=202, summary="Trigger an offline eval run")
-def trigger_eval(payload: EvalTriggerRequest) -> EvalTriggerResponse:
-	"""Kicks off evals/run_offline_eval.py's run_offline_eval() on a background thread and
-	returns immediately -- a full run against the real golden dataset can take 10+ minutes under
-	the default RPM cap, far longer than is reasonable to hold an HTTP request open for. Poll
-	GET /evals/{eval_id} for status/result. Concurrent triggers are not serialized against each
-	other; they share the same Redis-backed RPM budget as everything else (rate_limiter.py), and
-	each gets its own MLflow run via a distinct run_name, so running more than one at once is
-	safe, just slower per-run.
-	"""
-	dataset_path = _resolve_dataset_path(payload.dataset)
-	if not dataset_path.exists():
-		raise HTTPException(status_code=400, detail=f"Dataset not found: {dataset_path}")
-
+def _trigger_background_run(dataset_path: Path, payload: EvalTriggerRequest) -> EvalTriggerResponse:
 	eval_id = new_id()
 	run_name = payload.run_name or eval_id
 
@@ -233,7 +275,74 @@ def trigger_eval(payload: EvalTriggerRequest) -> EvalTriggerResponse:
 		name=f"eval-{eval_id}",
 	)
 	thread.start()
-	return EvalTriggerResponse(eval_id=eval_id, status="running")
+	return EvalTriggerResponse(eval_id=eval_id, status="running", prompt_version=payload.prompt_version)
+
+
+@router.post("", status_code=202, summary="Trigger an offline eval run")
+def trigger_eval(payload: EvalTriggerRequest) -> EvalTriggerResponse:
+	"""Kicks off evals/run_offline_eval.py's run_offline_eval() on a background thread and
+	returns immediately -- a full run against the real golden dataset can take 10+ minutes under
+	the default RPM cap, far longer than is reasonable to hold an HTTP request open for. Poll
+	GET /evals/{eval_id} for status/result. Concurrent triggers are not serialized against each
+	other; they share the same Redis-backed RPM budget as everything else (rate_limiter.py), and
+	each gets its own MLflow run via a distinct run_name, so running more than one at once is
+	safe, just slower per-run.
+
+	Pass `prompt_version` (only valid with prompt_source='production') to pin one specific
+	registered prompt version instead of whatever 'production' currently points to -- see
+	POST /evals/sweep to run every registered version in one call instead of triggering each by
+	hand.
+	"""
+	dataset_path = _resolve_dataset_path(payload.dataset)
+	if not dataset_path.exists():
+		raise HTTPException(status_code=400, detail=f"Dataset not found: {dataset_path}")
+	if payload.prompt_version is not None and payload.prompt_source != "production":
+		raise HTTPException(status_code=400, detail="prompt_version is only valid with prompt_source='production'")
+
+	return _trigger_background_run(dataset_path, payload)
+
+
+@router.post("/sweep", status_code=202, summary="Trigger one offline eval run per registered prompt version")
+def trigger_eval_sweep(payload: EvalSweepRequest) -> list[EvalTriggerResponse]:
+	"""Looks up every version registered for PROMPT_NAME in the MLflow prompt registry --
+	the 'production' alias's history plus whatever integrations/mlflow/prompt_registry.py's
+	register_prompt_variants() registered from prompts/job_match_v2.txt, job_match_v3.txt, etc. at
+	server startup -- and triggers one independent run_offline_eval() background run per version
+	against the same dataset. Each gets its own eval_id/MLflow run pinned to that prompt_version
+	(same mechanism as POST /evals with prompt_version set), so GET /evals lets you compare
+	accuracy and token cost across every prompt variant in one place instead of calling POST
+	/evals once per version by hand. Returns immediately with one entry per version triggered;
+	poll GET /evals/{eval_id} for each.
+	"""
+	dataset_path = _resolve_dataset_path(payload.dataset)
+	if not dataset_path.exists():
+		raise HTTPException(status_code=400, detail=f"Dataset not found: {dataset_path}")
+
+	ensure_tracking_uri_configured()
+	client = MlflowClient()
+	try:
+		versions = client.search_prompt_versions(PROMPT_NAME)
+	except MlflowException as error:
+		if error.error_code != "RESOURCE_DOES_NOT_EXIST":
+			raise
+		versions = []
+	if not versions:
+		raise HTTPException(status_code=404, detail=f"No versions registered for prompt {PROMPT_NAME!r}")
+
+	responses = []
+	for version in sorted(versions, key=lambda v: v.version):
+		per_version_payload = EvalTriggerRequest(
+			dataset=payload.dataset,
+			prompt_source="production",
+			prompt_version=version.version,
+			provider=payload.provider,
+			model=payload.model,
+			threshold=payload.threshold,
+			experiment_name=payload.experiment_name,
+			limit=payload.limit,
+		)
+		responses.append(_trigger_background_run(dataset_path, per_version_payload))
+	return responses
 
 
 @router.get("/{eval_id}", summary="Poll an eval run's status/result")

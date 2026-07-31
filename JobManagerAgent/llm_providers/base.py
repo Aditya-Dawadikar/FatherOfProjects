@@ -7,6 +7,18 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class TokenUsage:
+	"""Token accounting for one LLM call. completion_tokens folds in any "thinking"/reasoning
+	tokens the provider bills for (e.g. Gemini's thoughts_token_count) alongside the visible
+	output -- both cost money, and no caller needs the split, just the total generation cost
+	against what went in as context."""
+
+	prompt_tokens: int
+	completion_tokens: int
+	total_tokens: int
+
+
+@dataclass(frozen=True)
 class JobScore:
 	"""Result of scoring one job against a resume: what score_job() (see llm_providers/__init__.py)
 	returns, and the one shape every caller -- the live/backfill cycle, the ReAct agent's
@@ -15,6 +27,7 @@ class JobScore:
 	match_score: int
 	reasoning: str
 	is_match: bool
+	token_usage: TokenUsage
 
 
 class MatchResponseError(RuntimeError):

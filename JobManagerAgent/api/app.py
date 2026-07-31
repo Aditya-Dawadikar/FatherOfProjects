@@ -7,6 +7,7 @@ from typing import AsyncIterator
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
+from integrations.mlflow import register_prompt_variants
 from integrations.streaming import RedisStreamPublisher
 from utils.agent_logger import configure_logging, get_agent_logger
 from utils.env_utils import ENV_FILE
@@ -26,6 +27,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 	publisher = RedisStreamPublisher.from_env()
 	tracking_uri = get_tracking_uri()
 	LOGGER.info("MLflow startup target uri=%s", tracking_uri)
+
+	try:
+		register_prompt_variants()
+	except Exception:
+		# Eval tooling (evals/run_offline_eval.py --prompt-version) degrades gracefully if a
+		# variant is missing from the registry -- it's not worth failing the whole deploy (and
+		# taking down live matching with it) over the MLflow server being briefly unreachable.
+		LOGGER.exception("Failed to register prompt variants; continuing startup")
 
 	# The agent (boot catch-up cycle, then the Redis stream consumer loop forever) is a
 	# synchronous, blocking piece of code -- it predates this API and nothing about it needed to

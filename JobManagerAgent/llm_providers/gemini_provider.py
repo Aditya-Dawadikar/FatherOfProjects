@@ -19,7 +19,7 @@ from utils.config import (
 from utils.env_utils import load_env_value
 from utils.rate_limiter import RedisRpmLimiter
 
-from .base import MatchResponseError, RateLimitError, TransientProviderError
+from .base import MatchResponseError, RateLimitError, TokenUsage, TransientProviderError
 
 
 _RPM_LIMITER: RedisRpmLimiter | None = None
@@ -98,7 +98,22 @@ def _set_primary_cooldown(error: Exception) -> None:
 		return
 
 
-def _generate_content(client: genai.Client, *, model: str, prompt: str) -> str:
+def _usage_from_response(response: genai_types.GenerateContentResponse) -> TokenUsage:
+	usage = response.usage_metadata
+	prompt_tokens = getattr(usage, "prompt_token_count", None) or 0
+	output_tokens = getattr(usage, "candidates_token_count", None) or 0
+	thoughts_tokens = getattr(usage, "thoughts_token_count", None) or 0
+	# total_token_count is the provider's own authoritative sum (billing runs off this, not our
+	# reconstruction of it) -- only fall back to adding the parts ourselves if it's missing.
+	total_tokens = getattr(usage, "total_token_count", None) or (prompt_tokens + output_tokens + thoughts_tokens)
+	return TokenUsage(
+		prompt_tokens=prompt_tokens,
+		completion_tokens=output_tokens + thoughts_tokens,
+		total_tokens=total_tokens,
+	)
+
+
+def _generate_content(client: genai.Client, *, model: str, prompt: str) -> tuple[str, TokenUsage]:
 	# Single choke point for every actual network call this provider makes (primary and
 	# fallback both route through here), so the RPM budget is enforced no matter which branch
 	# of call_model/_call_fallback_model reached it.
@@ -114,7 +129,7 @@ def _generate_content(client: genai.Client, *, model: str, prompt: str) -> str:
 		),
 	)
 	_raise_if_truncated(response, model=model)
-	return response.text or ""
+	return response.text or "", _usage_from_response(response)
 
 
 def _raise_if_truncated(response: genai_types.GenerateContentResponse, *, model: str) -> None:
@@ -139,7 +154,7 @@ def _should_try_fallback(*, model: str) -> bool:
 	return model == DEFAULT_MODEL and FALLBACK_MODEL != DEFAULT_MODEL
 
 
-def _call_fallback_model(client: genai.Client, *, prompt: str) -> str:
+def _call_fallback_model(client: genai.Client, *, prompt: str) -> tuple[str, TokenUsage]:
 	try:
 		return _generate_content(client, model=FALLBACK_MODEL, prompt=prompt)
 	except genai_errors.ClientError as fallback_error:
@@ -150,7 +165,7 @@ def _call_fallback_model(client: genai.Client, *, prompt: str) -> str:
 		raise TransientProviderError(str(fallback_error)) from fallback_error
 
 
-def call_model(client: genai.Client, *, model: str, prompt: str) -> str:
+def call_model(client: genai.Client, *, model: str, prompt: str) -> tuple[str, TokenUsage]:
 	if _should_try_fallback(model=model) and _is_primary_in_cooldown():
 		return _call_fallback_model(client, prompt=prompt)
 

@@ -6,6 +6,7 @@ Usage (from JobManagerAgent/):
     venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl
     venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl --prompt-source local
 	venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl --provider gemini
+	venv\\Scripts\\python evals\\run_offline_eval.py --dataset evals\\golden_dataset.jsonl --prompt-version 2
 """
 
 from __future__ import annotations
@@ -45,9 +46,19 @@ configure_logging()
 LOGGER = get_agent_logger(__name__)
 
 
-def _load_prompt_version(source: str) -> tuple[Any, str]:
+def _load_prompt_version(source: str, version: int | None = None) -> tuple[Any, str]:
 	if source == "production":
 		ensure_tracking_uri_configured()
+		if version is not None:
+			# Pins a specific point in the prompt's registered history (get_active_prompt() creates
+			# a new version every time prompts/job_match_v1.txt's content changes) rather than
+			# whichever version the 'production' alias currently points to -- lets a run be repeated
+			# against an older version to compare against newer ones, e.g. to bisect a regression.
+			prompt = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}/{version}", allow_missing=True)
+			if prompt is None:
+				raise SystemExit(f"No version {version} is registered for prompt '{PROMPT_NAME}'.")
+			return prompt, str(prompt.version)
+
 		prompt = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@{PROMPT_ALIAS}", allow_missing=True)
 		if prompt is None:
 			raise SystemExit(
@@ -57,6 +68,9 @@ def _load_prompt_version(source: str) -> tuple[Any, str]:
 		return prompt, str(prompt.version)
 
 	if source == "local":
+		if version is not None:
+			raise ValueError("--prompt-version only applies to --prompt-source production; "
+				"'local' always scores prompts/job_match_v1.txt as it sits on disk.")
 		template = PROMPT_FILE.read_text(encoding="utf-8")
 		# version=0 (unregistered) signals "not yet promoted to MLflow" -- this lets prompt edits
 		# be scored before prompt_registry.get_active_prompt() would auto-promote them on the next
@@ -105,11 +119,17 @@ def _run_one_case(
 		"expected_score_max": case.expected_score_max,
 		"score_in_range": score_in_range,
 		"reasoning": score.reasoning,
+		"prompt_tokens": score.token_usage.prompt_tokens,
+		"completion_tokens": score.token_usage.completion_tokens,
+		"total_tokens": score.token_usage.total_tokens,
 		"error": None,
 	}
 
 
 def _error_row(case: EvalCase, error_message: str) -> dict[str, Any]:
+	# No token counts -- a case that errors out (rate-limited, unparseable response, ...) never
+	# reached the point where evaluate_match() had a successful response to read usage off of, so
+	# there's nothing honest to report here (0 would misleadingly claim a free call).
 	return {
 		"id": case.id,
 		"expected_is_match": case.expected_is_match,
@@ -120,6 +140,9 @@ def _error_row(case: EvalCase, error_message: str) -> dict[str, Any]:
 		"expected_score_max": case.expected_score_max,
 		"score_in_range": None,
 		"reasoning": "",
+		"prompt_tokens": None,
+		"completion_tokens": None,
+		"total_tokens": None,
 		"error": error_message,
 	}
 
@@ -134,6 +157,9 @@ ROW_COLUMNS = (
 	"expected_score_max",
 	"score_in_range",
 	"reasoning",
+	"prompt_tokens",
+	"completion_tokens",
+	"total_tokens",
 	"error",
 )
 
@@ -163,6 +189,11 @@ def _compute_summary(rows: list[dict[str, Any]], *, total_cases: int) -> dict[st
 
 	mean_predicted_score = (sum(row["predicted_score"] for row in scored) / len(scored)) if scored else None
 
+	total_prompt_tokens = sum(row["prompt_tokens"] for row in scored)
+	total_completion_tokens = sum(row["completion_tokens"] for row in scored)
+	total_tokens = sum(row["total_tokens"] for row in scored)
+	mean_tokens_per_case = (total_tokens / len(scored)) if scored else None
+
 	summary: dict[str, Any] = {
 		"total_cases": total_cases,
 		"evaluated_cases": len(scored),
@@ -171,6 +202,11 @@ def _compute_summary(rows: list[dict[str, Any]], *, total_cases: int) -> dict[st
 		"false_positive": fp,
 		"false_negative": fn,
 		"true_negative": tn,
+		# Total LLM token consumption for this run -- summed over only the cases that actually got
+		# a scored response (see _error_row's comment on why errored cases contribute nothing).
+		"total_prompt_tokens": total_prompt_tokens,
+		"total_completion_tokens": total_completion_tokens,
+		"total_tokens": total_tokens,
 	}
 	if accuracy is not None:
 		summary["accuracy"] = accuracy
@@ -184,6 +220,8 @@ def _compute_summary(rows: list[dict[str, Any]], *, total_cases: int) -> dict[st
 		summary["score_in_range_rate"] = score_in_range_rate
 	if mean_predicted_score is not None:
 		summary["mean_predicted_score"] = mean_predicted_score
+	if mean_tokens_per_case is not None:
+		summary["mean_tokens_per_case"] = mean_tokens_per_case
 	return summary
 
 
@@ -192,6 +230,7 @@ def run_offline_eval(
 	eval_id: str | None = None,
 	dataset_path: Path,
 	prompt_source: str,
+	prompt_version: int | None = None,
 	provider: str | None,
 	model: str | None,
 	threshold: int | None,
@@ -237,7 +276,7 @@ def run_offline_eval(
 			log.action("dataset_loaded", dataset=str(dataset_path), case_count=len(cases))
 
 			default_resume = load_resume()
-			prompt_version_obj, prompt_version = _load_prompt_version(prompt_source)
+			prompt_version_obj, resolved_prompt_version = _load_prompt_version(prompt_source, prompt_version)
 			resolved_provider = provider or load_provider_name()
 			resolved_model = model or load_model_name(resolved_provider)
 			resolved_threshold = threshold if threshold is not None else load_match_threshold()
@@ -268,7 +307,7 @@ def run_offline_eval(
 				)
 				mlflow.set_tag("llm_provider", resolved_provider)
 				params = {
-					"prompt_version": prompt_version,
+					"prompt_version": resolved_prompt_version,
 					"llm_provider": resolved_provider,
 					"llm_model": resolved_model,
 					"match_threshold": resolved_threshold,
@@ -356,6 +395,15 @@ def _parse_args() -> argparse.Namespace:
 		"an edit before it gets promoted by the next live cycle.",
 	)
 	parser.add_argument(
+		"--prompt-version",
+		type=int,
+		default=None,
+		help="With --prompt-source production, pins a specific registered version of the prompt "
+		"(e.g. 3) instead of whichever version the 'production' alias currently points to -- run "
+		"the same dataset against several versions to compare how the prompt's behavior has "
+		"drifted over time. Not valid with --prompt-source local.",
+	)
+	parser.add_argument(
 		"--provider", choices=("gemini",), default=None, help="Overrides LLM_PROVIDER for this run."
 	)
 	parser.add_argument("--model", default=None, help="Overrides the active provider's model env var for this run.")
@@ -372,6 +420,7 @@ def main() -> None:
 		summary = run_offline_eval(
 			dataset_path=args.dataset,
 			prompt_source=args.prompt_source,
+			prompt_version=args.prompt_version,
 			provider=args.provider,
 			model=args.model,
 			threshold=args.threshold,
