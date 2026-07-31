@@ -41,12 +41,9 @@ function DashboardApp() {
   })
   const jobsCountQuery = useJobsCount(deferredSearchText)
   const jobList = jobsQuery.data ?? []
-  const selectedJob = jobList.find((job) => job.job_id === selectedJobId) ?? null
   const reactQueryClient = useQueryClient()
   const totalRows = jobsCountQuery.data?.total ?? 0
   const totalPages = totalRows ? Math.ceil(totalRows / PAGE_SIZE) : 1
-  const pageStart = jobList.length ? (page - 1) * PAGE_SIZE + 1 : 0
-  const pageEnd = jobList.length ? pageStart + jobList.length - 1 : 0
   const hasNextPage = page < totalPages
 
   const createMutation = useMutation({
