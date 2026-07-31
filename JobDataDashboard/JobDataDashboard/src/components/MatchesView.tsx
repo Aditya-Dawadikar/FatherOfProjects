@@ -1,4 +1,5 @@
 import { useDeferredValue, useState } from 'react'
+import { FiChevronLeft, FiChevronRight, FiRefreshCw } from 'react-icons/fi'
 import MatchesTable from './MatchesTable'
 import { useMatchedJobs, useMatchedJobsCount } from '../hooks'
 import type { MatchFilter } from '../types'
@@ -7,7 +8,7 @@ const PAGE_SIZE = 20
 
 export default function MatchesView() {
   const [searchText, setSearchText] = useState('')
-  const [matchFilter, setMatchFilter] = useState<MatchFilter>('all')
+  const [matchFilter, setMatchFilter] = useState<MatchFilter>('matched')
   const [minScoreText, setMinScoreText] = useState('')
   const [page, setPage] = useState(1)
   const deferredSearchText = useDeferredValue(searchText)
@@ -89,10 +90,14 @@ export default function MatchesView() {
           />
           <button
             type="button"
-            className="ghost-button"
+            className="ghost-button ghost-button-with-icon"
             onClick={() => matchesQuery.refetch()}
             disabled={matchesQuery.isFetching}
           >
+            <FiRefreshCw
+              aria-hidden="true"
+              className={matchesQuery.isFetching ? 'button-icon spin' : 'button-icon'}
+            />
             {matchesQuery.isFetching ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
@@ -130,18 +135,20 @@ export default function MatchesView() {
         <div className="pagination-actions">
           <button
             type="button"
-            className="ghost-button"
+            className="ghost-button ghost-button-with-icon"
             onClick={goToPreviousPage}
             disabled={page === 1 || matchesQuery.isFetching}
           >
+            <FiChevronLeft aria-hidden="true" className="button-icon" />
             Previous
           </button>
           <button
             type="button"
-            className="ghost-button"
+            className="ghost-button ghost-button-with-icon"
             onClick={goToNextPage}
             disabled={!hasNextPage || matchesQuery.isFetching}
           >
+            <FiChevronRight aria-hidden="true" className="button-icon" />
             Next
           </button>
         </div>

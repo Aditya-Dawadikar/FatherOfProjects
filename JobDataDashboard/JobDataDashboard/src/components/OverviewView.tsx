@@ -1,8 +1,10 @@
 import AlluvialChart from './AlluvialChart'
+import { FiRefreshCw } from 'react-icons/fi'
 import { usePipelineFunnel } from '../hooks'
 
 const LEGEND_ITEMS = [
-  { key: 'total', label: 'Scraped / processed', swatchClass: 'legend-swatch-total' },
+  { key: 'total', label: 'Scraped', swatchClass: 'legend-swatch-total' },
+  { key: 'processed', label: 'Processed by Agent', swatchClass: 'legend-swatch-processed' },
   { key: 'pending', label: 'Not yet processed', swatchClass: 'legend-swatch-pending' },
   { key: 'good', label: 'Good match', swatchClass: 'legend-swatch-good' },
   { key: 'moderate', label: 'Moderate match', swatchClass: 'legend-swatch-moderate' },
@@ -24,10 +26,14 @@ export default function OverviewView() {
         <div className="toolbar-actions">
           <button
             type="button"
-            className="ghost-button"
+            className="ghost-button ghost-button-with-icon"
             onClick={() => funnelQuery.refetch()}
             disabled={funnelQuery.isFetching}
           >
+            <FiRefreshCw
+              aria-hidden="true"
+              className={funnelQuery.isFetching ? 'button-icon spin' : 'button-icon'}
+            />
             {funnelQuery.isFetching ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
@@ -36,23 +42,27 @@ export default function OverviewView() {
       {funnel && (
         <div className="summary-grid">
           <article className="summary-card">
-            <span>Scraped</span>
+            <span>Jobs Scraped</span>
             <strong>{funnel.total_scraped}</strong>
           </article>
           <article className="summary-card">
-            <span>Processed by agent</span>
+            <span>Processed by Agent</span>
             <strong>{funnel.total_processed}</strong>
           </article>
           <article className="summary-card">
-            <span>Good matches</span>
+            <span>Good Matches</span>
             <strong>{funnel.good_matches}</strong>
           </article>
           <article className="summary-card">
-            <span>Moderate / bad</span>
-            <strong>{funnel.moderate_matches} / {funnel.bad_matches}</strong>
+            <span>Moderate Matches</span>
+            <strong>{funnel.moderate_matches}</strong>
           </article>
           <article className="summary-card">
-            <span>Failed (not found)</span>
+            <span>Bad Matches</span>
+            <strong>{funnel.bad_matches}</strong>
+          </article>
+          <article className="summary-card">
+            <span>Agent Failed (Job Not Found)</span>
             <strong>{funnel.failed_matches}</strong>
           </article>
         </div>

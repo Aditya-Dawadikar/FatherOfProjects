@@ -1,4 +1,5 @@
 import type { MouseEvent } from 'react'
+import { FiTrash2 } from 'react-icons/fi'
 import type { JobRecord } from '../types'
 
 type JobsTableProps = {
@@ -65,10 +66,11 @@ export default function JobsTable({ jobs, selectedJobId, busy, onSelectJob, onDe
                 <td className="row-actions-cell">
                   <button
                     type="button"
-                    className="danger-button danger-button-compact"
+                    className="danger-button danger-button-compact ghost-button-with-icon"
                     disabled={busy}
                     onClick={(event) => handleDeleteClick(event, job, onDeleteJob)}
                   >
+                    <FiTrash2 aria-hidden="true" className="button-icon" />
                     Delete
                   </button>
                 </td>

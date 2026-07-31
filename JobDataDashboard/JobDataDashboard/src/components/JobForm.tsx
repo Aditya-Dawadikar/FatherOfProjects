@@ -1,4 +1,5 @@
 import type { ChangeEvent } from 'react'
+import { FiPlusCircle, FiRotateCcw, FiSave, FiTrash2 } from 'react-icons/fi'
 import type { JobDraft } from '../types'
 
 type JobFormProps = {
@@ -51,7 +52,8 @@ export default function JobForm({ draft, mode, busy, onChange, onSubmit, onReset
           <p className="eyebrow">{mode === 'create' ? 'Create' : 'Edit'}</p>
           <h2>{mode === 'create' ? 'New job record' : `Job ${draft.job_id}`}</h2>
         </div>
-        <button type="button" className="ghost-button" onClick={onReset}>
+        <button type="button" className="ghost-button ghost-button-with-icon" onClick={onReset}>
+          <FiRotateCcw aria-hidden="true" className="button-icon" />
           {mode === 'create' ? 'Clear form' : 'New record'}
         </button>
       </div>
@@ -82,11 +84,17 @@ export default function JobForm({ draft, mode, busy, onChange, onSubmit, onReset
       </div>
 
       <div className="form-actions">
-        <button type="button" className="primary-button" disabled={busy} onClick={onSubmit}>
+        <button type="button" className="primary-button ghost-button-with-icon" disabled={busy} onClick={onSubmit}>
+          {mode === 'create' ? (
+            <FiPlusCircle aria-hidden="true" className="button-icon" />
+          ) : (
+            <FiSave aria-hidden="true" className="button-icon" />
+          )}
           {busy ? 'Saving...' : mode === 'create' ? 'Create record' : 'Save changes'}
         </button>
         {mode === 'edit' && (
-          <button type="button" className="danger-button" disabled={busy} onClick={onDelete}>
+          <button type="button" className="danger-button ghost-button-with-icon" disabled={busy} onClick={onDelete}>
+            <FiTrash2 aria-hidden="true" className="button-icon" />
             Delete record
           </button>
         )}
