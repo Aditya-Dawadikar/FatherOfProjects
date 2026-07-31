@@ -7,6 +7,7 @@ const LEGEND_ITEMS = [
   { key: 'good', label: 'Good match', swatchClass: 'legend-swatch-good' },
   { key: 'moderate', label: 'Moderate match', swatchClass: 'legend-swatch-moderate' },
   { key: 'bad', label: 'Bad match', swatchClass: 'legend-swatch-bad' },
+  { key: 'failed', label: 'Failed (not found)', swatchClass: 'legend-swatch-failed' },
 ]
 
 export default function OverviewView() {
@@ -49,6 +50,10 @@ export default function OverviewView() {
           <article className="summary-card">
             <span>Moderate / bad</span>
             <strong>{funnel.moderate_matches} / {funnel.bad_matches}</strong>
+          </article>
+          <article className="summary-card">
+            <span>Failed (not found)</span>
+            <strong>{funnel.failed_matches}</strong>
           </article>
         </div>
       )}

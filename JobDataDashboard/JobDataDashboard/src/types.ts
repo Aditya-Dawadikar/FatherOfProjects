@@ -75,4 +75,5 @@ export type PipelineFunnel = {
   good_matches: number
   moderate_matches: number
   bad_matches: number
+  failed_matches: number
 }

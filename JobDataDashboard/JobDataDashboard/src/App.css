@@ -406,6 +406,10 @@
   .form-panel {
     position: static;
   }
+
+  .alluvial-wrap {
+    max-width: 85vw;
+  }
 }
 
 @media (max-width: 720px) {
@@ -436,13 +440,19 @@
   .form-grid {
     grid-template-columns: 1fr;
   }
+
+  .alluvial-wrap {
+    max-width: 100%;
+  }
 }
 
 .alluvial-wrap {
   --flow-total: #3d4d44;
   --flow-pending: #cfd9d2;
+  --flow-failed: #5c4a99;
   position: relative;
-  margin-top: 8px;
+  margin: 8px auto 0;
+  max-width: 60vw;
 }
 
 .alluvial-chart {
@@ -532,4 +542,8 @@
 
 .legend-swatch-bad {
   background: var(--error);
+}
+
+.legend-swatch-failed {
+  background: #5c4a99;
 }

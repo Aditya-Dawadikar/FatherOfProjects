@@ -41,6 +41,7 @@ const FLOW_PENDING = 'var(--flow-pending)'
 const FLOW_GOOD = 'var(--accent)'
 const FLOW_MODERATE = 'var(--warn)'
 const FLOW_BAD = 'var(--error)'
+const FLOW_FAILED = 'var(--flow-failed)'
 
 function formatCount(value: number) {
   return value.toLocaleString()
@@ -71,6 +72,7 @@ export default function AlluvialChart({ funnel }: AlluvialChartProps) {
       { id: 'good', label: 'Good match', value: funnel.good_matches, column: 2, fill: FLOW_GOOD, textColor: 'light' },
       { id: 'moderate', label: 'Moderate match', value: funnel.moderate_matches, column: 2, fill: FLOW_MODERATE, textColor: 'light' },
       { id: 'bad', label: 'Bad match', value: funnel.bad_matches, column: 2, fill: FLOW_BAD, textColor: 'light' },
+      { id: 'failed', label: 'Failed (not found)', value: funnel.failed_matches, column: 2, fill: FLOW_FAILED, textColor: 'light' },
       { id: 'pending-2', label: 'Not yet processed', value: notProcessed, column: 2, fill: FLOW_PENDING, textColor: 'dark' },
     ]
 
@@ -80,11 +82,12 @@ export default function AlluvialChart({ funnel }: AlluvialChartProps) {
       { id: 'processed-good', source: 'processed', target: 'good', value: funnel.good_matches },
       { id: 'processed-moderate', source: 'processed', target: 'moderate', value: funnel.moderate_matches },
       { id: 'processed-bad', source: 'processed', target: 'bad', value: funnel.bad_matches },
+      { id: 'processed-failed', source: 'processed', target: 'failed', value: funnel.failed_matches },
       { id: 'pending-pending', source: 'pending-1', target: 'pending-2', value: notProcessed },
     ]
 
     const total = funnel.total_scraped
-    const columnCounts = [1, 2, 4]
+    const columnCounts = [1, 2, 5]
     const maxGaps = Math.max(...columnCounts) - 1
     const availableHeight = CHART_BOTTOM - CHART_TOP - maxGaps * NODE_GAP
     const scale = total > 0 ? availableHeight / total : 0

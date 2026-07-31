@@ -45,6 +45,15 @@ LOGGER = logging.getLogger(__name__)
 _GOOD_MATCH_MIN_SCORE = 70
 _MODERATE_MATCH_MIN_SCORE = 40
 
+# JobManagerAgent's crawl_job tool (tools/agent_tools.py) records a 404'd posting as a job_matches
+# row (match_score=0, is_match=False) tagged with this reasoning prefix instead of leaving it
+# unevaluated -- it's an agent/crawl failure, not a genuine low-scoring match, so /matches/funnel
+# breaks it out of the "bad" bucket instead of conflating "scored poorly" with "couldn't even be
+# evaluated". Every other failure mode (rate limits, timeouts, unparseable LLM responses) is NOT
+# persisted anywhere -- the agent just skips the job for retry next cycle -- so only this one is
+# distinguishable from "not yet processed" today.
+_NOT_FOUND_REASON_PREFIX = "not_found_404"
+
 
 app = FastAPI(
 	title="Job Data Server",
@@ -136,6 +145,7 @@ class PipelineFunnelResponse(BaseModel):
 	good_matches: int
 	moderate_matches: int
 	bad_matches: int
+	failed_matches: int
 
 
 def serialize_job_listing(listing: JobListing) -> dict[str, object]:
@@ -515,15 +525,21 @@ def count_matches(
 
 @app.get("/matches/funnel", response_model=PipelineFunnelResponse)
 def get_pipeline_funnel(session: SessionDependency) -> PipelineFunnelResponse:
-	"""Counts for the scrape -> agent-processed -> good/moderate/bad funnel the dashboard's
+	"""Counts for the scrape -> agent-processed -> good/moderate/bad/failed funnel the dashboard's
 	alluvial chart renders. total_processed is every job_matches row regardless of score;
 	total_scraped - total_processed is how many job_listings rows JobManagerAgent hasn't reached
-	yet. good/moderate/bad always sum to total_processed."""
+	yet. good/moderate/bad/failed always sum to total_processed -- failed (404'd postings) is
+	carved out of the score bands rather than counted as a genuine bad match."""
+	not_found = JobMatch.reasoning.like(f"{_NOT_FOUND_REASON_PREFIX}%")
+
 	total_scraped = session.scalar(select(func.count()).select_from(JobListing)) or 0
 	total_processed = session.scalar(select(func.count()).select_from(JobMatch)) or 0
+	failed_matches = session.scalar(select(func.count()).select_from(JobMatch).where(not_found)) or 0
 	good_matches = (
 		session.scalar(
-			select(func.count()).select_from(JobMatch).where(JobMatch.match_score >= _GOOD_MATCH_MIN_SCORE)
+			select(func.count())
+			.select_from(JobMatch)
+			.where(JobMatch.match_score >= _GOOD_MATCH_MIN_SCORE, ~not_found)
 		)
 		or 0
 	)
@@ -534,13 +550,16 @@ def get_pipeline_funnel(session: SessionDependency) -> PipelineFunnelResponse:
 			.where(
 				JobMatch.match_score >= _MODERATE_MATCH_MIN_SCORE,
 				JobMatch.match_score < _GOOD_MATCH_MIN_SCORE,
+				~not_found,
 			)
 		)
 		or 0
 	)
 	bad_matches = (
 		session.scalar(
-			select(func.count()).select_from(JobMatch).where(JobMatch.match_score < _MODERATE_MATCH_MIN_SCORE)
+			select(func.count())
+			.select_from(JobMatch)
+			.where(JobMatch.match_score < _MODERATE_MATCH_MIN_SCORE, ~not_found)
 		)
 		or 0
 	)
@@ -550,6 +569,7 @@ def get_pipeline_funnel(session: SessionDependency) -> PipelineFunnelResponse:
 		good_matches=int(good_matches),
 		moderate_matches=int(moderate_matches),
 		bad_matches=int(bad_matches),
+		failed_matches=int(failed_matches),
 	)
 
 
