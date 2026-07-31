@@ -32,6 +32,7 @@ from shared.job_data import (  # noqa: E402
 	load_database_url,
 	normalize_job_payload,
 )
+from shared.job_match_data import JobMatch  # noqa: E402
 from stream_events import RedisStreamPublisher, publish_server_event
 
 
@@ -40,13 +41,18 @@ LOGGER = logging.getLogger(__name__)
 
 app = FastAPI(
 	title="Job Data Server",
-	description="Simple CRUD API for the WebScraper job_listings table.",
+	description="CRUD API for the WebScraper job_listings table, plus read-only query APIs over "
+	"job_matches (JobManagerAgent's LLM scoring output).",
 	version="0.1.0",
 )
 
 
 def get_resolved_table_name() -> str:
 	return os.getenv("JOB_TABLE_NAME", JobListing.__tablename__).strip() or JobListing.__tablename__
+
+
+def get_resolved_match_table_name() -> str:
+	return os.getenv("JOB_MATCH_TABLE_NAME", JobMatch.__tablename__).strip() or JobMatch.__tablename__
 
 
 class JobBase(BaseModel):
@@ -94,6 +100,29 @@ class JobRead(JobBase):
 	model_config = ConfigDict(from_attributes=True)
 
 
+class JobMatchRead(BaseModel):
+	job_id: int
+	match_score: int
+	is_match: bool
+	reasoning: str | None = None
+	prompt_name: str
+	prompt_version: str
+	model_name: str
+	evaluated_at: datetime
+
+	model_config = ConfigDict(from_attributes=True)
+
+
+class JobWithMatchRead(JobRead):
+	match_score: int
+	is_match: bool
+	reasoning: str | None = None
+	prompt_name: str
+	prompt_version: str
+	model_name: str
+	evaluated_at: datetime
+
+
 def serialize_job_listing(listing: JobListing) -> dict[str, object]:
 	payload: dict[str, object] = {
 		"job_id": listing.job_id,
@@ -101,6 +130,20 @@ def serialize_job_listing(listing: JobListing) -> dict[str, object]:
 	}
 	for field_name in JOB_FIELD_NAMES:
 		payload[field_name] = getattr(listing, field_name)
+	return payload
+
+
+def serialize_job_with_match(listing: JobListing, match: JobMatch) -> dict[str, object]:
+	payload = serialize_job_listing(listing)
+	payload.update(
+		match_score=match.match_score,
+		is_match=match.is_match,
+		reasoning=match.reasoning,
+		prompt_name=match.prompt_name,
+		prompt_version=match.prompt_version,
+		model_name=match.model_name,
+		evaluated_at=match.evaluated_at.isoformat() if match.evaluated_at else None,
+	)
 	return payload
 
 
@@ -124,7 +167,7 @@ def get_session():
 SessionDependency = Annotated[Session, Depends(get_session)]
 
 
-def with_company_filter(statement: Select[tuple[JobListing]], company_name: str | None):
+def with_company_filter(statement: Select, company_name: str | None):
 	if company_name is None:
 		return statement
 
@@ -155,6 +198,26 @@ def with_search_filters(
 	return statement
 
 
+def with_match_filters(
+	statement: Select,
+	*,
+	is_match: bool | None = None,
+	min_score: int | None = None,
+	max_score: int | None = None,
+	prompt_version: str | None = None,
+):
+	if is_match is not None:
+		statement = statement.where(JobMatch.is_match == is_match)
+	if min_score is not None:
+		statement = statement.where(JobMatch.match_score >= min_score)
+	if max_score is not None:
+		statement = statement.where(JobMatch.match_score <= max_score)
+	if prompt_version:
+		statement = statement.where(JobMatch.prompt_version == prompt_version)
+
+	return statement
+
+
 def get_job_or_404(session: Session, job_id: int, company_name: str | None) -> JobListing:
 	statement = select(JobListing).where(JobListing.job_id == job_id)
 	listing = session.scalar(with_company_filter(statement, company_name))
@@ -175,7 +238,7 @@ def merge_patch_payload(listing: JobListing, patch: JobPatch) -> dict[str, str |
 
 @app.get("/health")
 def healthcheck() -> dict[str, str]:
-	return {"status": "ok", "table": get_resolved_table_name()}
+	return {"status": "ok", "table": get_resolved_table_name(), "match_table": get_resolved_match_table_name()}
 
 
 @app.get("/jobs", response_model=list[JobRead])
@@ -247,6 +310,43 @@ def count_jobs(
 	)
 	total = session.scalar(statement) or 0
 	return {"total": int(total)}
+
+
+@app.get("/jobs/matched", response_model=list[JobWithMatchRead])
+def get_matched_jobs(
+	session: SessionDependency,
+	company_name: str | None = Query(default=None),
+	job_id: int | None = Query(default=None),
+	job_role: str | None = Query(default=None),
+	location: str | None = Query(default=None),
+	query: str | None = Query(default=None),
+	is_match: bool | None = Query(default=None, description="Filter to jobs that cleared MATCH_THRESHOLD (true) or not (false)."),
+	min_score: int | None = Query(default=None, ge=0, le=100),
+	max_score: int | None = Query(default=None, ge=0, le=100),
+	prompt_version: str | None = Query(default=None, description="Only jobs scored by this exact job_matches.prompt_version."),
+	limit: int = Query(default=100, ge=1, le=500),
+	offset: int = Query(default=0, ge=0),
+) -> list[dict[str, object]]:
+	"""job_listings inner-joined with job_matches -- every job JobManagerAgent has already
+	scored, with the full listing plus its score/reasoning/prompt/model provenance in one row.
+	Jobs not yet evaluated (no job_matches row) are excluded; that's the whole point of this
+	endpoint over plain /jobs, which knows nothing about match state."""
+	statement = (
+		select(JobListing, JobMatch)
+		.join(JobMatch, JobMatch.job_id == JobListing.job_id)
+		.order_by(JobMatch.evaluated_at.desc(), JobListing.job_id.desc())
+	)
+	if job_id is not None:
+		statement = statement.where(JobListing.job_id == job_id)
+	statement = with_company_filter(statement, company_name)
+	statement = with_search_filters(statement, job_role=job_role, location=location, query=query)
+	statement = with_match_filters(
+		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=prompt_version
+	)
+	statement = statement.offset(offset).limit(limit)
+
+	rows = session.execute(statement).all()
+	return [serialize_job_with_match(listing, match) for listing, match in rows]
 
 
 @app.get("/jobs/{job_id}", response_model=JobRead)
@@ -325,3 +425,55 @@ def delete_job(
 		job=deleted_job,
 	)
 	return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- job_matches (read-only) -------------------------------------------------------------------
+# JobManagerAgent is the sole writer of job_matches (see its tools/db_tools.py record_job_result,
+# called once per job right after its ReAct agent scores it against the resume via
+# evaluate_match/score_job). This service only reads that same table -- there is no POST/PATCH/
+# DELETE here, match data is exposed for querying, not mutated from this side.
+
+
+@app.get("/matches", response_model=list[JobMatchRead])
+def get_matches(
+	session: SessionDependency,
+	job_id: int | None = Query(default=None),
+	is_match: bool | None = Query(default=None, description="Filter to jobs that cleared MATCH_THRESHOLD (true) or not (false)."),
+	min_score: int | None = Query(default=None, ge=0, le=100),
+	max_score: int | None = Query(default=None, ge=0, le=100),
+	prompt_version: str | None = Query(default=None, description="Only rows scored by this exact prompt_version."),
+	limit: int = Query(default=100, ge=1, le=500),
+	offset: int = Query(default=0, ge=0),
+) -> list[JobMatch]:
+	statement = select(JobMatch).order_by(JobMatch.evaluated_at.desc(), JobMatch.job_id.desc())
+	if job_id is not None:
+		statement = statement.where(JobMatch.job_id == job_id)
+	statement = with_match_filters(
+		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=prompt_version
+	)
+	statement = statement.offset(offset).limit(limit)
+	return list(session.scalars(statement))
+
+
+@app.get("/matches/count")
+def count_matches(
+	session: SessionDependency,
+	is_match: bool | None = Query(default=None),
+	min_score: int | None = Query(default=None, ge=0, le=100),
+	max_score: int | None = Query(default=None, ge=0, le=100),
+	prompt_version: str | None = Query(default=None),
+) -> dict[str, int]:
+	statement = select(func.count()).select_from(JobMatch)
+	statement = with_match_filters(
+		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=prompt_version
+	)
+	total = session.scalar(statement) or 0
+	return {"total": int(total)}
+
+
+@app.get("/matches/{job_id}", response_model=JobMatchRead)
+def get_match(job_id: int, session: SessionDependency) -> JobMatch:
+	match = session.get(JobMatch, job_id)
+	if match is None:
+		raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No match recorded for job {job_id}")
+	return match
