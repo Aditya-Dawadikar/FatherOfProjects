@@ -36,6 +36,7 @@ export type JobDraft = {
 export type HealthResponse = {
   status: string
   table: string
+  match_table: string
 }
 
 export type JobsCountResponse = {
@@ -44,6 +45,26 @@ export type JobsCountResponse = {
 
 export type JobsQuery = {
   searchText: string
+  limit: number
+  offset: number
+}
+
+export type MatchFilter = 'all' | 'matched' | 'unmatched'
+
+export type MatchedJobRecord = JobRecord & {
+  match_score: number
+  is_match: boolean
+  reasoning: string | null
+  prompt_name: string
+  prompt_version: string
+  model_name: string
+  evaluated_at: string
+}
+
+export type MatchesQuery = {
+  searchText: string
+  matchFilter: MatchFilter
+  minScore: number | null
   limit: number
   offset: number
 }

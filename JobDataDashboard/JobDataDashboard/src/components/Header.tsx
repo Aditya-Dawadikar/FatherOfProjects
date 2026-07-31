@@ -16,6 +16,7 @@ export default function Header() {
           <span>{status === 'ok' ? 'API healthy' : 'Checking API'}</span>
         </div>
         <div className="status-card muted">Table: {health?.table ?? 'Loading...'}</div>
+        <div className="status-card muted">Matches: {health?.match_table ?? 'Loading...'}</div>
       </div>
     </header>
   )

@@ -349,6 +349,33 @@ def get_matched_jobs(
 	return [serialize_job_with_match(listing, match) for listing, match in rows]
 
 
+@app.get("/jobs/matched/count")
+def count_matched_jobs(
+	session: SessionDependency,
+	company_name: str | None = Query(default=None),
+	job_id: int | None = Query(default=None),
+	job_role: str | None = Query(default=None),
+	location: str | None = Query(default=None),
+	query: str | None = Query(default=None),
+	is_match: bool | None = Query(default=None),
+	min_score: int | None = Query(default=None, ge=0, le=100),
+	max_score: int | None = Query(default=None, ge=0, le=100),
+	prompt_version: str | None = Query(default=None),
+) -> dict[str, int]:
+	"""Mirrors /jobs/matched's filters exactly (same join, same helpers) so a caller paginating
+	that endpoint can compute total pages instead of guessing from a short page."""
+	statement = select(func.count()).select_from(JobListing).join(JobMatch, JobMatch.job_id == JobListing.job_id)
+	if job_id is not None:
+		statement = statement.where(JobListing.job_id == job_id)
+	statement = with_company_filter(statement, company_name)
+	statement = with_search_filters(statement, job_role=job_role, location=location, query=query)
+	statement = with_match_filters(
+		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=prompt_version
+	)
+	total = session.scalar(statement) or 0
+	return {"total": int(total)}
+
+
 @app.get("/jobs/{job_id}", response_model=JobRead)
 def get_job(job_id: int, session: SessionDependency, company_name: str | None = Query(default=None)) -> JobListing:
 	return get_job_or_404(session, job_id, company_name)

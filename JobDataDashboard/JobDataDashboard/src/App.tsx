@@ -4,6 +4,7 @@ import './App.css'
 import Header from './components/Header'
 import JobForm from './components/JobForm'
 import JobsTable from './components/JobsTable'
+import MatchesView from './components/MatchesView'
 import {
   createEmptyDraft,
   createJob,
@@ -19,7 +20,10 @@ const queryClient = new QueryClient()
 const JOBS_QUERY_KEY = ['jobs']
 const PAGE_SIZE = 20
 
+type ActiveView = 'jobs' | 'matches'
+
 function DashboardApp() {
+  const [activeView, setActiveView] = useState<ActiveView>('jobs')
   const [searchText, setSearchText] = useState('')
   const [page, setPage] = useState(1)
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null)
@@ -164,6 +168,28 @@ function DashboardApp() {
     <div className="app-shell">
       <Header />
 
+      <nav className="view-tabs">
+        <button
+          type="button"
+          className={`view-tab${activeView === 'jobs' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('jobs')}
+        >
+          Jobs
+        </button>
+        <button
+          type="button"
+          className={`view-tab${activeView === 'matches' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('matches')}
+        >
+          Matches
+        </button>
+      </nav>
+
+      {activeView === 'matches' ? (
+        <main className="app-body app-body-single">
+          <MatchesView />
+        </main>
+      ) : (
       <main className="app-body">
         <section className="content-panel">
           <div className="toolbar">
@@ -258,6 +284,7 @@ function DashboardApp() {
           onDelete={removeDraft}
         />
       </main>
+      )}
     </div>
   )
 }

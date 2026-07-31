@@ -1,5 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
-import type { HealthResponse, JobDraft, JobRecord, JobsCountResponse, JobsQuery } from '../types'
+import type {
+  HealthResponse,
+  JobDraft,
+  JobRecord,
+  JobsCountResponse,
+  JobsQuery,
+  MatchedJobRecord,
+  MatchesQuery,
+} from '../types'
 
 const API_BASE = (import.meta.env.DEV ? import.meta.env.VITE_JOB_DATA_API_BASE_URL ?? '' : '').replace(/\/$/, '')
 
@@ -116,6 +124,36 @@ async function fetchHealth(): Promise<HealthResponse> {
   return requestJson<HealthResponse>('/api/health')
 }
 
+function buildMatchesParams({ searchText, matchFilter, minScore }: Omit<MatchesQuery, 'limit' | 'offset'>) {
+  const params = new URLSearchParams()
+  const trimmedQuery = searchText.trim()
+
+  if (trimmedQuery) {
+    params.set('query', trimmedQuery)
+  }
+  if (matchFilter !== 'all') {
+    params.set('is_match', matchFilter === 'matched' ? 'true' : 'false')
+  }
+  if (minScore !== null) {
+    params.set('min_score', String(minScore))
+  }
+
+  return params
+}
+
+async function fetchMatchedJobs({ searchText, matchFilter, minScore, limit, offset }: MatchesQuery): Promise<MatchedJobRecord[]> {
+  const params = buildMatchesParams({ searchText, matchFilter, minScore })
+  params.set('limit', String(limit))
+  params.set('offset', String(offset))
+  return requestJson<MatchedJobRecord[]>(`/api/jobs/matched?${params.toString()}`)
+}
+
+async function fetchMatchedJobsCount(filters: Omit<MatchesQuery, 'limit' | 'offset'>): Promise<JobsCountResponse> {
+  const params = buildMatchesParams(filters)
+  const querySuffix = params.size ? `?${params.toString()}` : ''
+  return requestJson<JobsCountResponse>(`/api/jobs/matched/count${querySuffix}`)
+}
+
 function toNullable(value: string) {
   const trimmedValue = value.trim()
   return trimmedValue ? trimmedValue : null
@@ -226,5 +264,21 @@ export function useJobDataHealth() {
     queryKey: ['jobDataHealth'],
     queryFn: fetchHealth,
     staleTime: 15_000,
+  })
+}
+
+export function useMatchedJobs(filters: MatchesQuery) {
+  return useQuery({
+    queryKey: ['matchedJobs', filters],
+    queryFn: () => fetchMatchedJobs(filters),
+    staleTime: 5_000,
+  })
+}
+
+export function useMatchedJobsCount(filters: Omit<MatchesQuery, 'limit' | 'offset'>) {
+  return useQuery({
+    queryKey: ['matchedJobsCount', filters],
+    queryFn: () => fetchMatchedJobsCount(filters),
+    staleTime: 5_000,
   })
 }
