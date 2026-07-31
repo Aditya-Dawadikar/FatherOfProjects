@@ -189,6 +189,7 @@ def _compute_summary(rows: list[dict[str, Any]], *, total_cases: int) -> dict[st
 
 def run_offline_eval(
 	*,
+	eval_id: str | None = None,
 	dataset_path: Path,
 	prompt_source: str,
 	provider: str | None,
@@ -198,20 +199,8 @@ def run_offline_eval(
 	run_name: str | None,
 	limit: int | None,
 ) -> dict[str, Any]:
-	eval_id = new_id()
+	eval_id = eval_id or new_id()
 	log = LOGGER.bind(eval_id=eval_id)
-
-	cases = load_golden_dataset(dataset_path)
-	if limit is not None:
-		cases = cases[:limit]
-	log.action("dataset_loaded", dataset=str(dataset_path), case_count=len(cases))
-
-	default_resume = load_resume()
-	prompt_version_obj, prompt_version = _load_prompt_version(prompt_source)
-	resolved_provider = provider or load_provider_name()
-	resolved_model = model or load_model_name(resolved_provider)
-	resolved_threshold = threshold if threshold is not None else load_match_threshold()
-	llm_client = build_client(resolved_provider)
 
 	ensure_tracking_uri_configured()
 	resolved_experiment_name = experiment_name or load_mlflow_eval_experiment_name()
@@ -219,11 +208,45 @@ def run_offline_eval(
 	log.action("mlflow_target", tracking_uri=get_tracking_uri(), experiment_name=resolved_experiment_name)
 
 	rows: list[dict[str, Any]] = []
+	# The MLflow run wraps setup (dataset/prompt loading, client construction) as well as the
+	# scoring loop, not just the loop -- that way a run is the single durable record of an eval
+	# from the moment it's triggered, including setup failures (bad dataset, missing prompt, ...).
+	# mlflow.start_run()'s context manager marks the run FAILED and re-raises automatically on any
+	# exception escaping this block; the `except Exception` below only attaches a human-readable
+	# error_message tag before letting that happen, since MLflow doesn't record the exception text
+	# itself -- api/eval_runs.py reads that tag back to answer "why did this run fail?" instead of
+	# tracking it in process memory.
 	with mlflow.start_run(run_name=run_name or f"eval-{eval_id}"):
 		run = mlflow.active_run()
-		if run is not None:
-			log.action("mlflow_run_started", run_id=run.info.run_id)
 		run_id = run.info.run_id if run is not None else None
+		if run_id is not None:
+			log.action("mlflow_run_started", run_id=run_id)
+		mlflow.set_tags(
+			{
+				"eval_id": eval_id,
+				"run_type": "offline_eval",
+				"prompt_name": PROMPT_NAME,
+				"prompt_source": prompt_source,
+				"dataset_path": str(dataset_path),
+			}
+		)
+		try:
+			cases = load_golden_dataset(dataset_path)
+			if limit is not None:
+				cases = cases[:limit]
+			log.action("dataset_loaded", dataset=str(dataset_path), case_count=len(cases))
+
+			default_resume = load_resume()
+			prompt_version_obj, prompt_version = _load_prompt_version(prompt_source)
+			resolved_provider = provider or load_provider_name()
+			resolved_model = model or load_model_name(resolved_provider)
+			resolved_threshold = threshold if threshold is not None else load_match_threshold()
+			llm_client = build_client(resolved_provider)
+		except Exception as error:
+			message = f"Invalid golden dataset: {error}" if isinstance(error, DatasetError) else str(error)
+			mlflow.set_tag("error_message", message)
+			raise
+
 		with mlflow.start_span(
 			name="offline_eval",
 			span_type="EVALUATOR",
@@ -235,88 +258,84 @@ def run_offline_eval(
 			},
 			run_id=run_id,
 		) as eval_span:
-			eval_span.set_inputs(
-				{
-					"dataset_path": str(dataset_path),
-					"dataset_case_count": len(cases),
-					"match_threshold": resolved_threshold,
-				}
-			)
-			mlflow.set_tags(
-				{
-					"eval_id": eval_id,
-					"run_type": "offline_eval",
-					"prompt_name": PROMPT_NAME,
-					"prompt_source": prompt_source,
-					"llm_provider": resolved_provider,
-					"dataset_path": str(dataset_path),
-				}
-			)
-			mlflow.log_params(
-				{
+			try:
+				eval_span.set_inputs(
+					{
+						"dataset_path": str(dataset_path),
+						"dataset_case_count": len(cases),
+						"match_threshold": resolved_threshold,
+					}
+				)
+				mlflow.set_tag("llm_provider", resolved_provider)
+				params = {
 					"prompt_version": prompt_version,
 					"llm_provider": resolved_provider,
 					"llm_model": resolved_model,
 					"match_threshold": resolved_threshold,
 					"dataset_case_count": len(cases),
 				}
-			)
-			mlflow.log_artifact(str(dataset_path))
+				if limit is not None:
+					params["limit"] = limit
+				mlflow.log_params(params)
+				mlflow.log_artifact(str(dataset_path))
 
-			for case in cases:
-				case_log = log.bind(case_id=case.id)
+				for case in cases:
+					case_log = log.bind(case_id=case.id)
 
-				try:
-					with mlflow.start_span(
-						name="eval_case",
-						span_type="TASK",
-						attributes={"case_id": case.id},
-					) as case_span:
-						case_span.set_inputs(
-							{
-								"expected_is_match": case.expected_is_match,
-								"expected_score_min": case.expected_score_min,
-								"expected_score_max": case.expected_score_max,
-							}
+					try:
+						with mlflow.start_span(
+							name="eval_case",
+							span_type="TASK",
+							attributes={"case_id": case.id},
+						) as case_span:
+							case_span.set_inputs(
+								{
+									"expected_is_match": case.expected_is_match,
+									"expected_score_min": case.expected_score_min,
+									"expected_score_max": case.expected_score_max,
+								}
+							)
+							row = _run_one_case(
+								case=case,
+								default_resume=default_resume,
+								prompt_version_obj=prompt_version_obj,
+								llm_client=llm_client,
+								llm_model=resolved_model,
+								provider=resolved_provider,
+								threshold=resolved_threshold,
+							)
+							case_span.set_outputs(
+								{
+									"predicted_is_match": row["predicted_is_match"],
+									"predicted_score": row["predicted_score"],
+									"correct": row["correct"],
+								}
+							)
+						case_log.action(
+							"case_scored",
+							predicted_score=row["predicted_score"],
+							correct=row["correct"],
 						)
-						row = _run_one_case(
-							case=case,
-							default_resume=default_resume,
-							prompt_version_obj=prompt_version_obj,
-							llm_client=llm_client,
-							llm_model=resolved_model,
-							provider=resolved_provider,
-							threshold=resolved_threshold,
-						)
-						case_span.set_outputs(
-							{
-								"predicted_is_match": row["predicted_is_match"],
-								"predicted_score": row["predicted_score"],
-								"correct": row["correct"],
-							}
-						)
-					case_log.action(
-						"case_scored",
-						predicted_score=row["predicted_score"],
-						correct=row["correct"],
-					)
-					rows.append(row)
-				except RateLimitError as error:
-					# score_job() already retries a rate limit with backoff before raising, so
-					# reaching here means retries are exhausted for this case specifically --
-					# same "skip and move on" response as the live/backfill cycle, not aborting
-					# the rest of the dataset over one case.
-					case_log.action("case_rate_limited", error=str(error), retry_after=error.retry_after)
-					rows.append(_error_row(case, "rate_limited"))
-				except (MatchResponseError, TransientProviderError) as error:
-					case_log.action("case_errored", error=str(error))
-					rows.append(_error_row(case, str(error)))
+						rows.append(row)
+					except RateLimitError as error:
+						# score_job() already retries a rate limit with backoff before raising, so
+						# reaching here means retries are exhausted for this case specifically --
+						# same "skip and move on" response as the live/backfill cycle, not aborting
+						# the rest of the dataset over one case.
+						case_log.action("case_rate_limited", error=str(error), retry_after=error.retry_after)
+						rows.append(_error_row(case, "rate_limited"))
+					except (MatchResponseError, TransientProviderError) as error:
+						case_log.action("case_errored", error=str(error))
+						rows.append(_error_row(case, str(error)))
 
-			summary = _compute_summary(rows, total_cases=len(cases))
-			mlflow.log_metrics({key: value for key, value in summary.items() if isinstance(value, (int, float))})
-			mlflow.log_table(data=_rows_to_columns(rows), artifact_file="eval_results.json")
-			eval_span.set_outputs(summary)
-			log.action("mlflow_trace_ready", trace_id=eval_span.trace_id)
+				summary = _compute_summary(rows, total_cases=len(cases))
+				mlflow.log_metrics({key: value for key, value in summary.items() if isinstance(value, (int, float))})
+				mlflow.log_table(data=_rows_to_columns(rows), artifact_file="eval_results.json")
+				eval_span.set_outputs(summary)
+				log.action("mlflow_trace_ready", trace_id=eval_span.trace_id)
+			except Exception as error:
+				mlflow.set_tag("error_message", str(error))
+				raise
 
 	# Traces are exported asynchronously; force a flush in short-lived eval runs.
 	mlflow.flush_trace_async_logging(terminate=False)
