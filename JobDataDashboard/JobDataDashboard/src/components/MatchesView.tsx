@@ -17,17 +17,13 @@ export default function MatchesView() {
   const filters = { searchText: deferredSearchText, matchFilter, minScore }
   const matchesQuery = useMatchedJobs({ ...filters, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE })
   const matchesCountQuery = useMatchedJobsCount(filters)
+  const globalMatchesCountQuery = useMatchedJobsCount({ searchText: '', matchFilter: 'all', minScore: null })
 
   const matches = matchesQuery.data ?? []
   const totalRows = matchesCountQuery.data?.total ?? 0
+  const totalScoredJobs = globalMatchesCountQuery.data?.total ?? 0
   const totalPages = totalRows ? Math.ceil(totalRows / PAGE_SIZE) : 1
-  const pageStart = matches.length ? (page - 1) * PAGE_SIZE + 1 : 0
-  const pageEnd = matches.length ? pageStart + matches.length - 1 : 0
   const hasNextPage = page < totalPages
-  const matchedOnPage = matches.filter((match) => match.is_match).length
-  const avgScoreOnPage = matches.length
-    ? Math.round(matches.reduce((sum, match) => sum + match.match_score, 0) / matches.length)
-    : null
 
   function changeSearchText(value: string) {
     setSearchText(value)
@@ -60,7 +56,7 @@ export default function MatchesView() {
       <div className="toolbar">
         <div className="toolbar-copy">
           <p className="eyebrow">Processed by JobManagerAgent</p>
-          <h2>{matchesQuery.isLoading ? 'Loading matches...' : `${totalRows} scored jobs`}</h2>
+          <h2>{globalMatchesCountQuery.isLoading ? 'Loading matches...' : `${totalScoredJobs} scored jobs`}</h2>
         </div>
         <div className="toolbar-actions">
           <select
@@ -103,7 +99,7 @@ export default function MatchesView() {
         </div>
       </div>
 
-      <div className="summary-grid">
+      {/* <div className="summary-grid">
         <article className="summary-card">
           <span>Total scored</span>
           <strong>{totalRows}</strong>
@@ -120,10 +116,11 @@ export default function MatchesView() {
           <span>Page window</span>
           <strong>{pageStart && pageEnd ? `${pageStart}-${pageEnd}` : '0'}</strong>
         </article>
-      </div>
+      </div> */}
 
       {matchesQuery.error && <div className="banner banner-error">{matchesQuery.error.message}</div>}
       {matchesCountQuery.error && <div className="banner banner-error">{matchesCountQuery.error.message}</div>}
+  {globalMatchesCountQuery.error && <div className="banner banner-error">{globalMatchesCountQuery.error.message}</div>}
 
       <MatchesTable matches={matches} />
 
