@@ -34,10 +34,9 @@ const NODE_WIDTH = 20
 const CHART_TOP = 28
 const CHART_BOTTOM = 396
 const NODE_GAP = 26
-const COL_X = [24, 460, 896]
+const COL_X = [24, 300, 576, 896]
 
 const FLOW_TOTAL = 'var(--flow-total)'
-const FLOW_PENDING = 'var(--flow-pending)'
 const FLOW_GOOD = 'var(--accent)'
 const FLOW_MODERATE = 'var(--warn)'
 const FLOW_BAD = 'var(--error)'
@@ -63,38 +62,36 @@ export default function AlluvialChart({ funnel }: AlluvialChartProps) {
   const [hover, setHover] = useState<HoverTarget | null>(null)
 
   const { nodes, links, total } = useMemo(() => {
-    const notProcessed = Math.max(0, funnel.total_scraped - funnel.total_processed)
+    const success = Math.max(0, funnel.good_matches + funnel.moderate_matches + funnel.bad_matches)
 
     const rawNodes: FlowNode[] = [
       { id: 'scraped', label: 'Scraped jobs', value: funnel.total_scraped, column: 0, fill: FLOW_TOTAL, textColor: 'light' },
       { id: 'processed', label: 'Processed by agent', value: funnel.total_processed, column: 1, fill: FLOW_TOTAL, textColor: 'light' },
-      { id: 'pending-1', label: 'Not yet processed', value: notProcessed, column: 1, fill: FLOW_PENDING, textColor: 'dark' },
-      { id: 'good', label: 'Good match', value: funnel.good_matches, column: 2, fill: FLOW_GOOD, textColor: 'light' },
-      { id: 'moderate', label: 'Moderate match', value: funnel.moderate_matches, column: 2, fill: FLOW_MODERATE, textColor: 'light' },
-      { id: 'bad', label: 'Bad match', value: funnel.bad_matches, column: 2, fill: FLOW_BAD, textColor: 'light' },
+      { id: 'success', label: 'Success', value: success, column: 2, fill: FLOW_TOTAL, textColor: 'light' },
       { id: 'failed', label: 'Failed (not found)', value: funnel.failed_matches, column: 2, fill: FLOW_FAILED, textColor: 'light' },
-      { id: 'pending-2', label: 'Not yet processed', value: notProcessed, column: 2, fill: FLOW_PENDING, textColor: 'dark' },
+      { id: 'good', label: 'Good match', value: funnel.good_matches, column: 3, fill: FLOW_GOOD, textColor: 'light' },
+      { id: 'moderate', label: 'Moderate match', value: funnel.moderate_matches, column: 3, fill: FLOW_MODERATE, textColor: 'light' },
+      { id: 'bad', label: 'Bad match', value: funnel.bad_matches, column: 3, fill: FLOW_BAD, textColor: 'light' },
     ]
 
     const rawLinks: FlowLink[] = [
       { id: 'scraped-processed', source: 'scraped', target: 'processed', value: funnel.total_processed },
-      { id: 'scraped-pending', source: 'scraped', target: 'pending-1', value: notProcessed },
-      { id: 'processed-good', source: 'processed', target: 'good', value: funnel.good_matches },
-      { id: 'processed-moderate', source: 'processed', target: 'moderate', value: funnel.moderate_matches },
-      { id: 'processed-bad', source: 'processed', target: 'bad', value: funnel.bad_matches },
+      { id: 'processed-success', source: 'processed', target: 'success', value: success },
       { id: 'processed-failed', source: 'processed', target: 'failed', value: funnel.failed_matches },
-      { id: 'pending-pending', source: 'pending-1', target: 'pending-2', value: notProcessed },
+      { id: 'success-good', source: 'success', target: 'good', value: funnel.good_matches },
+      { id: 'success-moderate', source: 'success', target: 'moderate', value: funnel.moderate_matches },
+      { id: 'success-bad', source: 'success', target: 'bad', value: funnel.bad_matches },
     ]
 
     const total = funnel.total_scraped
-    const columnCounts = [1, 2, 5]
+    const columnCounts = [1, 1, 2, 3]
     const maxGaps = Math.max(...columnCounts) - 1
     const availableHeight = CHART_BOTTOM - CHART_TOP - maxGaps * NODE_GAP
     const scale = total > 0 ? availableHeight / total : 0
     const minHeight = 3
 
     const laidOutNodes: LaidOutNode[] = []
-    for (const col of [0, 1, 2]) {
+    for (const col of [0, 1, 2, 3]) {
       let y = CHART_TOP
       for (const node of rawNodes.filter((n) => n.column === col)) {
         const height = node.value > 0 ? Math.max(node.value * scale, minHeight) : 0
