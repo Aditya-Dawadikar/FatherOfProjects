@@ -5,6 +5,7 @@ import Header from './components/Header'
 import JobForm from './components/JobForm'
 import JobsTable from './components/JobsTable'
 import MatchesView from './components/MatchesView'
+import OverviewView from './components/OverviewView'
 import {
   createEmptyDraft,
   createJob,
@@ -20,10 +21,10 @@ const queryClient = new QueryClient()
 const JOBS_QUERY_KEY = ['jobs']
 const PAGE_SIZE = 20
 
-type ActiveView = 'jobs' | 'matches'
+type ActiveView = 'overview' | 'jobs' | 'matches'
 
 function DashboardApp() {
-  const [activeView, setActiveView] = useState<ActiveView>('jobs')
+  const [activeView, setActiveView] = useState<ActiveView>('overview')
   const [searchText, setSearchText] = useState('')
   const [page, setPage] = useState(1)
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null)
@@ -171,6 +172,13 @@ function DashboardApp() {
       <nav className="view-tabs">
         <button
           type="button"
+          className={`view-tab${activeView === 'overview' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('overview')}
+        >
+          Overview
+        </button>
+        <button
+          type="button"
           className={`view-tab${activeView === 'jobs' ? ' is-active' : ''}`}
           onClick={() => setActiveView('jobs')}
         >
@@ -185,7 +193,11 @@ function DashboardApp() {
         </button>
       </nav>
 
-      {activeView === 'matches' ? (
+      {activeView === 'overview' ? (
+        <main className="app-body app-body-single">
+          <OverviewView />
+        </main>
+      ) : activeView === 'matches' ? (
         <main className="app-body app-body-single">
           <MatchesView />
         </main>

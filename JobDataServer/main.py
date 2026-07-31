@@ -38,6 +38,13 @@ from stream_events import RedisStreamPublisher, publish_server_event
 
 LOGGER = logging.getLogger(__name__)
 
+# Score bands the /matches/funnel endpoint and the dashboard's alluvial chart agree on --
+# match_score >= GOOD is "good", [MODERATE, GOOD) is "moderate", below MODERATE is "bad". Kept
+# here as the single source of truth instead of letting the frontend duplicate these cutoffs
+# across several /matches/count calls with different min_score/max_score combinations.
+_GOOD_MATCH_MIN_SCORE = 70
+_MODERATE_MATCH_MIN_SCORE = 40
+
 
 app = FastAPI(
 	title="Job Data Server",
@@ -121,6 +128,14 @@ class JobWithMatchRead(JobRead):
 	prompt_version: str
 	model_name: str
 	evaluated_at: datetime
+
+
+class PipelineFunnelResponse(BaseModel):
+	total_scraped: int
+	total_processed: int
+	good_matches: int
+	moderate_matches: int
+	bad_matches: int
 
 
 def serialize_job_listing(listing: JobListing) -> dict[str, object]:
@@ -496,6 +511,46 @@ def count_matches(
 	)
 	total = session.scalar(statement) or 0
 	return {"total": int(total)}
+
+
+@app.get("/matches/funnel", response_model=PipelineFunnelResponse)
+def get_pipeline_funnel(session: SessionDependency) -> PipelineFunnelResponse:
+	"""Counts for the scrape -> agent-processed -> good/moderate/bad funnel the dashboard's
+	alluvial chart renders. total_processed is every job_matches row regardless of score;
+	total_scraped - total_processed is how many job_listings rows JobManagerAgent hasn't reached
+	yet. good/moderate/bad always sum to total_processed."""
+	total_scraped = session.scalar(select(func.count()).select_from(JobListing)) or 0
+	total_processed = session.scalar(select(func.count()).select_from(JobMatch)) or 0
+	good_matches = (
+		session.scalar(
+			select(func.count()).select_from(JobMatch).where(JobMatch.match_score >= _GOOD_MATCH_MIN_SCORE)
+		)
+		or 0
+	)
+	moderate_matches = (
+		session.scalar(
+			select(func.count())
+			.select_from(JobMatch)
+			.where(
+				JobMatch.match_score >= _MODERATE_MATCH_MIN_SCORE,
+				JobMatch.match_score < _GOOD_MATCH_MIN_SCORE,
+			)
+		)
+		or 0
+	)
+	bad_matches = (
+		session.scalar(
+			select(func.count()).select_from(JobMatch).where(JobMatch.match_score < _MODERATE_MATCH_MIN_SCORE)
+		)
+		or 0
+	)
+	return PipelineFunnelResponse(
+		total_scraped=int(total_scraped),
+		total_processed=int(total_processed),
+		good_matches=int(good_matches),
+		moderate_matches=int(moderate_matches),
+		bad_matches=int(bad_matches),
+	)
 
 
 @app.get("/matches/{job_id}", response_model=JobMatchRead)

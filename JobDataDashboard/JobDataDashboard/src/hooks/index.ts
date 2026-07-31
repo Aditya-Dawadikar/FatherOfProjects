@@ -7,6 +7,7 @@ import type {
   JobsQuery,
   MatchedJobRecord,
   MatchesQuery,
+  PipelineFunnel,
 } from '../types'
 
 const API_BASE = (import.meta.env.DEV ? import.meta.env.VITE_JOB_DATA_API_BASE_URL ?? '' : '').replace(/\/$/, '')
@@ -154,6 +155,10 @@ async function fetchMatchedJobsCount(filters: Omit<MatchesQuery, 'limit' | 'offs
   return requestJson<JobsCountResponse>(`/api/jobs/matched/count${querySuffix}`)
 }
 
+async function fetchPipelineFunnel(): Promise<PipelineFunnel> {
+  return requestJson<PipelineFunnel>('/api/matches/funnel')
+}
+
 function toNullable(value: string) {
   const trimmedValue = value.trim()
   return trimmedValue ? trimmedValue : null
@@ -279,6 +284,14 @@ export function useMatchedJobsCount(filters: Omit<MatchesQuery, 'limit' | 'offse
   return useQuery({
     queryKey: ['matchedJobsCount', filters],
     queryFn: () => fetchMatchedJobsCount(filters),
+    staleTime: 5_000,
+  })
+}
+
+export function usePipelineFunnel() {
+  return useQuery({
+    queryKey: ['pipelineFunnel'],
+    queryFn: fetchPipelineFunnel,
     staleTime: 5_000,
   })
 }

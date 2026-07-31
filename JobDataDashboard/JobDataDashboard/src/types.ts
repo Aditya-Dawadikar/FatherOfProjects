@@ -68,3 +68,11 @@ export type MatchesQuery = {
   limit: number
   offset: number
 }
+
+export type PipelineFunnel = {
+  total_scraped: number
+  total_processed: number
+  good_matches: number
+  moderate_matches: number
+  bad_matches: number
+}
