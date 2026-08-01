@@ -1,5 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import type {
+  EvalRun,
+  EvalSweepTrigger,
   HealthResponse,
   JobDraft,
   JobRecord,
@@ -293,5 +295,100 @@ export function usePipelineFunnel() {
     queryKey: ['pipelineFunnel'],
     queryFn: fetchPipelineFunnel,
     staleTime: 5_000,
+  })
+}
+
+// JobManagerAgent's API lives on a separate service from JobDataServer, so it gets its own
+// base-url resolution + request helper (same shape as requestJson above, mirrored rather than
+// shared so each service's proxy target stays independently configurable).
+const AGENT_API_BASE = (import.meta.env.DEV ? import.meta.env.VITE_AGENT_API_BASE_URL ?? '' : '').replace(/\/$/, '')
+
+function buildAgentApiUrl(path: string) {
+  return `${AGENT_API_BASE}${path}`
+}
+
+async function requestAgentJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const requestUrl = buildAgentApiUrl(path)
+  const requestMethod = init?.method ?? 'GET'
+
+  console.info('[job-manager-agent-request:start]', {
+    method: requestMethod,
+    path,
+    requestUrl,
+  })
+
+  let response: Response
+  try {
+    response = await fetch(requestUrl, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers ?? {}),
+      },
+      ...init,
+    })
+  } catch (error) {
+    console.error('[job-manager-agent-request:network-error]', {
+      method: requestMethod,
+      path,
+      requestUrl,
+      error,
+    })
+    throw error
+  }
+
+  console.info('[job-manager-agent-request:response]', {
+    method: requestMethod,
+    path,
+    requestUrl,
+    status: response.status,
+  })
+
+  if (!response.ok) {
+    let detail = `${response.status}`
+    try {
+      const payload = await response.json() as { detail?: string }
+      detail = payload.detail ?? detail
+    } catch {
+      detail = await response.text() || detail
+    }
+    throw new Error(detail)
+  }
+
+  if (response.status === 204) {
+    return undefined as T
+  }
+
+  return response.json() as Promise<T>
+}
+
+async function fetchEvals(): Promise<EvalRun[]> {
+  return requestAgentJson<EvalRun[]>('/agent-api/evals')
+}
+
+async function triggerEvalSweep(): Promise<EvalSweepTrigger[]> {
+  return requestAgentJson<EvalSweepTrigger[]>('/agent-api/evals/sweep', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+export function useEvals() {
+  return useQuery({
+    queryKey: ['evals'],
+    queryFn: fetchEvals,
+    staleTime: 3_000,
+    // Eval runs can take 10+ minutes; keep polling while any run in the last fetch is still
+    // "running" so the list picks up completion without a manual refresh, and stop otherwise.
+    refetchInterval: (query) => {
+      const runs = query.state.data
+      const hasRunningRun = runs?.some((run) => run.status === 'running') ?? false
+      return hasRunningRun ? 5_000 : false
+    },
+  })
+}
+
+export function useTriggerEvalSweep() {
+  return useMutation({
+    mutationFn: triggerEvalSweep,
   })
 }

@@ -20,6 +20,18 @@
 			}
 		}
 
+		# JOB_MANAGER_AGENT_UPSTREAM is a bare hostname (e.g. job-manager-agent-production-xxxx.up.railway.app),
+		# set as an env var on this dashboard's Railway service -- not hardcoded like the /api/* block above,
+		# since JobManagerAgent's deployed URL isn't known at the time this route was added.
+		handle_path /agent-api/* {
+			header X-Dashboard-Proxy "job-manager-agent-api"
+			header X-Caddy-Route "agent-api-proxy"
+			header X-Job-Manager-Agent-Upstream "{$JOB_MANAGER_AGENT_UPSTREAM}"
+			reverse_proxy https://{$JOB_MANAGER_AGENT_UPSTREAM} {
+				header_up Host {$JOB_MANAGER_AGENT_UPSTREAM}
+			}
+		}
+
 		handle {
 			header X-Caddy-Route "spa-fallback"
 			root * /usr/share/caddy

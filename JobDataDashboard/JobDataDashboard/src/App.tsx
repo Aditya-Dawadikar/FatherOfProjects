@@ -1,7 +1,8 @@
 import { startTransition, useDeferredValue, useState } from 'react'
 import { QueryClient, QueryClientProvider, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FiChevronLeft, FiChevronRight, FiDatabase, FiLayout, FiPlus, FiRefreshCw, FiTrendingUp, FiX } from 'react-icons/fi'
+import { FiActivity, FiChevronLeft, FiChevronRight, FiDatabase, FiLayout, FiPlus, FiRefreshCw, FiTrendingUp, FiX } from 'react-icons/fi'
 import './App.css'
+import AgentVitalsView from './components/AgentVitalsView'
 import Header from './components/Header'
 import JobForm from './components/JobForm'
 import JobsTable from './components/JobsTable'
@@ -22,7 +23,7 @@ const queryClient = new QueryClient()
 const JOBS_QUERY_KEY = ['jobs']
 const PAGE_SIZE = 20
 
-type ActiveView = 'overview' | 'jobs' | 'matches'
+type ActiveView = 'overview' | 'jobs' | 'matches' | 'vitals'
 
 function DashboardApp() {
   const [activeView, setActiveView] = useState<ActiveView>('overview')
@@ -204,6 +205,14 @@ function DashboardApp() {
           <FiTrendingUp aria-hidden="true" className="button-icon" />
           Matches
         </button>
+        <button
+          type="button"
+          className={`view-tab ghost-button-with-icon${activeView === 'vitals' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('vitals')}
+        >
+          <FiActivity aria-hidden="true" className="button-icon" />
+          Agent Vitals
+        </button>
       </nav>
 
       {activeView === 'overview' ? (
@@ -213,6 +222,10 @@ function DashboardApp() {
       ) : activeView === 'matches' ? (
         <main className="app-body app-body-single">
           <MatchesView />
+        </main>
+      ) : activeView === 'vitals' ? (
+        <main className="app-body app-body-single">
+          <AgentVitalsView />
         </main>
       ) : (
       <main className="app-body app-body-jobs">

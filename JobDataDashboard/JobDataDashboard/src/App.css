@@ -266,6 +266,102 @@
   color: var(--error);
 }
 
+.eval-run-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.eval-run-item {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.eval-run-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.eval-run-summary::-webkit-details-marker {
+  display: none;
+}
+
+.eval-run-name {
+  font-weight: 700;
+  flex: 1;
+}
+
+.eval-run-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.eval-run-body {
+  padding: 0 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.eval-run-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.eval-run-fields > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.eval-run-fields span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.eval-run-id {
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.eval-run-result-grid {
+  margin-bottom: 0;
+}
+
+.status-pill {
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-pill-running {
+  background: var(--warn-dim);
+  color: var(--warn);
+}
+
+.status-pill-completed {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.status-pill-failed {
+  background: var(--error-dim);
+  color: var(--error);
+}
+
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--line);

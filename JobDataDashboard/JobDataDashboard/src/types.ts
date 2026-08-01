@@ -77,3 +77,51 @@ export type PipelineFunnel = {
   bad_matches: number
   failed_matches: number
 }
+
+export type EvalRunStatus = 'running' | 'completed' | 'failed'
+
+export type EvalRunResult = {
+  total_cases?: number
+  evaluated_cases?: number
+  errored_cases?: number
+  true_positive?: number
+  false_positive?: number
+  false_negative?: number
+  true_negative?: number
+  accuracy?: number
+  precision?: number
+  recall?: number
+  f1?: number
+  score_in_range_rate?: number
+  mean_predicted_score?: number
+  total_prompt_tokens?: number
+  total_completion_tokens?: number
+  total_tokens?: number
+  mean_tokens_per_case?: number
+}
+
+export type EvalRun = {
+  eval_id: string
+  run_id: string
+  status: EvalRunStatus
+  started_at: string | null
+  finished_at: string | null
+  experiment_name: string | null
+  run_name: string | null
+  dataset_path: string | null
+  prompt_source: string | null
+  prompt_version: string | null
+  llm_provider: string | null
+  llm_model: string | null
+  match_threshold: number | null
+  dataset_case_count: number | null
+  limit: number | null
+  result: EvalRunResult | null
+  error: string | null
+}
+
+export type EvalSweepTrigger = {
+  eval_id: string
+  status: 'running'
+  prompt_version: number | null
+}
