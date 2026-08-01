@@ -87,4 +87,11 @@ def build_mlflow_run_url(experiment_id: str, run_id: str) -> str | None:
 	base_url = load_env_value("MLFLOW_UI_BASE_URL", "")
 	if not base_url:
 		return None
-	return f"{base_url.rstrip('/')}/#/experiments/{experiment_id}/runs/{run_id}"
+	base_url = base_url.strip().rstrip("/")
+	if not base_url.startswith(("http://", "https://")):
+		# A bare host (e.g. mlflow-production-621c.up.railway.app, easy to paste without the
+		# scheme) makes the link relative -- the browser resolves it against the dashboard's own
+		# origin instead of MLflow's, landing on a broken same-origin URL. Default to https since
+		# every real deployment target here (Railway) serves over TLS.
+		base_url = f"https://{base_url}"
+	return f"{base_url}/#/experiments/{experiment_id}/runs/{run_id}"
