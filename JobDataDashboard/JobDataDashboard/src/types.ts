@@ -109,6 +109,7 @@ export type EvalRun = {
   experiment_id: string | null
   experiment_name: string | null
   mlflow_url: string | null
+  mlflow_trace_url: string | null
   run_name: string | null
   dataset_path: string | null
   prompt_source: string | null

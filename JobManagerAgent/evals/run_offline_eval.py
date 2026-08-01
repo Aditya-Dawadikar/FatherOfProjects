@@ -371,6 +371,10 @@ def run_offline_eval(
 				mlflow.log_metrics({key: value for key, value in summary.items() if isinstance(value, (int, float))})
 				mlflow.log_table(data=_rows_to_columns(rows), artifact_file="eval_results.json")
 				eval_span.set_outputs(summary)
+				# Persisted as a run tag (not just logged) so api/eval_runs.py can read it back later
+				# to link out to this run's trace in the MLflow UI -- the span object itself only
+				# lives for the duration of this process.
+				mlflow.set_tag("trace_id", eval_span.trace_id)
 				log.action("mlflow_trace_ready", trace_id=eval_span.trace_id)
 			except Exception as error:
 				mlflow.set_tag("error_message", str(error))

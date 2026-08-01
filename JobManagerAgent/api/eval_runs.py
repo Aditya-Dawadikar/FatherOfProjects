@@ -16,7 +16,7 @@ from evals.run_offline_eval import run_offline_eval
 from integrations.mlflow import PROMPT_NAME
 from utils.agent_logger import get_agent_logger, new_id
 from utils.config import PROJECT_ROOT
-from utils.mlflow_utils import build_mlflow_run_url, ensure_tracking_uri_configured
+from utils.mlflow_utils import build_mlflow_run_url, build_mlflow_trace_url, ensure_tracking_uri_configured
 
 
 LOGGER = get_agent_logger(__name__)
@@ -168,6 +168,11 @@ class EvalStatusResponse(BaseModel):
 		description="Link to this run in the MLflow UI, built from MLFLOW_UI_BASE_URL. Null if "
 		"that env var isn't set.",
 	)
+	mlflow_trace_url: str | None = Field(
+		default=None,
+		description="Link to this run's trace (span timeline) in the MLflow UI. Null if "
+		"MLFLOW_UI_BASE_URL isn't set, or the run predates trace_id being tagged onto runs.",
+	)
 	run_name: str | None = None
 	dataset_path: str | None = None
 	prompt_source: str | None = None
@@ -258,6 +263,9 @@ def _run_to_status_response(run: Any, experiment_name_by_id: dict[str, str]) -> 
 		experiment_id=experiment_id,
 		experiment_name=experiment_name,
 		mlflow_url=build_mlflow_run_url(experiment_id, run.info.run_id),
+		mlflow_trace_url=(
+			build_mlflow_trace_url(experiment_id, tags["trace_id"]) if tags.get("trace_id") else None
+		),
 		run_name=tags.get("mlflow.runName"),
 		dataset_path=tags.get("dataset_path"),
 		prompt_source=tags.get("prompt_source"),

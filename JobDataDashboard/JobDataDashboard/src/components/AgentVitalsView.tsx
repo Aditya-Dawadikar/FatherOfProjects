@@ -94,7 +94,7 @@ function EvalRunRow({ run }: { run: EvalRun }) {
             <strong className="eval-run-id">{run.run_id}</strong>
           </div>
           <div>
-            <span>MLflow</span>
+            <span>MLflow Run</span>
             {run.mlflow_url ? (
               <a
                 className="mlflow-link"
@@ -108,6 +108,23 @@ function EvalRunRow({ run }: { run: EvalRun }) {
               </a>
             ) : (
               <strong>not configured</strong>
+            )}
+          </div>
+          <div>
+            <span>MLflow Trace</span>
+            {run.mlflow_trace_url ? (
+              <a
+                className="mlflow-link"
+                href={run.mlflow_trace_url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <FiExternalLink aria-hidden="true" className="button-icon" />
+                View trace
+              </a>
+            ) : (
+              <strong>{run.mlflow_url ? 'not available' : 'not configured'}</strong>
             )}
           </div>
         </div>

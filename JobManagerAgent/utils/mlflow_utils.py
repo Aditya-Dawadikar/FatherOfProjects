@@ -76,8 +76,8 @@ def load_mlflow_eval_experiment_name() -> str:
 	return load_env_value("MLFLOW_EVAL_EXPERIMENT_NAME", "job_matching_evals")
 
 
-def build_mlflow_run_url(experiment_id: str, run_id: str) -> str | None:
-	"""Links out to a run in the MLflow UI, or None if MLFLOW_UI_BASE_URL isn't set.
+def _load_mlflow_ui_base_url() -> str | None:
+	"""Publicly reachable MLflow UI origin, or None if MLFLOW_UI_BASE_URL isn't set.
 
 	Deliberately separate from MLFLOW_TRACKING_URI: in production that points at Railway's
 	internal hostname (e.g. mlflowserver.railway.internal:5000), which the tracking client can
@@ -94,4 +94,22 @@ def build_mlflow_run_url(experiment_id: str, run_id: str) -> str | None:
 		# origin instead of MLflow's, landing on a broken same-origin URL. Default to https since
 		# every real deployment target here (Railway) serves over TLS.
 		base_url = f"https://{base_url}"
+	return base_url
+
+
+def build_mlflow_run_url(experiment_id: str, run_id: str) -> str | None:
+	"""Links out to a run in the MLflow UI, or None if MLFLOW_UI_BASE_URL isn't set."""
+	base_url = _load_mlflow_ui_base_url()
+	if base_url is None:
+		return None
 	return f"{base_url}/#/experiments/{experiment_id}/runs/{run_id}"
+
+
+def build_mlflow_trace_url(experiment_id: str, trace_id: str) -> str | None:
+	"""Links out to a run's trace (span timeline) in the MLflow UI, or None if either
+	MLFLOW_UI_BASE_URL isn't set or the run has no trace_id tag (e.g. it predates run_offline_eval.py
+	tagging trace_id onto the run)."""
+	base_url = _load_mlflow_ui_base_url()
+	if base_url is None:
+		return None
+	return f"{base_url}/#/experiments/{experiment_id}/traces?selectedEvaluationId={trace_id}"
