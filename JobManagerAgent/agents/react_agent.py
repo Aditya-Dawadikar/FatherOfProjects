@@ -215,6 +215,11 @@ def run_matching_cycle_with_agent(
 				}
 			)
 			cycle_span.set_outputs(result)
+			# Persisted as a run tag (not just logged) so a future consumer can read it back to
+			# link out to this cycle's trace in the MLflow UI -- the span object itself only lives
+			# for the duration of this process (see the matching fix for offline eval runs in
+			# evals/run_offline_eval.py).
+			mlflow.set_tag("trace_id", cycle_span.trace_id)
 			log.action("mlflow_trace_ready", trace_id=cycle_span.trace_id)
 
 		mlflow.flush_trace_async_logging(terminate=False)
