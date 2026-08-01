@@ -74,3 +74,17 @@ def load_mlflow_eval_experiment_name() -> str:
 	against a golden dataset, a different metric shape than live per-cycle counts, so keeping
 	them apart avoids mixing incomparable runs in the same MLflow comparison table."""
 	return load_env_value("MLFLOW_EVAL_EXPERIMENT_NAME", "job_matching_evals")
+
+
+def build_mlflow_run_url(experiment_id: str, run_id: str) -> str | None:
+	"""Links out to a run in the MLflow UI, or None if MLFLOW_UI_BASE_URL isn't set.
+
+	Deliberately separate from MLFLOW_TRACKING_URI: in production that points at Railway's
+	internal hostname (e.g. mlflowserver.railway.internal:5000), which the tracking client can
+	reach but a user's browser can't -- MLFLOW_UI_BASE_URL is the publicly reachable address of
+	the same server, for building links only.
+	"""
+	base_url = load_env_value("MLFLOW_UI_BASE_URL", "")
+	if not base_url:
+		return None
+	return f"{base_url.rstrip('/')}/#/experiments/{experiment_id}/runs/{run_id}"

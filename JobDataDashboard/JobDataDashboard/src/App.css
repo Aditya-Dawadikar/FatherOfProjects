@@ -335,6 +335,20 @@
   word-break: break-all;
 }
 
+.mlflow-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+  width: fit-content;
+}
+
+.mlflow-link:hover {
+  text-decoration: underline;
+}
+
 .eval-run-result-grid {
   margin-bottom: 0;
 }

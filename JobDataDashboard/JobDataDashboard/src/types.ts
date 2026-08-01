@@ -106,7 +106,9 @@ export type EvalRun = {
   status: EvalRunStatus
   started_at: string | null
   finished_at: string | null
+  experiment_id: string | null
   experiment_name: string | null
+  mlflow_url: string | null
   run_name: string | null
   dataset_path: string | null
   prompt_source: string | null

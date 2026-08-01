@@ -1,4 +1,4 @@
-import { FiRefreshCw, FiZap } from 'react-icons/fi'
+import { FiExternalLink, FiRefreshCw, FiZap } from 'react-icons/fi'
 import { useEvals, useTriggerEvalSweep } from '../hooks'
 import type { EvalRun, EvalRunStatus } from '../types'
 
@@ -92,6 +92,23 @@ function EvalRunRow({ run }: { run: EvalRun }) {
           <div>
             <span>Run ID</span>
             <strong className="eval-run-id">{run.run_id}</strong>
+          </div>
+          <div>
+            <span>MLflow</span>
+            {run.mlflow_url ? (
+              <a
+                className="mlflow-link"
+                href={run.mlflow_url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <FiExternalLink aria-hidden="true" className="button-icon" />
+                View run
+              </a>
+            ) : (
+              <strong>not configured</strong>
+            )}
           </div>
         </div>
 
