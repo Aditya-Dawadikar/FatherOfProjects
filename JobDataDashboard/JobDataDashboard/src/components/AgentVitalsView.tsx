@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { FiExternalLink, FiRefreshCw, FiZap } from 'react-icons/fi'
 import { useEvals, useTriggerEvalSweep, useToolEvals, useTriggerToolEval } from '../hooks'
 import type { EvalRun, EvalRunStatus, ToolEvalRun } from '../types'
@@ -76,6 +77,15 @@ function MlflowLink({ href, label, onClick }: { href: string | null; label: stri
 
 function formatMetric(run: EvalRun, key: keyof NonNullable<EvalRun['result']>) {
   const metric = RESULT_METRICS.find((entry) => entry.key === key)
+  const rawValue = run.result?.[key]
+  if (rawValue === undefined || metric === undefined) {
+    return '—'
+  }
+  return metric.formatter ? metric.formatter(rawValue) : rawValue
+}
+
+function formatToolMetric(run: ToolEvalRun, key: keyof NonNullable<ToolEvalRun['result']>) {
+  const metric = TOOL_RESULT_METRICS.find((entry) => entry.key === key)
   const rawValue = run.result?.[key]
   if (rawValue === undefined || metric === undefined) {
     return '—'
@@ -364,21 +374,18 @@ function latestSweepGroup(runs: EvalRun[]): { sweepId: string; runs: EvalRun[]; 
   return latest
 }
 
-function LatestSweepPane({ runs }: { runs: EvalRun[] }) {
+function latestToolRun(toolRuns: ToolEvalRun[]): ToolEvalRun | null {
+  if (toolRuns.length === 0) return null
+  return [...toolRuns].sort((a, b) => (b.started_at ?? '').localeCompare(a.started_at ?? ''))[0]
+}
+
+function PromptComparisonTable({ runs }: { runs: EvalRun[] }) {
   const latest = latestSweepGroup(runs)
 
   if (!latest) {
     return (
-      <div className="vitals-pane">
-        <div className="vitals-pane-title">
-          <div className="toolbar-copy">
-            <p className="eyebrow">Current Agent State</p>
-            <h2>No sweep run yet</h2>
-          </div>
-        </div>
-        <div className="empty-state">
-          <p>Trigger an offline eval sweep below to score every registered prompt version against the golden dataset — the most recent sweep will appear here as the agent's current state.</p>
-        </div>
+      <div className="empty-state">
+        <p>Trigger an offline eval sweep below to compare every registered prompt version's full metrics here.</p>
       </div>
     )
   }
@@ -389,49 +396,141 @@ function LatestSweepPane({ runs }: { runs: EvalRun[] }) {
   const runningCount = versions.filter((run) => run.status === 'running').length
 
   return (
+    <>
+      <div className="pane-meta">
+        <span className="eval-run-meta">sweep {latest.sweepId}</span>
+        <span className="eval-run-meta">{formatDateTime(latest.latestStartedAt)}</span>
+        {runningCount > 0 && <span className="eval-run-meta">{runningCount} still running</span>}
+      </div>
+      <div className="table-wrap">
+        <table className="sweep-compare-table">
+          <thead>
+            <tr>
+              <th>Prompt Version</th>
+              <th>Status</th>
+              {RESULT_METRICS.map((metric) => (
+                <th key={metric.key}>{metric.label}</th>
+              ))}
+              <th>Duration</th>
+              <th>MLflow</th>
+            </tr>
+          </thead>
+          <tbody>
+            {versions.map((run) => (
+              <tr key={run.eval_id}>
+                <td>v{run.prompt_version ?? '—'}</td>
+                <td>
+                  <span className={`status-pill status-pill-${run.status}`}>{STATUS_LABEL[run.status]}</span>
+                </td>
+                {RESULT_METRICS.map((metric) => (
+                  <td key={metric.key}>{formatMetric(run, metric.key)}</td>
+                ))}
+                <td>{formatDuration(run.started_at, run.finished_at) ?? '—'}</td>
+                <td className="sweep-compare-links">
+                  <MlflowLink href={run.mlflow_url} label="Run" />
+                  <MlflowLink href={run.mlflow_trace_url} label="Trace" />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {versions.some((run) => run.status === 'failed' && run.error) && (
+        <div className="banner banner-error">
+          {versions
+            .filter((run) => run.status === 'failed' && run.error)
+            .map((run) => `v${run.prompt_version ?? '—'}: ${run.error}`)
+            .join(' · ')}
+        </div>
+      )}
+    </>
+  )
+}
+
+function AgentBehaviorTable({ toolRuns }: { toolRuns: ToolEvalRun[] }) {
+  const latest = latestToolRun(toolRuns)
+
+  if (!latest) {
+    return (
+      <div className="empty-state">
+        <p>Trigger a tool-selection eval run below to see the agent's tool-calling behavior metrics here.</p>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div className="pane-meta">
+        <span className="eval-run-meta">{latest.run_name ?? latest.eval_id}</span>
+        <span className="eval-run-meta">{formatDateTime(latest.started_at)}</span>
+      </div>
+      <div className="table-wrap">
+        <table className="sweep-compare-table">
+          <thead>
+            <tr>
+              <th>Run</th>
+              <th>Status</th>
+              {TOOL_RESULT_METRICS.map((metric) => (
+                <th key={metric.key}>{metric.label}</th>
+              ))}
+              <th>Duration</th>
+              <th>MLflow</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{latest.run_name ?? latest.eval_id}</td>
+              <td>
+                <span className={`status-pill status-pill-${latest.status}`}>{STATUS_LABEL[latest.status]}</span>
+              </td>
+              {TOOL_RESULT_METRICS.map((metric) => (
+                <td key={metric.key}>{formatToolMetric(latest, metric.key)}</td>
+              ))}
+              <td>{formatDuration(latest.started_at, latest.finished_at) ?? '—'}</td>
+              <td className="sweep-compare-links">
+                <MlflowLink href={latest.mlflow_url} label="Run" />
+                <MlflowLink href={latest.mlflow_trace_url} label="Trace" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {latest.status === 'failed' && latest.error && <div className="banner banner-error">{latest.error}</div>}
+    </>
+  )
+}
+
+type CurrentStateTab = 'prompt' | 'behavior'
+
+function CurrentStatePane({ runs, toolRuns }: { runs: EvalRun[]; toolRuns: ToolEvalRun[] }) {
+  const [activeTab, setActiveTab] = useState<CurrentStateTab>('prompt')
+
+  return (
     <div className="vitals-pane">
       <div className="vitals-pane-title">
         <div className="toolbar-copy">
-          <p className="eyebrow">Current Agent State — Latest Sweep</p>
-          <h2>{versions.length} prompt version{versions.length === 1 ? '' : 's'} compared</h2>
+          <p className="eyebrow">Current Agent State</p>
+          <h2>{activeTab === 'prompt' ? 'Prompt version comparison' : 'Agent behavior experiments'}</h2>
         </div>
-        <div className="toolbar-actions">
-          <span className="eval-run-meta">sweep {latest.sweepId}</span>
-          <span className="eval-run-meta">{formatDateTime(latest.latestStartedAt)}</span>
-          {runningCount > 0 && <span className="eval-run-meta">{runningCount} still running</span>}
+        <div className="pane-tabs">
+          <button
+            type="button"
+            className={`pane-tab${activeTab === 'prompt' ? ' is-active' : ''}`}
+            onClick={() => setActiveTab('prompt')}
+          >
+            Prompt Version Comparison
+          </button>
+          <button
+            type="button"
+            className={`pane-tab${activeTab === 'behavior' ? ' is-active' : ''}`}
+            onClick={() => setActiveTab('behavior')}
+          >
+            Agent Behavior
+          </button>
         </div>
       </div>
 
-      <div className="latest-sweep-versions">
-        {versions.map((run) => (
-          <article className="latest-sweep-version" key={run.eval_id}>
-            <header>
-              <span className={`status-pill status-pill-${run.status}`}>{STATUS_LABEL[run.status]}</span>
-              <strong>prompt v{run.prompt_version ?? '—'}</strong>
-              <span className="eval-run-meta">{formatDuration(run.started_at, run.finished_at) ?? '—'}</span>
-              <MlflowLink href={run.mlflow_url} label="View run" />
-              <MlflowLink href={run.mlflow_trace_url} label="View trace" />
-            </header>
-
-            {run.status === 'failed' && run.error && <div className="banner banner-error">{run.error}</div>}
-            {run.status === 'running' && <div className="banner banner-info">Run in progress — refreshes automatically.</div>}
-
-            {run.result && (
-              <div className="summary-grid eval-run-result-grid">
-                {RESULT_METRICS.filter((metric) => run.result?.[metric.key] !== undefined).map((metric) => {
-                  const rawValue = run.result?.[metric.key] as number
-                  return (
-                    <article className="summary-card" key={metric.key}>
-                      <span>{metric.label}</span>
-                      <strong>{metric.formatter ? metric.formatter(rawValue) : rawValue}</strong>
-                    </article>
-                  )
-                })}
-              </div>
-            )}
-          </article>
-        ))}
-      </div>
+      {activeTab === 'prompt' ? <PromptComparisonTable runs={runs} /> : <AgentBehaviorTable toolRuns={toolRuns} />}
     </div>
   )
 }
@@ -508,7 +607,7 @@ export default function AgentVitalsView() {
 
   return (
     <section className="content-panel">
-      <LatestSweepPane runs={runs} />
+      <CurrentStatePane runs={runs} toolRuns={toolRuns} />
 
       <div className="vitals-pane">
         <div className="toolbar">
