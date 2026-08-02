@@ -130,3 +130,55 @@ export type EvalSweepTrigger = {
   prompt_version: number | null
   sweep_id: string | null
 }
+
+export type ToolEvalRunResult = {
+  total_cases?: number
+  evaluated_cases?: number
+  errored_cases?: number
+  repeats?: number
+  total_trials?: number
+  incomplete_trials?: number
+  tool_selection_accuracy?: number
+  tool_error_rate?: number
+  call_volume_efficiency?: number
+  plan_adherence?: number
+  consistency_score?: number
+  success_rate?: number
+  total_expected_calls?: number
+  total_actual_calls?: number
+  total_guardrail_errors?: number
+  total_scripted_errors?: number
+  total_input_tokens?: number
+  total_output_tokens?: number
+  total_cost_usd?: number
+  total_successful_trials?: number
+  mean_calls_per_trial?: number
+  mean_cost_per_run?: number
+  cost_per_successful_run?: number
+}
+
+export type ToolEvalRun = {
+  eval_id: string
+  run_id: string
+  status: EvalRunStatus
+  started_at: string | null
+  finished_at: string | null
+  experiment_id: string | null
+  experiment_name: string | null
+  mlflow_url: string | null
+  mlflow_trace_url: string | null
+  run_name: string | null
+  dataset_path: string | null
+  llm_model: string | null
+  match_threshold: number | null
+  dataset_case_count: number | null
+  limit: number | null
+  repeats: number | null
+  result: ToolEvalRunResult | null
+  error: string | null
+}
+
+export type ToolEvalTrigger = {
+  eval_id: string
+  status: 'running'
+}

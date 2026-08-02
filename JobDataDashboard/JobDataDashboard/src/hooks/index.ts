@@ -10,6 +10,8 @@ import type {
   MatchedJobRecord,
   MatchesQuery,
   PipelineFunnel,
+  ToolEvalRun,
+  ToolEvalTrigger,
 } from '../types'
 
 const API_BASE = (import.meta.env.DEV ? import.meta.env.VITE_JOB_DATA_API_BASE_URL ?? '' : '').replace(/\/$/, '')
@@ -390,5 +392,38 @@ export function useEvals() {
 export function useTriggerEvalSweep() {
   return useMutation({
     mutationFn: triggerEvalSweep,
+  })
+}
+
+async function fetchToolEvals(): Promise<ToolEvalRun[]> {
+  return requestAgentJson<ToolEvalRun[]>('/agent-api/evals/tool-selection')
+}
+
+async function triggerToolEval(): Promise<ToolEvalTrigger> {
+  return requestAgentJson<ToolEvalTrigger>('/agent-api/evals/tool-selection', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+export function useToolEvals() {
+  return useQuery({
+    queryKey: ['toolEvals'],
+    queryFn: fetchToolEvals,
+    staleTime: 3_000,
+    // Tool-selection runs are much faster than a full offline eval (one orchestrator LLM call
+    // per tool-selection decision, not per case against the full scoring pipeline), but still
+    // poll while one is in flight so the list picks up completion without a manual refresh.
+    refetchInterval: (query) => {
+      const runs = query.state.data
+      const hasRunningRun = runs?.some((run) => run.status === 'running') ?? false
+      return hasRunningRun ? 5_000 : false
+    },
+  })
+}
+
+export function useTriggerToolEval() {
+  return useMutation({
+    mutationFn: triggerToolEval,
   })
 }
