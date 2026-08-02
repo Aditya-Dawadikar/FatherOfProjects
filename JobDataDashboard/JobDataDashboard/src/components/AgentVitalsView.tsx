@@ -46,6 +46,36 @@ function formatDuration(startedAt: string | null, finishedAt: string | null) {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
 }
 
+function MlflowLink({ href, label, onClick }: { href: string | null; label: string; onClick?: () => void }) {
+  if (!href) {
+    return <strong>{label === 'View trace' ? 'not available' : 'not configured'}</strong>
+  }
+  return (
+    <a
+      className="mlflow-link"
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick?.()
+      }}
+    >
+      <FiExternalLink aria-hidden="true" className="button-icon" />
+      {label}
+    </a>
+  )
+}
+
+function formatMetric(run: EvalRun, key: keyof NonNullable<EvalRun['result']>) {
+  const metric = RESULT_METRICS.find((entry) => entry.key === key)
+  const rawValue = run.result?.[key]
+  if (rawValue === undefined || metric === undefined) {
+    return '—'
+  }
+  return metric.formatter ? metric.formatter(rawValue) : rawValue
+}
+
 function EvalRunRow({ run }: { run: EvalRun }) {
   const duration = formatDuration(run.started_at, run.finished_at)
 
@@ -95,37 +125,11 @@ function EvalRunRow({ run }: { run: EvalRun }) {
           </div>
           <div>
             <span>MLflow Run</span>
-            {run.mlflow_url ? (
-              <a
-                className="mlflow-link"
-                href={run.mlflow_url}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <FiExternalLink aria-hidden="true" className="button-icon" />
-                View run
-              </a>
-            ) : (
-              <strong>not configured</strong>
-            )}
+            <MlflowLink href={run.mlflow_url} label="View run" />
           </div>
           <div>
             <span>MLflow Trace</span>
-            {run.mlflow_trace_url ? (
-              <a
-                className="mlflow-link"
-                href={run.mlflow_trace_url}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <FiExternalLink aria-hidden="true" className="button-icon" />
-                View trace
-              </a>
-            ) : (
-              <strong>{run.mlflow_url ? 'not available' : 'not configured'}</strong>
-            )}
+            <MlflowLink href={run.mlflow_trace_url} label="View trace" />
           </div>
         </div>
 
@@ -153,6 +157,110 @@ function EvalRunRow({ run }: { run: EvalRun }) {
       </div>
     </details>
   )
+}
+
+const SWEEP_COMPARE_COLUMNS: Array<{ key: keyof NonNullable<EvalRun['result']>; label: string }> = [
+  { key: 'accuracy', label: 'Accuracy' },
+  { key: 'precision', label: 'Precision' },
+  { key: 'recall', label: 'Recall' },
+  { key: 'f1', label: 'F1' },
+  { key: 'total_tokens', label: 'Total Tokens' },
+  { key: 'mean_tokens_per_case', label: 'Mean Tokens / Case' },
+]
+
+function SweepGroupRow({ sweepId, runs }: { sweepId: string; runs: EvalRun[] }) {
+  const latestStartedAt = runs.reduce<string | null>((latest, run) => {
+    if (!run.started_at) return latest
+    return !latest || run.started_at > latest ? run.started_at : latest
+  }, null)
+  const runningCount = runs.filter((run) => run.status === 'running').length
+
+  return (
+    <details className="eval-run-item sweep-group">
+      <summary className="eval-run-summary">
+        <span className="status-pill status-pill-sweep">Sweep</span>
+        <span className="eval-run-name">{runs.length} prompt versions compared</span>
+        <span className="eval-run-meta">sweep {sweepId}</span>
+        <span className="eval-run-meta">{formatDateTime(latestStartedAt)}</span>
+        {runningCount > 0 && <span className="eval-run-meta">{runningCount} still running</span>}
+      </summary>
+
+      <div className="eval-run-body">
+        <div className="table-wrap">
+          <table className="sweep-compare-table">
+            <thead>
+              <tr>
+                <th>Prompt Version</th>
+                <th>Status</th>
+                {SWEEP_COMPARE_COLUMNS.map((column) => (
+                  <th key={column.key}>{column.label}</th>
+                ))}
+                <th>Duration</th>
+                <th>MLflow</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((run) => (
+                <tr key={run.eval_id}>
+                  <td>v{run.prompt_version ?? '—'}</td>
+                  <td>
+                    <span className={`status-pill status-pill-${run.status}`}>{STATUS_LABEL[run.status]}</span>
+                  </td>
+                  {SWEEP_COMPARE_COLUMNS.map((column) => (
+                    <td key={column.key}>{formatMetric(run, column.key)}</td>
+                  ))}
+                  <td>{formatDuration(run.started_at, run.finished_at) ?? '—'}</td>
+                  <td className="sweep-compare-links">
+                    <MlflowLink href={run.mlflow_url} label="Run" />
+                    <MlflowLink href={run.mlflow_trace_url} label="View trace" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {runs.some((run) => run.status === 'failed' && run.error) && (
+          <div className="banner banner-error">
+            {runs
+              .filter((run) => run.status === 'failed' && run.error)
+              .map((run) => `v${run.prompt_version ?? '—'}: ${run.error}`)
+              .join(' · ')}
+          </div>
+        )}
+      </div>
+    </details>
+  )
+}
+
+type VitalsListItem =
+  | { kind: 'single'; run: EvalRun; sortKey: string }
+  | { kind: 'sweep'; sweepId: string; runs: EvalRun[]; sortKey: string }
+
+function groupRunsForDisplay(runs: EvalRun[]): VitalsListItem[] {
+  const sweepGroups = new Map<string, EvalRun[]>()
+  const items: VitalsListItem[] = []
+
+  for (const run of runs) {
+    if (!run.sweep_id) {
+      items.push({ kind: 'single', run, sortKey: run.started_at ?? '' })
+      continue
+    }
+    const group = sweepGroups.get(run.sweep_id)
+    if (group) {
+      group.push(run)
+    } else {
+      sweepGroups.set(run.sweep_id, [run])
+    }
+  }
+
+  for (const [sweepId, groupRuns] of sweepGroups) {
+    groupRuns.sort((a, b) => (a.prompt_version ?? '').localeCompare(b.prompt_version ?? '', undefined, { numeric: true }))
+    const sortKey = groupRuns.reduce((latest, run) => (run.started_at && run.started_at > latest ? run.started_at : latest), '')
+    items.push({ kind: 'sweep', sweepId, runs: groupRuns, sortKey })
+  }
+
+  items.sort((a, b) => (a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0))
+  return items
 }
 
 export default function AgentVitalsView() {
@@ -217,9 +325,13 @@ export default function AgentVitalsView() {
 
       {runs.length > 0 && (
         <div className="eval-run-list">
-          {runs.map((run) => (
-            <EvalRunRow key={run.eval_id} run={run} />
-          ))}
+          {groupRunsForDisplay(runs).map((item) =>
+            item.kind === 'single' ? (
+              <EvalRunRow key={item.run.eval_id} run={item.run} />
+            ) : (
+              <SweepGroupRow key={item.sweepId} sweepId={item.sweepId} runs={item.runs} />
+            ),
+          )}
         </div>
       )}
     </section>

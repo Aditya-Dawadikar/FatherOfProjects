@@ -153,6 +153,11 @@ class EvalTriggerResponse(BaseModel):
 		description="The specific registered prompt version this run was pinned to, if any -- "
 		"null means it used whatever 'production' currently points to.",
 	)
+	sweep_id: str | None = Field(
+		default=None,
+		description="Shared across every run triggered by the same POST /evals/sweep call, so a "
+		"client can group them for side-by-side comparison. Null for a plain POST /evals trigger.",
+	)
 
 
 class EvalStatusResponse(BaseModel):
@@ -172,6 +177,12 @@ class EvalStatusResponse(BaseModel):
 		default=None,
 		description="Link to this run's trace (span timeline) in the MLflow UI. Null if "
 		"MLFLOW_UI_BASE_URL isn't set, or the run predates trace_id being tagged onto runs.",
+	)
+	sweep_id: str | None = Field(
+		default=None,
+		description="Shared across every run triggered by the same POST /evals/sweep call -- group "
+		"runs with the same sweep_id together for side-by-side comparison. Null for a run "
+		"triggered via plain POST /evals.",
 	)
 	run_name: str | None = None
 	dataset_path: str | None = None
@@ -196,7 +207,9 @@ def _resolve_dataset_path(raw: str) -> Path:
 	return resolved
 
 
-def _run_eval_in_background(eval_id: str, dataset_path: Path, payload: EvalTriggerRequest, run_name: str) -> None:
+def _run_eval_in_background(
+	eval_id: str, dataset_path: Path, payload: EvalTriggerRequest, run_name: str, sweep_id: str | None
+) -> None:
 	log = LOGGER.bind(eval_id=eval_id)
 	log.action("api_eval_started", dataset=str(dataset_path))
 	try:
@@ -211,6 +224,7 @@ def _run_eval_in_background(eval_id: str, dataset_path: Path, payload: EvalTrigg
 			experiment_name=payload.experiment_name,
 			run_name=run_name,
 			limit=payload.limit,
+			sweep_id=sweep_id,
 		)
 	except Exception:
 		# run_offline_eval() already tagged error_message on the MLflow run and marked it FAILED
@@ -266,6 +280,7 @@ def _run_to_status_response(run: Any, experiment_name_by_id: dict[str, str]) -> 
 		mlflow_trace_url=(
 			build_mlflow_trace_url(experiment_id, tags["trace_id"]) if tags.get("trace_id") else None
 		),
+		sweep_id=tags.get("sweep_id"),
 		run_name=tags.get("mlflow.runName"),
 		dataset_path=tags.get("dataset_path"),
 		prompt_source=tags.get("prompt_source"),
@@ -280,18 +295,27 @@ def _run_to_status_response(run: Any, experiment_name_by_id: dict[str, str]) -> 
 	)
 
 
-def _trigger_background_run(dataset_path: Path, payload: EvalTriggerRequest) -> EvalTriggerResponse:
+def _trigger_background_run(
+	dataset_path: Path, payload: EvalTriggerRequest, sweep_id: str | None = None
+) -> EvalTriggerResponse:
 	eval_id = new_id()
-	run_name = payload.run_name or eval_id
+	if payload.run_name:
+		run_name = payload.run_name
+	elif sweep_id:
+		# Distinct per version but sharing the sweep_id prefix -- lets the runs be picked out at a
+		# glance in the MLflow UI's run list too, not just grouped via the sweep_id tag.
+		run_name = f"sweep-{sweep_id}-v{payload.prompt_version}"
+	else:
+		run_name = eval_id
 
 	thread = threading.Thread(
 		target=_run_eval_in_background,
-		args=(eval_id, dataset_path, payload, run_name),
+		args=(eval_id, dataset_path, payload, run_name, sweep_id),
 		daemon=True,
 		name=f"eval-{eval_id}",
 	)
 	thread.start()
-	return EvalTriggerResponse(eval_id=eval_id, status="running", prompt_version=payload.prompt_version)
+	return EvalTriggerResponse(eval_id=eval_id, status="running", prompt_version=payload.prompt_version, sweep_id=sweep_id)
 
 
 @router.post("", status_code=202, summary="Trigger an offline eval run")
@@ -345,6 +369,11 @@ def trigger_eval_sweep(payload: EvalSweepRequest) -> list[EvalTriggerResponse]:
 	if not versions:
 		raise HTTPException(status_code=404, detail=f"No versions registered for prompt {PROMPT_NAME!r}")
 
+	# Shared by every run this sweep triggers -- tagged onto each MLflow run (see
+	# run_offline_eval.py) so GET /evals can group them back together for side-by-side comparison
+	# instead of the caller having to infer "these all happened around the same time".
+	sweep_id = new_id()
+
 	responses = []
 	for version in sorted(versions, key=lambda v: v.version):
 		per_version_payload = EvalTriggerRequest(
@@ -357,7 +386,7 @@ def trigger_eval_sweep(payload: EvalSweepRequest) -> list[EvalTriggerResponse]:
 			experiment_name=payload.experiment_name,
 			limit=payload.limit,
 		)
-		responses.append(_trigger_background_run(dataset_path, per_version_payload))
+		responses.append(_trigger_background_run(dataset_path, per_version_payload, sweep_id=sweep_id))
 	return responses
 
 

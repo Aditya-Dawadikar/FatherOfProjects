@@ -376,6 +376,42 @@
   color: var(--error);
 }
 
+.status-pill-sweep {
+  background: var(--overlay-strong);
+  color: var(--text);
+}
+
+.sweep-group {
+  border-color: var(--accent);
+}
+
+.sweep-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.sweep-compare-table th,
+.sweep-compare-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sweep-compare-table thead {
+  background: var(--overlay);
+}
+
+.sweep-compare-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.sweep-compare-links {
+  display: flex;
+  gap: 12px;
+}
+
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--line);

@@ -110,6 +110,7 @@ export type EvalRun = {
   experiment_name: string | null
   mlflow_url: string | null
   mlflow_trace_url: string | null
+  sweep_id: string | null
   run_name: string | null
   dataset_path: string | null
   prompt_source: string | null
@@ -127,4 +128,5 @@ export type EvalSweepTrigger = {
   eval_id: string
   status: 'running'
   prompt_version: number | null
+  sweep_id: string | null
 }

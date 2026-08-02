@@ -237,6 +237,7 @@ def run_offline_eval(
 	experiment_name: str | None,
 	run_name: str | None,
 	limit: int | None,
+	sweep_id: str | None = None,
 ) -> dict[str, Any]:
 	eval_id = eval_id or new_id()
 	log = LOGGER.bind(eval_id=eval_id)
@@ -260,15 +261,18 @@ def run_offline_eval(
 		run_id = run.info.run_id if run is not None else None
 		if run_id is not None:
 			log.action("mlflow_run_started", run_id=run_id)
-		mlflow.set_tags(
-			{
-				"eval_id": eval_id,
-				"run_type": "offline_eval",
-				"prompt_name": PROMPT_NAME,
-				"prompt_source": prompt_source,
-				"dataset_path": str(dataset_path),
-			}
-		)
+		tags = {
+			"eval_id": eval_id,
+			"run_type": "offline_eval",
+			"prompt_name": PROMPT_NAME,
+			"prompt_source": prompt_source,
+			"dataset_path": str(dataset_path),
+		}
+		if sweep_id:
+			# Present only for runs triggered by POST /evals/sweep -- lets api/eval_runs.py group
+			# every version's run back together for side-by-side comparison in GET /evals.
+			tags["sweep_id"] = sweep_id
+		mlflow.set_tags(tags)
 		try:
 			cases = load_golden_dataset(dataset_path)
 			if limit is not None:
