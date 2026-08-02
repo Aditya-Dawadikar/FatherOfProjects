@@ -262,6 +262,36 @@
   border-bottom: 1px solid var(--line);
 }
 
+.kpi-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.kpi-section {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 20px;
+}
+
+.kpi-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.kpi-section-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.kpi-section .summary-grid {
+  margin-bottom: 0;
+}
+
 .pane-tabs {
   display: flex;
   gap: 8px;

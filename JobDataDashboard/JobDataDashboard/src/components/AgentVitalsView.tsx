@@ -568,20 +568,47 @@ function distinctExperimentNames(runs: EvalRun[], toolRuns: ToolEvalRun[]): stri
   return [...names].sort((a, b) => a.localeCompare(b))
 }
 
-type VitalsTab = 'prompt' | 'behavior' | 'history'
+function latestCompletedRun<T extends { status: EvalRunStatus; started_at: string | null }>(items: T[]): T | null {
+  const completed = items.filter((item) => item.status === 'completed')
+  if (completed.length === 0) return null
+  return [...completed].sort((a, b) => (b.started_at ?? '').localeCompare(a.started_at ?? ''))[0]
+}
+
+function KpiCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <article className="summary-card">
+      <span>{label}</span>
+      <strong>{typeof value === 'number' ? value.toFixed(2) : value}</strong>
+    </article>
+  )
+}
+
+// A small, curated subset of RESULT_METRICS/TOOL_RESULT_METRICS -- the KPI tab is meant to be
+// read at a glance, not a replacement for the full comparison tables on the other tabs.
+const PROMPT_KPI_METRICS: Array<keyof NonNullable<EvalRun['result']>> = ['accuracy', 'f1', 'score_in_range_rate']
+const BEHAVIOR_KPI_METRICS: Array<keyof NonNullable<ToolEvalRun['result']>> = [
+  'tool_selection_accuracy',
+  'plan_adherence',
+  'success_rate',
+  'cost_per_successful_run',
+]
+
+type VitalsTab = 'kpis' | 'prompt' | 'behavior' | 'history'
 
 // First N tabs are one per experiment type this dashboard tracks (currently prompt-version
 // comparison and tool-selection/agent-behavior evals); the last tab is always run history,
 // spanning every experiment type at once. Adding a new experiment type later means adding one
-// more entry here before 'history', not restructuring the tab bar.
+// more entry here before 'history', not restructuring the tab bar. KPIs is a fixed extra tab up
+// front, not one-per-experiment-type -- it's a curated cross-experiment summary, not raw data.
 const VITALS_TABS: Array<{ id: VitalsTab; label: string }> = [
+  { id: 'kpis', label: 'KPIs' },
   { id: 'prompt', label: 'Prompt Version Comparison' },
   { id: 'behavior', label: 'Agent Behavior' },
   { id: 'history', label: 'Run History' },
 ]
 
 export default function AgentVitalsView() {
-  const [activeTab, setActiveTab] = useState<VitalsTab>('prompt')
+  const [activeTab, setActiveTab] = useState<VitalsTab>('kpis')
 
   const evalsQuery = useEvals()
   const sweepMutation = useTriggerEvalSweep()
@@ -594,6 +621,9 @@ export default function AgentVitalsView() {
   const isLoading = evalsQuery.isLoading || toolEvalsQuery.isLoading
   const isFetching = evalsQuery.isFetching || toolEvalsQuery.isFetching
   const totalRunCount = runs.length + toolRuns.length
+
+  const latestPromptRun = latestCompletedRun(runs)
+  const latestBehaviorRun = latestCompletedRun(toolRuns)
 
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -641,6 +671,63 @@ export default function AgentVitalsView() {
           </button>
         ))}
       </div>
+
+      {activeTab === 'kpis' && (
+        <div className="kpi-tab">
+          <section className="kpi-section">
+            <div className="kpi-section-header">
+              <h3>Prompt Matching Quality</h3>
+              {latestPromptRun && (
+                <span className="eval-run-meta">
+                  {latestPromptRun.run_name ?? latestPromptRun.eval_id} · prompt v{latestPromptRun.prompt_version ?? '—'} ·{' '}
+                  {formatDateTime(latestPromptRun.started_at)}
+                </span>
+              )}
+            </div>
+            {latestPromptRun ? (
+              <div className="summary-grid">
+                {PROMPT_KPI_METRICS.map((key) => (
+                  <KpiCard
+                    key={key}
+                    label={RESULT_METRICS.find((metric) => metric.key === key)?.label ?? key}
+                    value={formatMetric(latestPromptRun, key)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <p>No completed offline eval run yet -- trigger one from Prompt Version Comparison.</p>
+              </div>
+            )}
+          </section>
+
+          <section className="kpi-section">
+            <div className="kpi-section-header">
+              <h3>Agent Behavior</h3>
+              {latestBehaviorRun && (
+                <span className="eval-run-meta">
+                  {latestBehaviorRun.run_name ?? latestBehaviorRun.eval_id} · {formatDateTime(latestBehaviorRun.started_at)}
+                </span>
+              )}
+            </div>
+            {latestBehaviorRun ? (
+              <div className="summary-grid">
+                {BEHAVIOR_KPI_METRICS.map((key) => (
+                  <KpiCard
+                    key={key}
+                    label={TOOL_RESULT_METRICS.find((metric) => metric.key === key)?.label ?? key}
+                    value={formatToolMetric(latestBehaviorRun, key)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <p>No completed tool-selection eval run yet -- trigger one from Agent Behavior.</p>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
       {activeTab === 'prompt' && (
         <>
