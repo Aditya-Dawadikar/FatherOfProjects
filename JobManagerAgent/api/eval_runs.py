@@ -13,6 +13,7 @@ from mlflow.exceptions import MlflowException
 from pydantic import BaseModel, Field
 
 from evals.run_offline_eval import run_offline_eval
+from evals.run_tool_selection_eval import run_tool_selection_eval
 from integrations.mlflow import PROMPT_NAME
 from utils.agent_logger import get_agent_logger, new_id
 from utils.config import PROJECT_ROOT
@@ -62,6 +63,34 @@ _SUMMARY_METRIC_KEYS = (
 	"total_completion_tokens",
 	"total_tokens",
 	"mean_tokens_per_case",
+)
+
+_TOOL_RUN_TYPE_TAG_FILTER = "tags.run_type = 'tool_selection_eval'"
+
+_TOOL_SUMMARY_METRIC_KEYS = (
+	"total_cases",
+	"evaluated_cases",
+	"errored_cases",
+	"repeats",
+	"total_trials",
+	"incomplete_trials",
+	"tool_selection_accuracy",
+	"tool_error_rate",
+	"call_volume_efficiency",
+	"plan_adherence",
+	"consistency_score",
+	"success_rate",
+	"total_expected_calls",
+	"total_actual_calls",
+	"total_guardrail_errors",
+	"total_scripted_errors",
+	"total_input_tokens",
+	"total_output_tokens",
+	"total_cost_usd",
+	"total_successful_trials",
+	"mean_calls_per_trial",
+	"mean_cost_per_run",
+	"cost_per_successful_run",
 )
 
 
@@ -195,6 +224,198 @@ class EvalStatusResponse(BaseModel):
 	limit: int | None = None
 	result: dict[str, Any] | None = None
 	error: str | None = None
+
+
+class ToolEvalTriggerRequest(BaseModel):
+	dataset: str = Field(
+		default="evals/tool_selection_golden_dataset.jsonl",
+		description="Path to a tool-eval golden-dataset JSONL file, relative to evals/ (must "
+		"resolve inside it -- absolute paths and `..` are rejected).",
+	)
+	model: str | None = Field(default=None, description="Overrides the orchestrator LLM model for this run.")
+	threshold: int | None = Field(
+		default=None,
+		description="Overrides MATCH_THRESHOLD (0-100) -- only affects the system prompt's wording, "
+		"since evaluate_match's outcome is scripted per case rather than computed from this value.",
+	)
+	experiment_name: str | None = Field(default=None, description="Overrides MLFLOW_TOOL_EVAL_EXPERIMENT_NAME for this run.")
+	run_name: str | None = Field(default=None, description="MLflow run name; defaults to tool-eval-<eval_id>.")
+	limit: int | None = Field(
+		default=None,
+		description="Only run the first N scenarios. Each case makes real, billed orchestrator LLM "
+		"calls (one per tool-selection decision), so omitting this scores the entire dataset.",
+	)
+	repeats: int | None = Field(
+		default=None,
+		description="How many independent times to run each case (defaults to "
+		"run_tool_selection_eval.DEFAULT_REPEATS, currently 3). Needed to compute consistency_score "
+		"(pairwise trajectory agreement across the repeated runs) and averages the other metrics "
+		"over more than one sample -- multiplies billed orchestrator LLM calls by this factor.",
+	)
+
+	model_config = {
+		"json_schema_extra": {
+			"examples": [
+				{
+					"dataset": "evals/tool_selection_golden_dataset.jsonl",
+					"limit": 1,
+				}
+			]
+		}
+	}
+
+
+class ToolEvalTriggerResponse(BaseModel):
+	eval_id: str
+	status: Literal["running"]
+
+
+class ToolEvalStatusResponse(BaseModel):
+	eval_id: str
+	run_id: str
+	status: Literal["running", "completed", "failed"]
+	started_at: str | None
+	finished_at: str | None
+	experiment_id: str | None = None
+	experiment_name: str | None = None
+	mlflow_url: str | None = None
+	mlflow_trace_url: str | None = None
+	run_name: str | None = None
+	dataset_path: str | None = None
+	llm_model: str | None = None
+	match_threshold: float | None = None
+	dataset_case_count: int | None = None
+	limit: int | None = None
+	repeats: int | None = None
+	result: dict[str, Any] | None = None
+	error: str | None = None
+
+
+def _run_tool_eval_in_background(
+	eval_id: str, dataset_path: Path, payload: ToolEvalTriggerRequest, run_name: str
+) -> None:
+	log = LOGGER.bind(eval_id=eval_id)
+	log.action("api_tool_eval_started", dataset=str(dataset_path))
+	try:
+		summary = run_tool_selection_eval(
+			eval_id=eval_id,
+			dataset_path=dataset_path,
+			model=payload.model,
+			threshold=payload.threshold,
+			experiment_name=payload.experiment_name,
+			run_name=run_name,
+			limit=payload.limit,
+			repeats=payload.repeats,
+		)
+	except Exception:
+		log.exception("Tool-selection eval run failed")
+		return
+	log.action("api_tool_eval_completed", **summary)
+
+
+def _tool_eval_run_to_status_response(run: Any, experiment_name_by_id: dict[str, str]) -> ToolEvalStatusResponse:
+	tags = run.data.tags
+	params = run.data.params
+	metrics = run.data.metrics
+	status = _STATUS_BY_MLFLOW_STATUS.get(run.info.status, "running")
+
+	experiment_id = run.info.experiment_id
+	experiment_name = experiment_name_by_id.get(experiment_id)
+	if experiment_name is None:
+		experiment = mlflow.get_experiment(experiment_id)
+		experiment_name = experiment.name if experiment is not None else None
+		experiment_name_by_id[experiment_id] = experiment_name
+
+	result = None
+	if status == "completed":
+		result = {key: _coerce_metric(metrics[key]) for key in _TOOL_SUMMARY_METRIC_KEYS if key in metrics}
+
+	threshold = params.get("match_threshold")
+	dataset_case_count = params.get("dataset_case_count")
+	limit = params.get("limit")
+	repeats = params.get("repeats")
+
+	return ToolEvalStatusResponse(
+		eval_id=tags.get("eval_id", ""),
+		run_id=run.info.run_id,
+		status=status,
+		started_at=_ms_to_iso(run.info.start_time),
+		finished_at=_ms_to_iso(run.info.end_time),
+		experiment_id=experiment_id,
+		experiment_name=experiment_name,
+		mlflow_url=build_mlflow_run_url(experiment_id, run.info.run_id),
+		mlflow_trace_url=(
+			build_mlflow_trace_url(experiment_id, tags["trace_id"]) if tags.get("trace_id") else None
+		),
+		run_name=tags.get("mlflow.runName"),
+		dataset_path=tags.get("dataset_path"),
+		llm_model=params.get("llm_model"),
+		match_threshold=float(threshold) if threshold is not None else None,
+		dataset_case_count=int(dataset_case_count) if dataset_case_count is not None else None,
+		limit=int(limit) if limit is not None else None,
+		repeats=int(repeats) if repeats is not None else None,
+		result=result,
+		error=tags.get("error_message") if status == "failed" else None,
+	)
+
+
+@router.post("/tool-selection", status_code=202, summary="Trigger a tool-selection eval run")
+def trigger_tool_eval(payload: ToolEvalTriggerRequest) -> ToolEvalTriggerResponse:
+	"""Kicks off evals/run_tool_selection_eval.py's run_tool_selection_eval() on a background
+	thread and returns immediately -- it drives the real ReAct orchestrator (real LLM calls
+	deciding tool order) against mocked tool scenarios, so it's much faster than a full offline
+	eval but still makes one or more billed LLM calls per case. Poll GET /evals/tool-selection/
+	{eval_id} for status/result.
+	"""
+	dataset_path = _resolve_dataset_path(payload.dataset)
+	if not dataset_path.exists():
+		raise HTTPException(status_code=400, detail=f"Dataset not found: {dataset_path}")
+
+	eval_id = new_id()
+	run_name = payload.run_name or f"tool-eval-{eval_id}"
+	thread = threading.Thread(
+		target=_run_tool_eval_in_background,
+		args=(eval_id, dataset_path, payload, run_name),
+		daemon=True,
+		name=f"tool-eval-{eval_id}",
+	)
+	thread.start()
+	return ToolEvalTriggerResponse(eval_id=eval_id, status="running")
+
+
+@router.get("/tool-selection", summary="List tool-selection eval runs")
+def list_tool_evals(limit: int = 50) -> list[ToolEvalStatusResponse]:
+	"""Lists tool-selection eval runs (tags.run_type = 'tool_selection_eval') from MLflow, newest
+	first -- same durability contract as GET /evals. Registered before GET /evals/{eval_id} so
+	this literal path isn't shadowed by that path-parameter route."""
+	ensure_tracking_uri_configured()
+	runs = mlflow.search_runs(
+		search_all_experiments=True,
+		filter_string=_TOOL_RUN_TYPE_TAG_FILTER,
+		max_results=limit,
+		order_by=["attributes.start_time DESC"],
+		output_format="list",
+	)
+	experiment_name_by_id: dict[str, str] = {}
+	return [_tool_eval_run_to_status_response(run, experiment_name_by_id) for run in runs]
+
+
+@router.get("/tool-selection/{eval_id}", summary="Poll a tool-selection eval run's status/result")
+def get_tool_eval(eval_id: str) -> ToolEvalStatusResponse:
+	"""Same lookup contract as GET /evals/{eval_id}, scoped to tool-selection eval runs."""
+	if not _EVAL_ID_RE.match(eval_id):
+		raise HTTPException(status_code=400, detail="eval_id is not a well-formed eval id")
+
+	ensure_tracking_uri_configured()
+	runs = mlflow.search_runs(
+		search_all_experiments=True,
+		filter_string=f"{_TOOL_RUN_TYPE_TAG_FILTER} and tags.eval_id = '{eval_id}'",
+		max_results=1,
+		output_format="list",
+	)
+	if not runs:
+		raise HTTPException(status_code=404, detail=f"No tool-selection eval run with id {eval_id!r}")
+	return _tool_eval_run_to_status_response(runs[0], {})
 
 
 def _resolve_dataset_path(raw: str) -> Path:

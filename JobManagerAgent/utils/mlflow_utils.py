@@ -76,6 +76,14 @@ def load_mlflow_eval_experiment_name() -> str:
 	return load_env_value("MLFLOW_EVAL_EXPERIMENT_NAME", "job_matching_evals")
 
 
+def load_mlflow_tool_eval_experiment_name() -> str:
+	"""Separate again from both the live-cycle and job-match-eval experiments: this one scores the
+	ReAct orchestrator's own tool-selection behavior (tool_selection_accuracy/tool_error_rate/
+	call_volume_efficiency against mocked tools), a metric shape that has nothing in common with
+	either match-quality accuracy or per-cycle job counts."""
+	return load_env_value("MLFLOW_TOOL_EVAL_EXPERIMENT_NAME", "job_matching_tool_evals")
+
+
 def _load_mlflow_ui_base_url() -> str | None:
 	"""Publicly reachable MLflow UI origin, or None if MLFLOW_UI_BASE_URL isn't set.
 
