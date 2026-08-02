@@ -385,7 +385,7 @@ function PromptComparisonTable({ runs }: { runs: EvalRun[] }) {
   if (!latest) {
     return (
       <div className="empty-state">
-        <p>Trigger an offline eval sweep below to compare every registered prompt version's full metrics here.</p>
+        <p>Trigger an offline eval sweep to compare every registered prompt version's full metrics here.</p>
       </div>
     )
   }
@@ -453,7 +453,7 @@ function AgentBehaviorTable({ toolRuns }: { toolRuns: ToolEvalRun[] }) {
   if (!latest) {
     return (
       <div className="empty-state">
-        <p>Trigger a tool-selection eval run below to see the agent's tool-calling behavior metrics here.</p>
+        <p>Trigger a tool-selection eval run to see the agent's tool-calling behavior metrics here.</p>
       </div>
     )
   }
@@ -500,41 +500,6 @@ function AgentBehaviorTable({ toolRuns }: { toolRuns: ToolEvalRun[] }) {
   )
 }
 
-type CurrentStateTab = 'prompt' | 'behavior'
-
-function CurrentStatePane({ runs, toolRuns }: { runs: EvalRun[]; toolRuns: ToolEvalRun[] }) {
-  const [activeTab, setActiveTab] = useState<CurrentStateTab>('prompt')
-
-  return (
-    <div className="vitals-pane">
-      <div className="vitals-pane-title">
-        <div className="toolbar-copy">
-          <p className="eyebrow">Current Agent State</p>
-          <h2>{activeTab === 'prompt' ? 'Prompt version comparison' : 'Agent behavior experiments'}</h2>
-        </div>
-        <div className="pane-tabs">
-          <button
-            type="button"
-            className={`pane-tab${activeTab === 'prompt' ? ' is-active' : ''}`}
-            onClick={() => setActiveTab('prompt')}
-          >
-            Prompt Version Comparison
-          </button>
-          <button
-            type="button"
-            className={`pane-tab${activeTab === 'behavior' ? ' is-active' : ''}`}
-            onClick={() => setActiveTab('behavior')}
-          >
-            Agent Behavior
-          </button>
-        </div>
-      </div>
-
-      {activeTab === 'prompt' ? <PromptComparisonTable runs={runs} /> : <AgentBehaviorTable toolRuns={toolRuns} />}
-    </div>
-  )
-}
-
 type VitalsListItem =
   | { kind: 'single'; run: EvalRun; sortKey: string }
   | { kind: 'sweep'; sweepId: string; runs: EvalRun[]; sortKey: string }
@@ -571,7 +536,21 @@ function groupRunsForDisplay(runs: EvalRun[], toolRuns: ToolEvalRun[]): VitalsLi
   return items
 }
 
+type VitalsTab = 'prompt' | 'behavior' | 'history'
+
+// First N tabs are one per experiment type this dashboard tracks (currently prompt-version
+// comparison and tool-selection/agent-behavior evals); the last tab is always run history,
+// spanning every experiment type at once. Adding a new experiment type later means adding one
+// more entry here before 'history', not restructuring the tab bar.
+const VITALS_TABS: Array<{ id: VitalsTab; label: string }> = [
+  { id: 'prompt', label: 'Prompt Version Comparison' },
+  { id: 'behavior', label: 'Agent Behavior' },
+  { id: 'history', label: 'Run History' },
+]
+
 export default function AgentVitalsView() {
+  const [activeTab, setActiveTab] = useState<VitalsTab>('prompt')
+
   const evalsQuery = useEvals()
   const sweepMutation = useTriggerEvalSweep()
   const runs = evalsQuery.data ?? []
@@ -600,82 +579,145 @@ export default function AgentVitalsView() {
     })
   }
 
-  function refetchAll() {
-    evalsQuery.refetch()
-    toolEvalsQuery.refetch()
-  }
-
   return (
     <section className="content-panel">
-      <CurrentStatePane runs={runs} toolRuns={toolRuns} />
-
-      <div className="vitals-pane">
-        <div className="toolbar">
-          <div className="toolbar-copy">
-            <p className="eyebrow">JobManagerAgent</p>
-            <h2>{isLoading ? 'Loading eval runs...' : `${totalRunCount} eval run${totalRunCount === 1 ? '' : 's'}`}</h2>
-          </div>
-          <div className="toolbar-actions">
-            <button
-              type="button"
-              className="primary-button ghost-button-with-icon"
-              onClick={runSweep}
-              disabled={sweepMutation.isPending}
-            >
-              <FiZap aria-hidden="true" className="button-icon" />
-              {sweepMutation.isPending ? 'Triggering sweep...' : 'Run Offline Eval Sweep'}
-            </button>
-            <button
-              type="button"
-              className="primary-button ghost-button-with-icon"
-              onClick={runToolEval}
-              disabled={toolEvalMutation.isPending}
-            >
-              <FiZap aria-hidden="true" className="button-icon" />
-              {toolEvalMutation.isPending ? 'Triggering run...' : 'Run Tool Selection Eval'}
-            </button>
-            <button
-              type="button"
-              className="ghost-button ghost-button-with-icon"
-              onClick={refetchAll}
-              disabled={isFetching}
-            >
-              <FiRefreshCw aria-hidden="true" className={isFetching ? 'button-icon spin' : 'button-icon'} />
-              {isFetching ? 'Refreshing...' : 'Refresh'}
-            </button>
-          </div>
-        </div>
-
-        {sweepMutation.isSuccess && (
-          <div className="banner banner-info">
-            Triggered {sweepMutation.data.length} eval run{sweepMutation.data.length === 1 ? '' : 's'} — one per registered prompt version.
-          </div>
-        )}
-        {sweepMutation.error && <div className="banner banner-error">{sweepMutation.error.message}</div>}
-        {evalsQuery.error && <div className="banner banner-error">{evalsQuery.error.message}</div>}
-        {toolEvalMutation.isSuccess && (
-          <div className="banner banner-info">Triggered a tool-selection eval run against the mocked-tool golden dataset.</div>
-        )}
-        {toolEvalMutation.error && <div className="banner banner-error">{toolEvalMutation.error.message}</div>}
-        {toolEvalsQuery.error && <div className="banner banner-error">{toolEvalsQuery.error.message}</div>}
-
-        {!isLoading && totalRunCount === 0 && (
-          <div className="empty-state">
-            <h2>No eval runs yet</h2>
-            <p>Trigger an offline eval sweep or a tool-selection eval run to get started.</p>
-          </div>
-        )}
-
-        {totalRunCount > 0 && (
-          <div className="eval-run-list">
-            {groupRunsForDisplay(runs, toolRuns).map((item) => {
-              if (item.kind === 'single') return <EvalRunRow key={`match-${item.run.eval_id}`} run={item.run} />
-              if (item.kind === 'sweep') return <SweepGroupRow key={`sweep-${item.sweepId}`} sweepId={item.sweepId} runs={item.runs} />
-              return <ToolEvalRunRow key={`tool-${item.run.eval_id}`} run={item.run} />
-            })}
-          </div>
-        )}
+      <div className="vitals-tabs-bar pane-tabs">
+        {VITALS_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={`pane-tab${activeTab === tab.id ? ' is-active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
+
+      {activeTab === 'prompt' && (
+        <>
+          <div className="toolbar">
+            <div className="toolbar-copy">
+              <p className="eyebrow">Current Agent State</p>
+              <h2>Prompt version comparison</h2>
+            </div>
+            <div className="toolbar-actions">
+              <button
+                type="button"
+                className="primary-button ghost-button-with-icon"
+                onClick={runSweep}
+                disabled={sweepMutation.isPending}
+              >
+                <FiZap aria-hidden="true" className="button-icon" />
+                {sweepMutation.isPending ? 'Triggering sweep...' : 'Run Offline Eval Sweep'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button ghost-button-with-icon"
+                onClick={() => evalsQuery.refetch()}
+                disabled={evalsQuery.isFetching}
+              >
+                <FiRefreshCw aria-hidden="true" className={evalsQuery.isFetching ? 'button-icon spin' : 'button-icon'} />
+                {evalsQuery.isFetching ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+          </div>
+
+          {sweepMutation.isSuccess && (
+            <div className="banner banner-info">
+              Triggered {sweepMutation.data.length} eval run{sweepMutation.data.length === 1 ? '' : 's'} — one per registered prompt version.
+            </div>
+          )}
+          {sweepMutation.error && <div className="banner banner-error">{sweepMutation.error.message}</div>}
+          {evalsQuery.error && <div className="banner banner-error">{evalsQuery.error.message}</div>}
+
+          <PromptComparisonTable runs={runs} />
+        </>
+      )}
+
+      {activeTab === 'behavior' && (
+        <>
+          <div className="toolbar">
+            <div className="toolbar-copy">
+              <p className="eyebrow">Current Agent State</p>
+              <h2>Agent behavior experiments</h2>
+            </div>
+            <div className="toolbar-actions">
+              <button
+                type="button"
+                className="primary-button ghost-button-with-icon"
+                onClick={runToolEval}
+                disabled={toolEvalMutation.isPending}
+              >
+                <FiZap aria-hidden="true" className="button-icon" />
+                {toolEvalMutation.isPending ? 'Triggering run...' : 'Run Tool Selection Eval'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button ghost-button-with-icon"
+                onClick={() => toolEvalsQuery.refetch()}
+                disabled={toolEvalsQuery.isFetching}
+              >
+                <FiRefreshCw aria-hidden="true" className={toolEvalsQuery.isFetching ? 'button-icon spin' : 'button-icon'} />
+                {toolEvalsQuery.isFetching ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+          </div>
+
+          {toolEvalMutation.isSuccess && (
+            <div className="banner banner-info">Triggered a tool-selection eval run against the mocked-tool golden dataset.</div>
+          )}
+          {toolEvalMutation.error && <div className="banner banner-error">{toolEvalMutation.error.message}</div>}
+          {toolEvalsQuery.error && <div className="banner banner-error">{toolEvalsQuery.error.message}</div>}
+
+          <AgentBehaviorTable toolRuns={toolRuns} />
+        </>
+      )}
+
+      {activeTab === 'history' && (
+        <>
+          <div className="toolbar">
+            <div className="toolbar-copy">
+              <p className="eyebrow">JobManagerAgent</p>
+              <h2>{isLoading ? 'Loading eval runs...' : `${totalRunCount} eval run${totalRunCount === 1 ? '' : 's'}`}</h2>
+            </div>
+            <div className="toolbar-actions">
+              <button
+                type="button"
+                className="ghost-button ghost-button-with-icon"
+                onClick={() => {
+                  evalsQuery.refetch()
+                  toolEvalsQuery.refetch()
+                }}
+                disabled={isFetching}
+              >
+                <FiRefreshCw aria-hidden="true" className={isFetching ? 'button-icon spin' : 'button-icon'} />
+                {isFetching ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+          </div>
+
+          {evalsQuery.error && <div className="banner banner-error">{evalsQuery.error.message}</div>}
+          {toolEvalsQuery.error && <div className="banner banner-error">{toolEvalsQuery.error.message}</div>}
+
+          {!isLoading && totalRunCount === 0 && (
+            <div className="empty-state">
+              <h2>No eval runs yet</h2>
+              <p>Switch to Prompt Version Comparison or Agent Behavior to trigger a run.</p>
+            </div>
+          )}
+
+          {totalRunCount > 0 && (
+            <div className="eval-run-list">
+              {groupRunsForDisplay(runs, toolRuns).map((item) => {
+                if (item.kind === 'single') return <EvalRunRow key={`match-${item.run.eval_id}`} run={item.run} />
+                if (item.kind === 'sweep') return <SweepGroupRow key={`sweep-${item.sweepId}`} sweepId={item.sweepId} runs={item.runs} />
+                return <ToolEvalRunRow key={`tool-${item.run.eval_id}`} run={item.run} />
+              })}
+            </div>
+          )}
+        </>
+      )}
     </section>
   )
 }

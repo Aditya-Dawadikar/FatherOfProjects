@@ -250,28 +250,10 @@
   font-size: 1.35rem;
 }
 
-.vitals-pane {
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  padding: 20px;
-  margin-bottom: 24px;
-}
-
-.vitals-pane:last-child {
-  margin-bottom: 0;
-}
-
-.vitals-pane .toolbar {
-  margin-bottom: 14px;
-}
-
-.vitals-pane-title {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
+.vitals-tabs-bar {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
 }
 
 .pane-tabs {
