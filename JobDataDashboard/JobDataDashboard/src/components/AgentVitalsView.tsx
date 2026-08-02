@@ -536,6 +536,38 @@ function groupRunsForDisplay(runs: EvalRun[], toolRuns: ToolEvalRun[]): VitalsLi
   return items
 }
 
+type HistoryFilters = { dateFrom: string; dateTo: string; experimentName: string }
+
+function matchesHistoryFilters(
+  run: { started_at: string | null; experiment_name: string | null },
+  filters: HistoryFilters,
+): boolean {
+  if (filters.experimentName && run.experiment_name !== filters.experimentName) {
+    return false
+  }
+  if (filters.dateFrom || filters.dateTo) {
+    // started_at is an ISO datetime (see api/eval_runs.py's _ms_to_iso) -- the first 10 chars are
+    // always its YYYY-MM-DD date, which sorts lexicographically the same as chronologically, so
+    // string comparison against the <input type="date"> values (same format) works directly.
+    const runDate = run.started_at?.slice(0, 10) ?? ''
+    if (!runDate) return false
+    if (filters.dateFrom && runDate < filters.dateFrom) return false
+    if (filters.dateTo && runDate > filters.dateTo) return false
+  }
+  return true
+}
+
+function distinctExperimentNames(runs: EvalRun[], toolRuns: ToolEvalRun[]): string[] {
+  const names = new Set<string>()
+  for (const run of runs) {
+    if (run.experiment_name) names.add(run.experiment_name)
+  }
+  for (const run of toolRuns) {
+    if (run.experiment_name) names.add(run.experiment_name)
+  }
+  return [...names].sort((a, b) => a.localeCompare(b))
+}
+
 type VitalsTab = 'prompt' | 'behavior' | 'history'
 
 // First N tabs are one per experiment type this dashboard tracks (currently prompt-version
@@ -562,6 +594,22 @@ export default function AgentVitalsView() {
   const isLoading = evalsQuery.isLoading || toolEvalsQuery.isLoading
   const isFetching = evalsQuery.isFetching || toolEvalsQuery.isFetching
   const totalRunCount = runs.length + toolRuns.length
+
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [experimentFilter, setExperimentFilter] = useState('')
+  const hasActiveFilters = Boolean(dateFrom || dateTo || experimentFilter)
+  const historyFilters: HistoryFilters = { dateFrom, dateTo, experimentName: experimentFilter }
+  const experimentNames = distinctExperimentNames(runs, toolRuns)
+  const filteredRuns = runs.filter((run) => matchesHistoryFilters(run, historyFilters))
+  const filteredToolRuns = toolRuns.filter((run) => matchesHistoryFilters(run, historyFilters))
+  const filteredRunCount = filteredRuns.length + filteredToolRuns.length
+
+  function clearHistoryFilters() {
+    setDateFrom('')
+    setDateTo('')
+    setExperimentFilter('')
+  }
 
   function runSweep() {
     sweepMutation.mutate(undefined, {
@@ -679,9 +727,49 @@ export default function AgentVitalsView() {
           <div className="toolbar">
             <div className="toolbar-copy">
               <p className="eyebrow">JobManagerAgent</p>
-              <h2>{isLoading ? 'Loading eval runs...' : `${totalRunCount} eval run${totalRunCount === 1 ? '' : 's'}`}</h2>
+              <h2>
+                {isLoading
+                  ? 'Loading eval runs...'
+                  : hasActiveFilters
+                    ? `${filteredRunCount} of ${totalRunCount} eval run${totalRunCount === 1 ? '' : 's'}`
+                    : `${totalRunCount} eval run${totalRunCount === 1 ? '' : 's'}`}
+              </h2>
             </div>
             <div className="toolbar-actions">
+              <select
+                className="search-input filter-select"
+                value={experimentFilter}
+                onChange={(event) => setExperimentFilter(event.target.value)}
+                aria-label="Filter by experiment"
+              >
+                <option value="">All experiments</option>
+                {experimentNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="search-input date-input"
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(event) => setDateFrom(event.target.value)}
+                aria-label="From date"
+              />
+              <input
+                className="search-input date-input"
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(event) => setDateTo(event.target.value)}
+                aria-label="To date"
+              />
+              {hasActiveFilters && (
+                <button type="button" className="ghost-button" onClick={clearHistoryFilters}>
+                  Clear filters
+                </button>
+              )}
               <button
                 type="button"
                 className="ghost-button ghost-button-with-icon"
@@ -707,9 +795,16 @@ export default function AgentVitalsView() {
             </div>
           )}
 
-          {totalRunCount > 0 && (
+          {!isLoading && totalRunCount > 0 && filteredRunCount === 0 && (
+            <div className="empty-state">
+              <h2>No runs match these filters</h2>
+              <p>Try widening the date range or clearing the experiment filter.</p>
+            </div>
+          )}
+
+          {filteredRunCount > 0 && (
             <div className="eval-run-list">
-              {groupRunsForDisplay(runs, toolRuns).map((item) => {
+              {groupRunsForDisplay(filteredRuns, filteredToolRuns).map((item) => {
                 if (item.kind === 'single') return <EvalRunRow key={`match-${item.run.eval_id}`} run={item.run} />
                 if (item.kind === 'sweep') return <SweepGroupRow key={`sweep-${item.sweepId}`} sweepId={item.sweepId} runs={item.runs} />
                 return <ToolEvalRunRow key={`tool-${item.run.eval_id}`} run={item.run} />
