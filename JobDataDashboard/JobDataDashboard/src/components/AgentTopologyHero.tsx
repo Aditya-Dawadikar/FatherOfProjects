@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Background, Controls, MarkerType, Position, ReactFlow } from '@xyflow/react'
+import type { NodeProps } from '@xyflow/react'
+import { Background, Controls, Handle, MarkerType, Position, ReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { AgentTopology, AgentTopologyNode, AgentTopologyNodeKind } from '../types'
 
@@ -15,6 +16,19 @@ type NodeLayout = {
 
 type Props = {
   topology: AgentTopology
+}
+
+type DetailNodeData = {
+  label: string
+  kind: AgentTopologyNodeKind
+  summary: string
+  source: string
+  stage: string
+  status: string
+  incoming: number
+  outgoing: number
+  sourcePosition: Position
+  targetPosition: Position
 }
 
 type FlowStage = {
@@ -36,6 +50,22 @@ const KIND_CLASS: Record<AgentTopologyNodeKind, string> = {
   middleware: 'agent-node-middleware',
   guardrail: 'agent-node-guardrail',
   prompt: 'agent-node-prompt',
+}
+
+const KIND_SUMMARY: Record<AgentTopologyNodeKind, string> = {
+  middleware: 'Execution wrapper',
+  agent: 'Decision engine',
+  tool: 'Executable action',
+  prompt: 'LLM prompt template',
+  guardrail: 'Safety gate',
+}
+
+const KIND_ICON: Record<AgentTopologyNodeKind, string> = {
+  middleware: 'MW',
+  agent: 'AG',
+  tool: 'TL',
+  prompt: 'LL',
+  guardrail: 'GR',
 }
 
 function distribute(nodes: AgentTopologyNode[], x: number, minY: number, maxY: number): NodeLayout[] {
@@ -105,6 +135,48 @@ function targetPositionFor(kind: AgentTopologyNodeKind): Position {
   return Position.Right
 }
 
+function stageLabelFor(kind: AgentTopologyNodeKind): string {
+  if (kind === 'middleware') return 'Stage 1'
+  if (kind === 'agent') return 'Stage 2'
+  if (kind === 'tool') return 'Stage 3'
+  if (kind === 'prompt') return 'Stage 4'
+  return 'Stage 5'
+}
+
+function shortSourcePath(source: string): string {
+  if (!source) return 'n/a'
+  const normalized = source.replace(/\\/g, '/')
+  const parts = normalized.split('/')
+  if (parts.length <= 2) return normalized
+  return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`
+}
+
+function DetailNode({ data, selected }: NodeProps) {
+  const nodeData = data as unknown as DetailNodeData
+  return (
+    <div className={`agent-card-node ${KIND_CLASS[nodeData.kind]}${selected ? ' is-selected' : ''}`}>
+      <Handle type="target" position={nodeData.targetPosition} className="agent-handle" />
+      <Handle type="source" position={nodeData.sourcePosition} className="agent-handle" />
+
+      <div className="agent-card-head">
+        <span className="agent-card-kind">{KIND_ICON[nodeData.kind]}</span>
+        <strong className="agent-card-title">{nodeData.label}</strong>
+        <span className="agent-card-status">{nodeData.status}</span>
+      </div>
+
+      <div className="agent-card-body">
+        <p className="agent-card-summary">{nodeData.summary}</p>
+        <div className="agent-card-meta-row">
+          <span>{nodeData.stage}</span>
+          <span>{nodeData.incoming} in</span>
+          <span>{nodeData.outgoing} out</span>
+        </div>
+        <p className="agent-card-source">{shortSourcePath(nodeData.source)}</p>
+      </div>
+    </div>
+  )
+}
+
 export default function AgentTopologyHero({ topology }: Props) {
   const [pinnedNodeId, setPinnedNodeId] = useState<string | null>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
@@ -113,6 +185,7 @@ export default function AgentTopologyHero({ topology }: Props) {
   const fallbackNodeId = topology.nodes.find((node) => node.kind === 'agent')?.id ?? topology.nodes[0]?.id ?? null
   const activeNodeId = pinnedNodeId ?? hoveredNodeId ?? fallbackNodeId
   const activeNode = topology.nodes.find((node) => node.id === activeNodeId) ?? null
+  const nodeTypes = useMemo(() => ({ detailNode: DetailNode }), [])
   const nodesById = useMemo(() => {
     const map = new Map<string, AgentTopologyNode>()
     for (const node of topology.nodes) {
@@ -121,19 +194,43 @@ export default function AgentTopologyHero({ topology }: Props) {
     return map
   }, [topology.nodes])
 
+  const edgeCounts = useMemo(() => {
+    const incoming = new Map<string, number>()
+    const outgoing = new Map<string, number>()
+    for (const edge of topology.edges) {
+      incoming.set(edge.target, (incoming.get(edge.target) ?? 0) + 1)
+      outgoing.set(edge.source, (outgoing.get(edge.source) ?? 0) + 1)
+    }
+    return { incoming, outgoing }
+  }, [topology.edges])
+
   const flowNodes = useMemo(
     () => topology.nodes.map((node) => {
       const point = layout.get(node.id) ?? { x: 0, y: 0 }
+      const sourcePosition = sourcePositionFor(node.kind)
+      const targetPosition = targetPositionFor(node.kind)
       return {
         id: node.id,
+        type: 'detailNode',
         position: point,
-        data: { label: node.label },
-        className: `${KIND_CLASS[node.kind]} agent-node-block${activeNodeId === node.id ? ' is-active' : ''}`,
-        sourcePosition: sourcePositionFor(node.kind),
-        targetPosition: targetPositionFor(node.kind),
+        data: {
+          label: node.label,
+          kind: node.kind,
+          summary: KIND_SUMMARY[node.kind],
+          source: node.source,
+          stage: stageLabelFor(node.kind),
+          status: activeNodeId === node.id ? 'FOCUS' : 'LIVE',
+          incoming: edgeCounts.incoming.get(node.id) ?? 0,
+          outgoing: edgeCounts.outgoing.get(node.id) ?? 0,
+          sourcePosition,
+          targetPosition,
+        },
+        className: `${activeNodeId === node.id ? ' is-active' : ''}`,
+        sourcePosition,
+        targetPosition,
       }
     }),
-    [activeNodeId, layout, topology.nodes],
+    [activeNodeId, edgeCounts, layout, topology.nodes],
   )
 
   const primaryPathEdges = useMemo(() => {
@@ -237,6 +334,7 @@ export default function AgentTopologyHero({ topology }: Props) {
             <ReactFlow
               nodes={flowNodes}
               edges={flowEdges}
+              nodeTypes={nodeTypes}
               nodesDraggable={false}
               nodesConnectable={false}
               elementsSelectable={false}

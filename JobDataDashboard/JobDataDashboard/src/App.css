@@ -285,35 +285,93 @@
 }
 
 .agent-flow .react-flow__node {
-  border: 2px solid;
-  border-radius: 8px;
-  background: #ffffff;
-  color: var(--text);
-  font: inherit;
-  font-size: 0.76rem;
-  font-weight: 700;
-  line-height: 1.2;
-  padding: 9px 12px;
-  min-width: 132px;
-  max-width: 210px;
-  text-align: center;
-  cursor: pointer;
-  box-shadow: 0 8px 14px rgba(10, 22, 15, 0.14);
-  transition: box-shadow 120ms ease, transform 120ms ease;
-}
-
-.agent-flow .react-flow__node:hover,
-.agent-flow .react-flow__node.is-active {
-  box-shadow: 0 14px 22px rgba(10, 22, 15, 0.2);
-  transform: translateY(-1px);
-  outline: 3px solid rgba(16, 30, 20, 0.16);
-}
-
-.agent-flow .react-flow__node-default {
   border: 0;
   background: transparent;
   padding: 0;
   box-shadow: none;
+}
+
+.agent-card-node {
+  width: 220px;
+  border: 2px solid;
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--text);
+  box-shadow: 0 10px 18px rgba(10, 22, 15, 0.14);
+  transition: box-shadow 140ms ease, transform 140ms ease;
+}
+
+.agent-flow .react-flow__node:hover .agent-card-node,
+.agent-flow .react-flow__node.is-active .agent-card-node,
+.agent-card-node.is-selected {
+  box-shadow: 0 18px 26px rgba(10, 22, 15, 0.2);
+  transform: translateY(-1px);
+}
+
+.agent-card-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(16, 30, 20, 0.12);
+}
+
+.agent-card-kind {
+  border: 1px solid rgba(16, 30, 20, 0.2);
+  border-radius: 5px;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 2px 4px;
+}
+
+.agent-card-title {
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.agent-card-status {
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border: 1px solid rgba(16, 30, 20, 0.2);
+  background: rgba(16, 30, 20, 0.06);
+}
+
+.agent-card-body {
+  padding: 8px 10px 10px;
+}
+
+.agent-card-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.agent-card-meta-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.agent-card-meta-row span {
+  border: 1px solid rgba(16, 30, 20, 0.18);
+  border-radius: 6px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  background: rgba(16, 30, 20, 0.04);
+}
+
+.agent-card-source {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.66rem;
 }
 
 .agent-node-agent,
@@ -344,6 +402,26 @@
 .agent-kind-pill.agent-node-prompt {
   border-color: #4b3787;
   background: #e7e1fc;
+}
+
+.agent-node-agent .agent-card-status {
+  color: #17553b;
+}
+
+.agent-node-tool .agent-card-status {
+  color: #1b5f87;
+}
+
+.agent-node-middleware .agent-card-status {
+  color: #785114;
+}
+
+.agent-node-guardrail .agent-card-status {
+  color: #7e2520;
+}
+
+.agent-node-prompt .agent-card-status {
+  color: #4b3787;
 }
 
 .agent-flow .react-flow__edge-path,
@@ -378,6 +456,16 @@
   min-height: 0;
   opacity: 0;
   border: 0;
+}
+
+.agent-flow .agent-handle {
+  width: 0;
+  height: 0;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0;
 }
 
 .agent-flow .react-flow__controls {
@@ -1026,8 +1114,11 @@
   }
 
   .agent-flow .react-flow__node {
-    max-width: 145px;
-    padding: 7px 10px;
+    max-width: none;
+  }
+
+  .agent-card-node {
+    width: 190px;
   }
 
   .alluvial-wrap {
