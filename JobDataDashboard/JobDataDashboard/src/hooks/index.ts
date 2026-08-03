@@ -2,6 +2,8 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import type {
   EvalRun,
   EvalSweepTrigger,
+  GuardrailsEvalRun,
+  GuardrailsEvalTrigger,
   HealthResponse,
   JobDraft,
   JobRecord,
@@ -425,5 +427,37 @@ export function useToolEvals() {
 export function useTriggerToolEval() {
   return useMutation({
     mutationFn: triggerToolEval,
+  })
+}
+
+async function fetchGuardrailsEvals(): Promise<GuardrailsEvalRun[]> {
+  return requestAgentJson<GuardrailsEvalRun[]>('/agent-api/evals/guardrails')
+}
+
+async function triggerGuardrailsEval(): Promise<GuardrailsEvalTrigger> {
+  return requestAgentJson<GuardrailsEvalTrigger>('/agent-api/evals/guardrails', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+export function useGuardrailsEvals() {
+  return useQuery({
+    queryKey: ['guardrailsEvals'],
+    queryFn: fetchGuardrailsEvals,
+    staleTime: 3_000,
+    // Guardrail runs finish in under a second (no LLM calls, just a golden dataset pass), but
+    // still poll while one is in flight so the list picks up completion without a manual refresh.
+    refetchInterval: (query) => {
+      const runs = query.state.data
+      const hasRunningRun = runs?.some((run) => run.status === 'running') ?? false
+      return hasRunningRun ? 5_000 : false
+    },
+  })
+}
+
+export function useTriggerGuardrailsEval() {
+  return useMutation({
+    mutationFn: triggerGuardrailsEval,
   })
 }

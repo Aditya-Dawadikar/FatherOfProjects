@@ -84,6 +84,14 @@ def load_mlflow_tool_eval_experiment_name() -> str:
 	return load_env_value("MLFLOW_TOOL_EVAL_EXPERIMENT_NAME", "job_matching_tool_evals")
 
 
+def load_mlflow_guardrails_eval_experiment_name() -> str:
+	"""Separate again from the other three experiments: this one measures guardrail-check
+	precision/recall (empty/oversized-reasoning output validation, prompt-injection screening)
+	against a golden dataset of trigger/no-trigger scenarios -- a metric shape with nothing in
+	common with match-quality accuracy, tool-selection behavior, or per-cycle live counts."""
+	return load_env_value("MLFLOW_GUARDRAILS_EVAL_EXPERIMENT_NAME", "job_matching_guardrails_evals")
+
+
 def _load_mlflow_ui_base_url() -> str | None:
 	"""Publicly reachable MLflow UI origin, or None if MLFLOW_UI_BASE_URL isn't set.
 

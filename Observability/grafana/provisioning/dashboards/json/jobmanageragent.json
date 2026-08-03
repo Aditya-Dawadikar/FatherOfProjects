@@ -186,6 +186,46 @@
       ],
       "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
       "description": "Objects freed per second by generation, from the same reference-counting garbage collector."
+    },
+    {
+      "id": 12,
+      "title": "Guardrail Triggers (1h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(increase(jobmanageragent_guardrails_triggered_total[1h]))" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Total guardrail blocks (output validation, prompt-injection screening, tool-usage violations) across all categories in the last hour."
+    },
+    {
+      "id": 13,
+      "title": "Guardrail Trigger Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (guardrail, category) (rate(jobmanageragent_guardrails_triggered_total[5m]))",
+          "legendFormat": "{{guardrail}} ({{category}})"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "description": "Guardrail triggers per second, broken out by guardrail name and category (output_validation, injection, tool_usage). See guardrail_triggers table (JobManagerAgent DB) for the per-incident audit trail."
     }
   ]
 }

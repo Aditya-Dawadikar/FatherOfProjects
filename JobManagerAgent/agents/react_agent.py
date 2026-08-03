@@ -4,10 +4,14 @@ from typing import Any, Literal
 
 import mlflow
 from langchain.agents import create_agent
+from langchain.agents.middleware import ToolCallLimitMiddleware
+from langchain.agents.middleware.tool_call_limit import ToolCallLimitExceededError
 from langchain_core.messages import HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.errors import GraphRecursionError
 
+from guardrails.middleware import GuardrailMiddleware
+from guardrails.report import record_guardrail_trigger
 from integrations.mlflow import PROMPT_NAME, get_active_prompt
 from integrations.streaming import RedisStreamPublisher, publish_event
 from llm_providers import build_client, load_provider_name
@@ -16,6 +20,8 @@ from tools import build_agent_tools
 from utils.agent_logger import get_agent_logger, new_id
 from utils.config import (
 	DEFAULT_MODEL,
+	GUARDRAIL_TOOL_CALL_HEADROOM,
+	GUARDRAIL_TOOL_CALLS_PER_JOB,
 	MAX_OUTPUT_TOKENS,
 	RECURSION_LIMIT_HEADROOM,
 	STEPS_PER_JOB,
@@ -134,10 +140,19 @@ def run_matching_cycle_with_agent(
 		provider=provider,
 	)
 	llm = build_llm(model_name)
+	# Runaway-loop guardrail: caps total real tool calls this cycle, independent of the graph-step
+	# recursion_limit below (which also bounds pure reasoning turns that make no tool call at all).
+	# exit_behavior="error" raises ToolCallLimitExceededError instead of silently truncating the
+	# cycle, so it's caught and recorded the same way GraphRecursionError already is.
+	tool_call_limit = max_jobs * GUARDRAIL_TOOL_CALLS_PER_JOB + GUARDRAIL_TOOL_CALL_HEADROOM
 	agent = create_agent(
 		llm,
 		tools=[get_jobs_tool, crawl_job_tool, evaluate_match_tool, record_result_tool],
 		system_prompt=_system_prompt(resume_text, threshold),
+		middleware=[
+			GuardrailMiddleware(engine=engine),
+			ToolCallLimitMiddleware(run_limit=tool_call_limit, exit_behavior="error"),
+		],
 	)
 
 	with mlflow.start_run(run_name=f"cycle-{cycle_id}"):
@@ -189,6 +204,15 @@ def run_matching_cycle_with_agent(
 			except GraphRecursionError:
 				incomplete = True
 				log.action("agent_recursion_limit_hit", recursion_limit=recursion_limit, **stats)
+			except ToolCallLimitExceededError as error:
+				incomplete = True
+				record_guardrail_trigger(
+					engine=engine,
+					guardrail="tool_call_limit_exceeded",
+					category="tool_usage",
+					reason=str(error),
+				)
+				log.action("agent_tool_call_limit_hit", tool_call_limit=tool_call_limit, **stats)
 			except Exception as error:
 				error_message = str(error)
 				log.exception("Agent cycle raised an unexpected error")

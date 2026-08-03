@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { FiRefreshCw } from 'react-icons/fi'
-import { useEvals, useToolEvals } from '../../hooks'
-import { EvalRunRow, SweepGroupRow, ToolEvalRunRow } from './vitalsComponents'
+import { useEvals, useGuardrailsEvals, useToolEvals } from '../../hooks'
+import { EvalRunRow, GuardrailsEvalRunRow, SweepGroupRow, ToolEvalRunRow } from './vitalsComponents'
 import {
   distinctExperimentNames,
   groupRunsForDisplay,
@@ -12,22 +12,25 @@ import {
 export default function RunHistoryTab() {
   const evalsQuery = useEvals()
   const toolEvalsQuery = useToolEvals()
+  const guardrailsEvalsQuery = useGuardrailsEvals()
   const runs = evalsQuery.data ?? []
   const toolRuns = toolEvalsQuery.data ?? []
+  const guardrailsRuns = guardrailsEvalsQuery.data ?? []
 
-  const isLoading = evalsQuery.isLoading || toolEvalsQuery.isLoading
-  const isFetching = evalsQuery.isFetching || toolEvalsQuery.isFetching
-  const totalRunCount = runs.length + toolRuns.length
+  const isLoading = evalsQuery.isLoading || toolEvalsQuery.isLoading || guardrailsEvalsQuery.isLoading
+  const isFetching = evalsQuery.isFetching || toolEvalsQuery.isFetching || guardrailsEvalsQuery.isFetching
+  const totalRunCount = runs.length + toolRuns.length + guardrailsRuns.length
 
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [experimentFilter, setExperimentFilter] = useState('')
   const hasActiveFilters = Boolean(dateFrom || dateTo || experimentFilter)
   const historyFilters: HistoryFilters = { dateFrom, dateTo, experimentName: experimentFilter }
-  const experimentNames = distinctExperimentNames(runs, toolRuns)
+  const experimentNames = distinctExperimentNames(runs, toolRuns, guardrailsRuns)
   const filteredRuns = runs.filter((run) => matchesHistoryFilters(run, historyFilters))
   const filteredToolRuns = toolRuns.filter((run) => matchesHistoryFilters(run, historyFilters))
-  const filteredRunCount = filteredRuns.length + filteredToolRuns.length
+  const filteredGuardrailsRuns = guardrailsRuns.filter((run) => matchesHistoryFilters(run, historyFilters))
+  const filteredRunCount = filteredRuns.length + filteredToolRuns.length + filteredGuardrailsRuns.length
 
   function clearHistoryFilters() {
     setDateFrom('')
@@ -89,6 +92,7 @@ export default function RunHistoryTab() {
             onClick={() => {
               evalsQuery.refetch()
               toolEvalsQuery.refetch()
+              guardrailsEvalsQuery.refetch()
             }}
             disabled={isFetching}
           >
@@ -100,11 +104,12 @@ export default function RunHistoryTab() {
 
       {evalsQuery.error && <div className="banner banner-error">{evalsQuery.error.message}</div>}
       {toolEvalsQuery.error && <div className="banner banner-error">{toolEvalsQuery.error.message}</div>}
+      {guardrailsEvalsQuery.error && <div className="banner banner-error">{guardrailsEvalsQuery.error.message}</div>}
 
       {!isLoading && totalRunCount === 0 && (
         <div className="empty-state">
           <h2>No eval runs yet</h2>
-          <p>Switch to Prompt Version Comparison or Agent Behavior to trigger a run.</p>
+          <p>Switch to Prompt Version Comparison, Agent Behavior, or Guardrails to trigger a run.</p>
         </div>
       )}
 
@@ -117,10 +122,11 @@ export default function RunHistoryTab() {
 
       {filteredRunCount > 0 && (
         <div className="eval-run-list">
-          {groupRunsForDisplay(filteredRuns, filteredToolRuns).map((item) => {
+          {groupRunsForDisplay(filteredRuns, filteredToolRuns, filteredGuardrailsRuns).map((item) => {
             if (item.kind === 'single') return <EvalRunRow key={`match-${item.run.eval_id}`} run={item.run} />
             if (item.kind === 'sweep') return <SweepGroupRow key={`sweep-${item.sweepId}`} sweepId={item.sweepId} runs={item.runs} />
-            return <ToolEvalRunRow key={`tool-${item.run.eval_id}`} run={item.run} />
+            if (item.kind === 'tool') return <ToolEvalRunRow key={`tool-${item.run.eval_id}`} run={item.run} />
+            return <GuardrailsEvalRunRow key={`guardrails-${item.run.eval_id}`} run={item.run} />
           })}
         </div>
       )}

@@ -1,4 +1,4 @@
-import type { EvalRun, EvalRunStatus, ToolEvalRun } from '../../types'
+import type { EvalRun, EvalRunStatus, GuardrailsEvalRun, ToolEvalRun } from '../../types'
 
 export const STATUS_LABEL: Record<EvalRunStatus, string> = {
   running: 'Running',
@@ -41,14 +41,39 @@ export const TOOL_RESULT_METRICS: Array<{
   { key: 'total_cost_usd', label: 'Total Cost', formatter: formatUsd },
 ]
 
-// A small, curated subset of RESULT_METRICS/TOOL_RESULT_METRICS -- the KPI tab is meant to be
-// read at a glance, not a replacement for the full comparison tables on the other tabs.
+export const GUARDRAILS_RESULT_METRICS: Array<{
+  key: keyof NonNullable<GuardrailsEvalRun['result']>
+  label: string
+  formatter?: (value: number) => string
+}> = [
+  { key: 'accuracy', label: 'Accuracy', formatter: formatPercent },
+  { key: 'precision', label: 'Precision', formatter: formatPercent },
+  { key: 'recall', label: 'Recall', formatter: formatPercent },
+  { key: 'f1', label: 'F1', formatter: formatPercent },
+  { key: 'guardrail_id_accuracy', label: 'Guardrail ID Accuracy', formatter: formatPercent },
+  { key: 'true_positive', label: 'True Positive' },
+  { key: 'false_positive', label: 'False Positive' },
+  { key: 'false_negative', label: 'False Negative' },
+  { key: 'true_negative', label: 'True Negative' },
+  { key: 'evaluated_cases', label: 'Evaluated Cases' },
+  { key: 'total_cases', label: 'Total Cases' },
+]
+
+// A small, curated subset of RESULT_METRICS/TOOL_RESULT_METRICS/GUARDRAILS_RESULT_METRICS -- the
+// KPI tab is meant to be read at a glance, not a replacement for the full comparison tables on
+// the other tabs.
 export const PROMPT_KPI_METRICS: Array<keyof NonNullable<EvalRun['result']>> = ['accuracy', 'f1', 'score_in_range_rate']
 export const BEHAVIOR_KPI_METRICS: Array<keyof NonNullable<ToolEvalRun['result']>> = [
   'tool_selection_accuracy',
   'plan_adherence',
   'success_rate',
   'cost_per_successful_run',
+]
+export const GUARDRAILS_KPI_METRICS: Array<keyof NonNullable<GuardrailsEvalRun['result']>> = [
+  'accuracy',
+  'precision',
+  'recall',
+  'f1',
 ]
 
 export const SWEEP_COMPARE_COLUMNS: Array<{ key: keyof NonNullable<EvalRun['result']>; label: string }> = [
@@ -135,9 +160,23 @@ export function latestSweepGroup(runs: EvalRun[]): { sweepId: string; runs: Eval
   return latest
 }
 
+export function formatGuardrailsMetric(run: GuardrailsEvalRun, key: keyof NonNullable<GuardrailsEvalRun['result']>) {
+  const metric = GUARDRAILS_RESULT_METRICS.find((entry) => entry.key === key)
+  const rawValue = run.result?.[key]
+  if (rawValue === undefined || metric === undefined) {
+    return '—'
+  }
+  return metric.formatter ? metric.formatter(rawValue) : rawValue
+}
+
 export function latestToolRun(toolRuns: ToolEvalRun[]): ToolEvalRun | null {
   if (toolRuns.length === 0) return null
   return [...toolRuns].sort((a, b) => (b.started_at ?? '').localeCompare(a.started_at ?? ''))[0]
+}
+
+export function latestGuardrailsRun(guardrailsRuns: GuardrailsEvalRun[]): GuardrailsEvalRun | null {
+  if (guardrailsRuns.length === 0) return null
+  return [...guardrailsRuns].sort((a, b) => (b.started_at ?? '').localeCompare(a.started_at ?? ''))[0]
 }
 
 export function latestCompletedRun<T extends { status: EvalRunStatus; started_at: string | null }>(items: T[]): T | null {
@@ -150,8 +189,13 @@ export type VitalsListItem =
   | { kind: 'single'; run: EvalRun; sortKey: string }
   | { kind: 'sweep'; sweepId: string; runs: EvalRun[]; sortKey: string }
   | { kind: 'tool'; run: ToolEvalRun; sortKey: string }
+  | { kind: 'guardrails'; run: GuardrailsEvalRun; sortKey: string }
 
-export function groupRunsForDisplay(runs: EvalRun[], toolRuns: ToolEvalRun[]): VitalsListItem[] {
+export function groupRunsForDisplay(
+  runs: EvalRun[],
+  toolRuns: ToolEvalRun[],
+  guardrailsRuns: GuardrailsEvalRun[] = [],
+): VitalsListItem[] {
   const sweepGroups = new Map<string, EvalRun[]>()
   const items: VitalsListItem[] = []
 
@@ -176,6 +220,10 @@ export function groupRunsForDisplay(runs: EvalRun[], toolRuns: ToolEvalRun[]): V
 
   for (const run of toolRuns) {
     items.push({ kind: 'tool', run, sortKey: run.started_at ?? '' })
+  }
+
+  for (const run of guardrailsRuns) {
+    items.push({ kind: 'guardrails', run, sortKey: run.started_at ?? '' })
   }
 
   items.sort((a, b) => (a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0))
@@ -203,12 +251,19 @@ export function matchesHistoryFilters(
   return true
 }
 
-export function distinctExperimentNames(runs: EvalRun[], toolRuns: ToolEvalRun[]): string[] {
+export function distinctExperimentNames(
+  runs: EvalRun[],
+  toolRuns: ToolEvalRun[],
+  guardrailsRuns: GuardrailsEvalRun[] = [],
+): string[] {
   const names = new Set<string>()
   for (const run of runs) {
     if (run.experiment_name) names.add(run.experiment_name)
   }
   for (const run of toolRuns) {
+    if (run.experiment_name) names.add(run.experiment_name)
+  }
+  for (const run of guardrailsRuns) {
     if (run.experiment_name) names.add(run.experiment_name)
   }
   return [...names].sort((a, b) => a.localeCompare(b))

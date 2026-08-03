@@ -4,6 +4,9 @@ import logging
 import time
 from typing import Any
 
+from guardrails.checks import check_output
+from guardrails.errors import GuardrailBlockedError
+from guardrails.injection import scan_job_for_injection
 from utils.env_utils import load_env_value
 
 from . import gemini_provider
@@ -19,6 +22,7 @@ from .base import (
 
 
 __all__ = [
+	"GuardrailBlockedError",
 	"JobScore",
 	"MatchResponseError",
 	"RateLimitError",
@@ -121,15 +125,26 @@ def score_job(
 	resume: str,
 	job: dict[str, Any],
 	threshold: int,
+	job_id: int | None = None,
 ) -> JobScore:
-	"""The single definition of 'evaluate one job against the resume': renders the active prompt
-	template, scores it via evaluate_match (which already retries transient/rate-limit failures),
-	and applies the match threshold. Used identically by the ReAct agent's evaluate_match tool
+	"""The single definition of 'evaluate one job against the resume': screens the job posting for
+	prompt-injection attempts, renders the active prompt template, scores it via evaluate_match
+	(which already retries transient/rate-limit failures), validates the response, and applies the
+	match threshold. Used identically by the ReAct agent's evaluate_match tool
 	(tools/agent_tools.py) and the offline eval harness (evals/run_offline_eval.py) -- there is
-	exactly one place "is this a match" gets decided, so the two can never quietly drift apart.
+	exactly one place "is this a match" gets decided (and one place its guardrails are enforced),
+	so the two can never quietly drift apart.
+
+	Raises GuardrailBlockedError if the job content looks like a prompt-injection attempt or the
+	model's response fails output validation -- both checks run here rather than in each caller so
+	neither guardrail can be skipped by a caller that forgets to apply it. `job_id` is optional
+	(the offline eval harness scores synthetic cases with no real job_id) and only used to attribute
+	a raised GuardrailBlockedError to a specific job.
 	"""
+	scan_job_for_injection(job_id=job_id, job=job)
 	prompt = render_prompt(prompt_version, resume=resume, job=job)
 	result, usage = evaluate_match(client, model=model, prompt=prompt, provider=provider)
+	check_output(job_id=job_id, match_score=result["match_score"], reasoning=result["reasoning"])
 	return JobScore(
 		match_score=result["match_score"],
 		reasoning=result["reasoning"],

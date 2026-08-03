@@ -1,14 +1,17 @@
 import { FiExternalLink } from 'react-icons/fi'
-import type { EvalRun, ToolEvalRun } from '../../types'
+import type { EvalRun, GuardrailsEvalRun, ToolEvalRun } from '../../types'
 import {
+  GUARDRAILS_RESULT_METRICS,
   RESULT_METRICS,
   STATUS_LABEL,
   SWEEP_COMPARE_COLUMNS,
   TOOL_RESULT_METRICS,
   formatDateTime,
   formatDuration,
+  formatGuardrailsMetric,
   formatMetric,
   formatToolMetric,
+  latestGuardrailsRun,
   latestSweepGroup,
   latestToolRun,
 } from './vitalsUtils'
@@ -204,6 +207,76 @@ export function ToolEvalRunRow({ run }: { run: ToolEvalRun }) {
   )
 }
 
+export function GuardrailsEvalRunRow({ run }: { run: GuardrailsEvalRun }) {
+  const duration = formatDuration(run.started_at, run.finished_at)
+
+  return (
+    <details className="eval-run-item">
+      <summary className="eval-run-summary">
+        <span className={`status-pill status-pill-${run.status}`}>{STATUS_LABEL[run.status]}</span>
+        <span className="eval-run-name">{run.run_name ?? run.eval_id}</span>
+        <span className="eval-run-meta">{formatDateTime(run.started_at)}</span>
+        {duration && <span className="eval-run-meta">{duration}</span>}
+      </summary>
+
+      <div className="eval-run-body">
+        <div className="eval-run-fields">
+          <div>
+            <span>Dataset</span>
+            <strong>{run.dataset_path ?? '—'}</strong>
+          </div>
+          <div>
+            <span>Dataset cases</span>
+            <strong>{run.dataset_case_count ?? '—'}</strong>
+          </div>
+          <div>
+            <span>Limit</span>
+            <strong>{run.limit ?? 'full dataset'}</strong>
+          </div>
+          <div>
+            <span>Experiment</span>
+            <strong>{run.experiment_name ?? '—'}</strong>
+          </div>
+          <div>
+            <span>Run ID</span>
+            <strong className="eval-run-id">{run.run_id}</strong>
+          </div>
+          <div>
+            <span>MLflow Run</span>
+            <MlflowLink href={run.mlflow_url} label="View run" />
+          </div>
+          <div>
+            <span>MLflow Trace</span>
+            <MlflowLink href={run.mlflow_trace_url} label="View trace" />
+          </div>
+        </div>
+
+        {run.status === 'failed' && run.error && (
+          <div className="banner banner-error">{run.error}</div>
+        )}
+
+        {run.status === 'running' && (
+          <div className="banner banner-info">Run in progress — this list refreshes automatically.</div>
+        )}
+
+        {run.result && (
+          <div className="summary-grid eval-run-result-grid">
+            {GUARDRAILS_RESULT_METRICS.filter((metric) => run.result?.[metric.key] !== undefined).map((metric) => {
+              const rawValue = run.result?.[metric.key] as number
+              return (
+                <article className="summary-card" key={metric.key}>
+                  <span>{metric.label}</span>
+                  <strong>{metric.formatter ? metric.formatter(rawValue) : rawValue}</strong>
+                </article>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </details>
+  )
+}
+
 export function SweepGroupRow({ sweepId, runs }: { sweepId: string; runs: EvalRun[] }) {
   const latestStartedAt = runs.reduce<string | null>((latest, run) => {
     if (!run.started_at) return latest
@@ -374,6 +447,59 @@ export function AgentBehaviorTable({ toolRuns }: { toolRuns: ToolEvalRun[] }) {
               </td>
               {TOOL_RESULT_METRICS.map((metric) => (
                 <td key={metric.key}>{formatToolMetric(latest, metric.key)}</td>
+              ))}
+              <td>{formatDuration(latest.started_at, latest.finished_at) ?? '—'}</td>
+              <td className="sweep-compare-links">
+                <MlflowLink href={latest.mlflow_url} label="Run" />
+                <MlflowLink href={latest.mlflow_trace_url} label="Trace" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {latest.status === 'failed' && latest.error && <div className="banner banner-error">{latest.error}</div>}
+    </>
+  )
+}
+
+export function GuardrailsTable({ guardrailsRuns }: { guardrailsRuns: GuardrailsEvalRun[] }) {
+  const latest = latestGuardrailsRun(guardrailsRuns)
+
+  if (!latest) {
+    return (
+      <div className="empty-state">
+        <p>Trigger a guardrails eval run to see the guardrail-check accuracy metrics here.</p>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div className="pane-meta">
+        <span className="eval-run-meta">{latest.run_name ?? latest.eval_id}</span>
+        <span className="eval-run-meta">{formatDateTime(latest.started_at)}</span>
+      </div>
+      <div className="table-wrap">
+        <table className="sweep-compare-table">
+          <thead>
+            <tr>
+              <th>Run</th>
+              <th>Status</th>
+              {GUARDRAILS_RESULT_METRICS.map((metric) => (
+                <th key={metric.key}>{metric.label}</th>
+              ))}
+              <th>Duration</th>
+              <th>MLflow</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{latest.run_name ?? latest.eval_id}</td>
+              <td>
+                <span className={`status-pill status-pill-${latest.status}`}>{STATUS_LABEL[latest.status]}</span>
+              </td>
+              {GUARDRAILS_RESULT_METRICS.map((metric) => (
+                <td key={metric.key}>{formatGuardrailsMetric(latest, metric.key)}</td>
               ))}
               <td>{formatDuration(latest.started_at, latest.finished_at) ?? '—'}</td>
               <td className="sweep-compare-links">

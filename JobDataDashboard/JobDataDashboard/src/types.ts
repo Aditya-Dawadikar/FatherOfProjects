@@ -182,3 +182,40 @@ export type ToolEvalTrigger = {
   eval_id: string
   status: 'running'
 }
+
+export type GuardrailsEvalRunResult = {
+  total_cases: number
+  evaluated_cases: number
+  true_positive: number
+  false_positive: number
+  false_negative: number
+  true_negative: number
+  accuracy?: number
+  precision?: number
+  recall?: number
+  f1?: number
+  guardrail_id_accuracy?: number
+}
+
+export type GuardrailsEvalRun = {
+  eval_id: string
+  run_id: string
+  status: EvalRunStatus
+  started_at: string | null
+  finished_at: string | null
+  experiment_id: string | null
+  experiment_name: string | null
+  mlflow_url: string | null
+  mlflow_trace_url: string | null
+  run_name: string | null
+  dataset_path: string | null
+  dataset_case_count: number | null
+  limit: number | null
+  result: GuardrailsEvalRunResult | null
+  error: string | null
+}
+
+export type GuardrailsEvalTrigger = {
+  eval_id: string
+  status: 'running'
+}

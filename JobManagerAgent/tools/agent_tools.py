@@ -7,6 +7,7 @@ from langchain_core.tools import tool
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
+from guardrails.errors import GuardrailBlockedError
 from llm_providers import JobScore, MatchResponseError, RateLimitError, TransientProviderError, score_job
 from services import CrawlError, NotFoundCrawlError, fetch_job_detail
 
@@ -134,7 +135,12 @@ def build_agent_tools(
 	def _crawl_job_impl(job_id: int) -> dict[str, Any]:
 		job_url = job_urls.get(job_id)
 		if job_id not in job_urls:
-			return {"error": f"unknown job_id={job_id}; call get_jobs_to_process first"}
+			raise GuardrailBlockedError(
+				guardrail="unknown_job_id",
+				category="tool_usage",
+				job_id=job_id,
+				reason=f"unknown job_id={job_id}; call get_jobs_to_process first",
+			)
 		if not job_url:
 			stats["crawl_failed_job_ids"].append(job_id)
 			return {"error": f"job_id={job_id} has no URL on file; skip it"}
@@ -181,7 +187,12 @@ def build_agent_tools(
 	def _evaluate_match_impl(job_id: int) -> dict[str, Any]:
 		detail = job_details.get(job_id)
 		if detail is None:
-			return {"error": f"job_id={job_id} has not been crawled yet; call crawl_job first"}
+			raise GuardrailBlockedError(
+				guardrail="evaluate_before_crawl",
+				category="tool_usage",
+				job_id=job_id,
+				reason=f"job_id={job_id} has not been crawled yet; call crawl_job first",
+			)
 
 		try:
 			score = score_job(
@@ -192,6 +203,7 @@ def build_agent_tools(
 				resume=resume_text,
 				job=detail,
 				threshold=threshold,
+				job_id=job_id,
 			)
 		except RateLimitError as error:
 			stats["evaluate_failed_job_ids"].append(job_id)
@@ -218,7 +230,12 @@ def build_agent_tools(
 	def _record_job_result_impl(job_id: int) -> str:
 		score = job_scores.get(job_id)
 		if score is None:
-			return f"job_id={job_id} has not been evaluated yet; call evaluate_match first"
+			raise GuardrailBlockedError(
+				guardrail="record_before_evaluate",
+				category="tool_usage",
+				job_id=job_id,
+				reason=f"job_id={job_id} has not been evaluated yet; call evaluate_match first",
+			)
 
 		with Session(engine) as session:
 			written = db_record_job_result(

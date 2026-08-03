@@ -22,6 +22,7 @@ import mlflow  # noqa: E402
 from mlflow.entities.model_registry.prompt_version import PromptVersion  # noqa: E402
 
 from evals.dataset import DatasetError, EvalCase, load_golden_dataset  # noqa: E402
+from guardrails.errors import GuardrailBlockedError  # noqa: E402
 from integrations.mlflow import PROMPT_ALIAS, PROMPT_FILE, PROMPT_NAME  # noqa: E402
 from llm_providers import (  # noqa: E402
 	MatchResponseError,
@@ -370,6 +371,9 @@ def run_offline_eval(
 					except (MatchResponseError, TransientProviderError) as error:
 						case_log.action("case_errored", error=str(error))
 						rows.append(_error_row(case, str(error)))
+					except GuardrailBlockedError as error:
+						case_log.action("case_guardrail_blocked", guardrail=error.guardrail, error=str(error))
+						rows.append(_error_row(case, f"guardrail_blocked:{error.guardrail}: {error}"))
 
 				summary = _compute_summary(rows, total_cases=len(cases))
 				mlflow.log_metrics({key: value for key, value in summary.items() if isinstance(value, (int, float))})

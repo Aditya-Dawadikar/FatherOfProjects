@@ -7,6 +7,7 @@ import MatchesPage from './pages/MatchesPage'
 import OverviewPage from './pages/OverviewPage'
 import VitalsPage from './pages/VitalsPage'
 import AgentBehaviorTab from './pages/vitals/AgentBehaviorTab'
+import GuardrailsTab from './pages/vitals/GuardrailsTab'
 import KpisTab from './pages/vitals/KpisTab'
 import PromptComparisonTab from './pages/vitals/PromptComparisonTab'
 import RunHistoryTab from './pages/vitals/RunHistoryTab'
@@ -30,6 +31,7 @@ export default function App() {
                 <Route path="kpis" element={<KpisTab />} />
                 <Route path="prompt" element={<PromptComparisonTab />} />
                 <Route path="behavior" element={<AgentBehaviorTab />} />
+                <Route path="guardrails" element={<GuardrailsTab />} />
                 <Route path="history" element={<RunHistoryTab />} />
                 <Route path="system" element={<SystemMetricsTab />} />
               </Route>

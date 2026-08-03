@@ -87,6 +87,39 @@ DEFAULT_METRICS_COLLECTION_INTERVAL_SECONDS = 15.0
 # right thing on both platforms (e.g. "C:\\" locally, "/" on the Linux Railway deployment).
 DEFAULT_METRICS_DISK_PATH = None  # resolved lazily via Path.cwd().anchor, see system_metrics.py
 
+# --- Guardrails (guardrails/) ------------------------------------------------------------------
+DEFAULT_GUARDRAIL_TRIGGER_TABLE_NAME = "guardrail_triggers"
+
+# Sanity bound on evaluate_match's reasoning field -- real responses run a short paragraph (the
+# golden dataset's longest is well under 500 chars); anything past this is more likely a
+# truncated/garbled response or a job posting that hijacked the model's output than real reasoning.
+GUARDRAIL_MAX_REASONING_CHARS = 2000
+
+# How many real tool calls (crawl_job, evaluate_match, record_job_result) a well-behaved agent
+# makes per job, and how much slack beyond max_jobs_per_cycle * this to allow before
+# ToolCallLimitMiddleware (agents/react_agent.py) cuts a run off as a runaway-loop guardrail --
+# separate from RECURSION_LIMIT_HEADROOM/STEPS_PER_JOB below, which bound graph *steps*
+# (agent-turn + tool-turn), not raw tool-call count.
+GUARDRAIL_TOOL_CALLS_PER_JOB = 3
+GUARDRAIL_TOOL_CALL_HEADROOM = 4
+
+# Phrases that show up when a scraped job posting is trying to steer the model's output rather
+# than describe a job. Deliberately narrow (specific instruction-override phrasing, not generic
+# words like "ignore" or "you are now" alone) -- favors missing a novel injection attempt over
+# flagging an ordinary job posting's marketing copy as an attack.
+GUARDRAIL_INJECTION_PATTERNS = (
+	r"ignore (all |any |your )?(previous|prior|above|earlier) instructions",
+	r"disregard (all |any |your )?(previous|prior|above|earlier) instructions",
+	r"override (your |the )?(system |previous )?instructions",
+	r"you are now (an ai|a helpful|acting as|in developer mode)",
+	r"\bsystem prompt\b",
+	r"new instructions?:\s",
+	r"\bassistant:\s",
+	r"\bsystem:\s",
+	r"give (this|the) candidate (a |an )?(perfect|100|maximum) (score|match)",
+	r"always (respond|reply|answer) with match_score",
+)
+
 # --- ReAct agent loop (agents/react_agent.py) -----------------------------------------------
 # Bounds the ReAct loop. Empirically, this LangGraph version costs ~2 recursion-limit "steps"
 # per AI-message turn (agent node + tool node), whether or not that turn makes a tool call --
