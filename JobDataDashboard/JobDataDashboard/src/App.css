@@ -681,6 +681,14 @@
   flex-wrap: wrap;
 }
 
+.overview-subtabs {
+  margin-bottom: 16px;
+}
+
+.overview-tab-panel {
+  display: block;
+}
+
 .banner {
   margin-bottom: 14px;
   border-radius: 14px;
