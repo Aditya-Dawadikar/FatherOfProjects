@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { NodeProps } from '@xyflow/react'
-import { Background, Controls, Handle, MarkerType, Position, ReactFlow } from '@xyflow/react'
+import { Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, useNodesState } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { AgentTopology, AgentTopologyNode, AgentTopologyNodeKind } from '../types'
 
@@ -68,6 +68,20 @@ const KIND_ICON: Record<AgentTopologyNodeKind, string> = {
   guardrail: 'GR',
 }
 
+const MINIMAP_COLOR: Record<AgentTopologyNodeKind, string> = {
+  middleware: '#d9a441',
+  agent: '#1f8a57',
+  tool: '#2f8fc4',
+  prompt: '#7a5fd1',
+  guardrail: '#c8534a',
+}
+
+const GUARDRAIL_NODE_WIDTH = 220
+const GUARDRAIL_GAP = 60
+const GUARDRAIL_X_STEP = GUARDRAIL_NODE_WIDTH + GUARDRAIL_GAP
+const GUARDRAIL_START_X = 80
+const GUARDRAIL_Y = 660
+
 function distribute(nodes: AgentTopologyNode[], x: number, minY: number, maxY: number): NodeLayout[] {
   if (nodes.length === 0) {
     return []
@@ -103,11 +117,9 @@ function buildLayout(nodes: AgentTopologyNode[]): Map<string, Point> {
   for (const item of distribute(promptNodes, 1010, 350, 390)) {
     layout.set(item.node.id, item.point)
   }
-  for (const item of distribute(guardrailNodes, 600, 630, 630)) {
-    const spread = 960 / Math.max(guardrailNodes.length - 1, 1)
-    const index = guardrailNodes.findIndex((node) => node.id === item.node.id)
-    layout.set(item.node.id, { x: 80 + spread * index, y: 630 })
-  }
+  guardrailNodes.forEach((node, index) => {
+    layout.set(node.id, { x: GUARDRAIL_START_X + GUARDRAIL_X_STEP * index, y: GUARDRAIL_Y })
+  })
 
   return layout
 }
@@ -177,6 +189,37 @@ function DetailNode({ data, selected }: NodeProps) {
   )
 }
 
+function buildFlowNode(
+  node: AgentTopologyNode,
+  point: Point,
+  activeNodeId: string | null,
+  edgeCounts: { incoming: Map<string, number>; outgoing: Map<string, number> },
+) {
+  const sourcePosition = sourcePositionFor(node.kind)
+  const targetPosition = targetPositionFor(node.kind)
+  const isActive = activeNodeId === node.id
+  return {
+    id: node.id,
+    type: 'detailNode',
+    position: point,
+    data: {
+      label: node.label,
+      kind: node.kind,
+      summary: KIND_SUMMARY[node.kind],
+      source: node.source,
+      stage: stageLabelFor(node.kind),
+      status: isActive ? 'FOCUS' : 'LIVE',
+      incoming: edgeCounts.incoming.get(node.id) ?? 0,
+      outgoing: edgeCounts.outgoing.get(node.id) ?? 0,
+      sourcePosition,
+      targetPosition,
+    },
+    className: isActive ? ' is-active' : '',
+    sourcePosition,
+    targetPosition,
+  }
+}
+
 export default function AgentTopologyHero({ topology }: Props) {
   const [pinnedNodeId, setPinnedNodeId] = useState<string | null>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
@@ -204,34 +247,18 @@ export default function AgentTopologyHero({ topology }: Props) {
     return { incoming, outgoing }
   }, [topology.edges])
 
-  const flowNodes = useMemo(
-    () => topology.nodes.map((node) => {
-      const point = layout.get(node.id) ?? { x: 0, y: 0 }
-      const sourcePosition = sourcePositionFor(node.kind)
-      const targetPosition = targetPositionFor(node.kind)
-      return {
-        id: node.id,
-        type: 'detailNode',
-        position: point,
-        data: {
-          label: node.label,
-          kind: node.kind,
-          summary: KIND_SUMMARY[node.kind],
-          source: node.source,
-          stage: stageLabelFor(node.kind),
-          status: activeNodeId === node.id ? 'FOCUS' : 'LIVE',
-          incoming: edgeCounts.incoming.get(node.id) ?? 0,
-          outgoing: edgeCounts.outgoing.get(node.id) ?? 0,
-          sourcePosition,
-          targetPosition,
-        },
-        className: `${activeNodeId === node.id ? ' is-active' : ''}`,
-        sourcePosition,
-        targetPosition,
-      }
-    }),
-    [activeNodeId, edgeCounts, layout, topology.nodes],
-  )
+  const [flowNodes, setFlowNodes, onFlowNodesChange] = useNodesState<ReturnType<typeof buildFlowNode>>([])
+
+  useEffect(() => {
+    setFlowNodes((current) => {
+      const currentById = new Map(current.map((node) => [node.id, node]))
+      return topology.nodes.map((node) => {
+        const existing = currentById.get(node.id)
+        const point = layout.get(node.id) ?? { x: 0, y: 0 }
+        return buildFlowNode(node, existing?.position ?? point, activeNodeId, edgeCounts)
+      })
+    })
+  }, [activeNodeId, edgeCounts, layout, topology.nodes, setFlowNodes])
 
   const primaryPathEdges = useMemo(() => {
     const getToolId = topology.nodes.find((node) => node.kind === 'tool' && node.label === 'get_jobs_to_process')?.id
@@ -336,16 +363,18 @@ export default function AgentTopologyHero({ topology }: Props) {
               nodes={flowNodes}
               edges={flowEdges}
               nodeTypes={nodeTypes}
-              nodesDraggable={false}
+              onNodesChange={onFlowNodesChange}
+              nodesDraggable
               nodesConnectable={false}
               elementsSelectable={false}
+              nodeDragThreshold={2}
               zoomOnDoubleClick={false}
               panOnScroll
-              minZoom={0.62}
+              minZoom={0.45}
               maxZoom={1.35}
               fitView
-              fitViewOptions={{ padding: 0.12, minZoom: 0.62 }}
-              defaultViewport={{ x: 0, y: 0, zoom: 0.75 }}
+              fitViewOptions={{ padding: 0.14, minZoom: 0.45 }}
+              defaultViewport={{ x: 0, y: 0, zoom: 0.7 }}
               onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
               onNodeMouseLeave={(_, node) => {
                 setHoveredNodeId((current) => (current === node.id ? null : current))
@@ -354,8 +383,17 @@ export default function AgentTopologyHero({ topology }: Props) {
                 setPinnedNodeId((current) => (current === node.id ? null : node.id))
               }}
             >
-              <Background color="rgba(16, 30, 20, 0.08)" gap={24} />
+              <Background color="rgba(16, 30, 20, 0.1)" gap={22} size={1.4} />
               <Controls showInteractive={false} />
+              <MiniMap
+                pannable
+                zoomable
+                nodeStrokeWidth={2}
+                nodeColor={(node) => MINIMAP_COLOR[(node.data as unknown as DetailNodeData)?.kind] ?? '#9db8a6'}
+                maskColor="rgba(16, 30, 20, 0.08)"
+                className="agent-flow-minimap"
+                style={{ width: 140, height: 96 }}
+              />
             </ReactFlow>
           </div>
         </div>
