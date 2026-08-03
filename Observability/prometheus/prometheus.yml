@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: job-manager-agent
+    metrics_path: /metrics
+    static_configs:
+      # __SCRAPE_TARGET__ is substituted at container start (see docker-entrypoint.sh) from the
+      # SCRAPE_TARGET env var -- Prometheus itself has no env-var expansion in its config file,
+      # unlike Grafana's provisioning files. Locally this defaults to host.docker.internal:8080;
+      # on Railway set SCRAPE_TARGET to JobManagerAgent's internal address instead, e.g.
+      # jobmanageragent.railway.internal:8080.
+      - targets: ["__SCRAPE_TARGET__"]

@@ -1,0 +1,38 @@
+services:
+  prometheus:
+    build:
+      context: ..
+      dockerfile: Observability/prometheus/Dockerfile
+    container_name: jobmanageragent-prometheus
+    environment:
+      # host.docker.internal reaches a JobManagerAgent running directly on the host (Docker
+      # Desktop on Windows/Mac). This is also the Dockerfile's own default, so this line mainly
+      # documents the local-dev value that the Railway deploy overrides via that service's env
+      # vars (see README.md).
+      - SCRAPE_TARGET=host.docker.internal:8080
+    volumes:
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    build:
+      context: ..
+      dockerfile: Observability/grafana/Dockerfile
+    container_name: jobmanageragent-grafana
+    environment:
+      # http://prometheus:9090 relies on compose's built-in service-name DNS; the Dockerfile's
+      # own default targets Railway's internal hostname instead (see README.md).
+      - PROMETHEUS_URL=http://prometheus:9090
+    volumes:
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:

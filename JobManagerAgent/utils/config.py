@@ -76,6 +76,17 @@ DEFAULT_CONSUMER_NAME = "jobmanageragent-1"
 TRIGGER_EVENT_TYPES = {"pipeline_completed"}
 BLOCK_MS = 10_000
 
+# --- System metrics / Prometheus (integrations/metrics/) -------------------------------------
+# How often the background collector refreshes the cached CPU/memory/disk/network gauges.
+# GET /metrics always serves whatever this collector last wrote -- it never scrapes the OS
+# itself -- so this interval is the only knob controlling how fresh (and how expensive) that
+# data is.
+DEFAULT_METRICS_COLLECTION_INTERVAL_SECONDS = 15.0
+# Filesystem path disk usage is sampled from. Left path-shaped (not a fixed "/") because psutil's
+# disk_usage() rejects "/" outright on Windows dev machines -- Path.cwd().anchor resolves to the
+# right thing on both platforms (e.g. "C:\\" locally, "/" on the Linux Railway deployment).
+DEFAULT_METRICS_DISK_PATH = None  # resolved lazily via Path.cwd().anchor, see system_metrics.py
+
 # --- ReAct agent loop (agents/react_agent.py) -----------------------------------------------
 # Bounds the ReAct loop. Empirically, this LangGraph version costs ~2 recursion-limit "steps"
 # per AI-message turn (agent node + tool node), whether or not that turn makes a tool call --

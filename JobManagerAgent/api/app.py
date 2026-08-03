@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from integrations.metrics import metrics_router, run_metrics_collector
 from integrations.mlflow import register_prompt_variants
 from integrations.streaming import RedisStreamPublisher
 from utils.agent_logger import configure_logging, get_agent_logger
@@ -52,6 +53,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 	worker_thread.start()
 	LOGGER.info("Agent worker thread started")
 
+	# Same rationale as the agent worker thread above: a plain blocking loop on its own daemon
+	# thread, so /metrics is served from whatever it last cached instead of scraping the OS on
+	# every request (see integrations/metrics/collector.py).
+	metrics_thread = threading.Thread(
+		target=run_metrics_collector,
+		daemon=True,
+		name="metrics-collector",
+	)
+	metrics_thread.start()
+	LOGGER.info("System metrics collector thread started")
+
 	yield
 
 	LOGGER.info("Server shutting down (agent worker thread is a daemon; it exits with the process)")
@@ -77,6 +89,7 @@ def create_app() -> FastAPI:
 		allow_headers=["*"],
 	)
 	app.include_router(eval_runs_router)
+	app.include_router(metrics_router)
 
 	@app.get("/health")
 	def health() -> dict[str, str]:
