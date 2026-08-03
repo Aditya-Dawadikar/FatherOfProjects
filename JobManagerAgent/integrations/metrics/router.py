@@ -14,6 +14,14 @@ LOGGER = get_agent_logger(__name__)
 
 router = APIRouter()
 
+# Caller-controlled header value logged verbatim below -- capped and stripped of CR/LF so a
+# crafted User-Agent can't inject fake extra log lines (log forging) into JobManagerAgent's logs.
+_MAX_LOGGED_USER_AGENT_LENGTH = 200
+
+
+def _sanitize_for_log(value: str, *, max_length: int) -> str:
+    return value[:max_length].replace("\r", " ").replace("\n", " ")
+
 
 @router.get("/metrics")
 def metrics(request: Request) -> Response:
@@ -24,10 +32,11 @@ def metrics(request: Request) -> Response:
     # even when the HTTP layer is otherwise fine.
     last_collected_at = get_last_collected_at()
     cache_age_seconds = f"{time.time() - last_collected_at:.1f}" if last_collected_at is not None else "n/a"
+    user_agent = _sanitize_for_log(request.headers.get("user-agent", "unknown"), max_length=_MAX_LOGGED_USER_AGENT_LENGTH)
     LOGGER.info(
         "metrics_scraped client=%s user_agent=%s cache_age_seconds=%s",
         request.client.host if request.client else "unknown",
-        request.headers.get("user-agent", "unknown"),
+        user_agent,
         cache_age_seconds,
     )
 

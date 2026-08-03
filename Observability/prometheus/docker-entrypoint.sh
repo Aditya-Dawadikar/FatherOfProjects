@@ -6,9 +6,11 @@ set -e
 SCRAPE_TARGET="${SCRAPE_TARGET:-host.docker.internal:8080}"
 sed "s|__SCRAPE_TARGET__|${SCRAPE_TARGET}|g" /etc/prometheus/prometheus.yml.template > /etc/prometheus/prometheus.yml
 
-# Railway assigns this service's public/internal port via $PORT; default to Prometheus's usual
-# 9090 for local docker-compose, where the port is instead fixed by the compose file's mapping.
+# Deliberately NOT reading $PORT here: Prometheus is only ever reached over Railway's private
+# network (by Grafana, and by Railway's own healthcheck), never through a public-domain proxy --
+# unlike Grafana's entrypoint, which does need to track $PORT. Always listening on the fixed
+# 9090 keeps this consistent with the image's own EXPOSE and with Grafana's PROMETHEUS_URL
+# default (Observability/grafana/Dockerfile), both of which assume port 9090.
 exec /bin/prometheus \
   --config.file=/etc/prometheus/prometheus.yml \
-  --storage.tsdb.path=/prometheus \
-  --web.listen-address=":${PORT:-9090}"
+  --storage.tsdb.path=/prometheus
