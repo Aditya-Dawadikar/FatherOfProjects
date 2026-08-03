@@ -53,7 +53,7 @@ export default function MatchesView() {
 
   return (
     <section className="content-panel matches-panel">
-      <div className="toolbar">
+      <div className="toolbar records-toolbar">
         <div className="toolbar-copy">
           <p className="eyebrow">Processed by JobManagerAgent</p>
           <h2>{globalMatchesCountQuery.isLoading ? 'Loading matches...' : `${totalScoredJobs} scored jobs`}</h2>

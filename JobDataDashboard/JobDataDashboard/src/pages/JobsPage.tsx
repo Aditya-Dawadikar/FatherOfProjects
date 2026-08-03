@@ -171,7 +171,7 @@ export default function JobsPage() {
     <>
       <main className="app-body app-body-jobs">
         <section className="content-panel">
-          <div className="toolbar">
+          <div className="toolbar records-toolbar">
             <div className="toolbar-copy">
               <p className="eyebrow">Records</p>
               <h2>{jobsQuery.isLoading ? 'Loading jobs...' : `${totalRows} total records`}</h2>
