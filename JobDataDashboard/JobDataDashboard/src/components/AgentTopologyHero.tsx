@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { Background, Controls, MarkerType, Position, ReactFlow } from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
 import type { AgentTopology, AgentTopologyNode, AgentTopologyNodeKind } from '../types'
 
 type Point = {
@@ -46,25 +48,48 @@ function buildLayout(nodes: AgentTopologyNode[]): Map<string, Point> {
 
   const layout = new Map<string, Point>()
 
-  for (const item of distribute(middlewareNodes, 160, 90, 360)) {
+  for (const item of distribute(middlewareNodes, 120, 120, 360)) {
     layout.set(item.node.id, item.point)
   }
-  for (const item of distribute(agentNodes, 420, 150, 300)) {
+  for (const item of distribute(agentNodes, 360, 190, 300)) {
     layout.set(item.node.id, item.point)
   }
-  for (const item of distribute(toolNodes, 700, 80, 370)) {
+  for (const item of distribute(toolNodes, 640, 100, 400)) {
     layout.set(item.node.id, item.point)
   }
-  for (const item of distribute(promptNodes, 520, 380, 440)) {
+  for (const item of distribute(promptNodes, 500, 450, 450)) {
     layout.set(item.node.id, item.point)
   }
-  for (const item of distribute(guardrailNodes, 430, 440, 440)) {
-    const spread = 700 / Math.max(guardrailNodes.length - 1, 1)
+  for (const item of distribute(guardrailNodes, 430, 520, 520)) {
+    const spread = 760 / Math.max(guardrailNodes.length - 1, 1)
     const index = guardrailNodes.findIndex((node) => node.id === item.node.id)
-    layout.set(item.node.id, { x: 80 + spread * index, y: 440 })
+    layout.set(item.node.id, { x: 40 + spread * index, y: 520 })
   }
 
   return layout
+}
+
+function sourcePositionFor(kind: AgentTopologyNodeKind): Position {
+  if (kind === 'agent' || kind === 'middleware') {
+    return Position.Right
+  }
+  if (kind === 'tool') {
+    return Position.Bottom
+  }
+  return Position.Top
+}
+
+function targetPositionFor(kind: AgentTopologyNodeKind): Position {
+  if (kind === 'agent') {
+    return Position.Left
+  }
+  if (kind === 'tool') {
+    return Position.Left
+  }
+  if (kind === 'prompt' || kind === 'guardrail') {
+    return Position.Top
+  }
+  return Position.Right
 }
 
 export default function AgentTopologyHero({ topology }: Props) {
@@ -75,6 +100,35 @@ export default function AgentTopologyHero({ topology }: Props) {
   const fallbackNodeId = topology.nodes.find((node) => node.kind === 'agent')?.id ?? topology.nodes[0]?.id ?? null
   const activeNodeId = pinnedNodeId ?? hoveredNodeId ?? fallbackNodeId
   const activeNode = topology.nodes.find((node) => node.id === activeNodeId) ?? null
+
+  const flowNodes = useMemo(
+    () => topology.nodes.map((node) => {
+      const point = layout.get(node.id) ?? { x: 0, y: 0 }
+      return {
+        id: node.id,
+        position: point,
+        data: { label: node.label },
+        className: `${KIND_CLASS[node.kind]}${activeNodeId === node.id ? ' is-active' : ''}`,
+        sourcePosition: sourcePositionFor(node.kind),
+        targetPosition: targetPositionFor(node.kind),
+      }
+    }),
+    [activeNodeId, layout, topology.nodes],
+  )
+
+  const flowEdges = useMemo(
+    () => topology.edges.map((edge, index) => ({
+      id: `${edge.source}-${edge.target}-${index}`,
+      source: edge.source,
+      target: edge.target,
+      label: edge.label ?? undefined,
+      type: 'smoothstep',
+      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
+      className: 'agent-flow-edge',
+      labelStyle: { fill: '#55665c', fontSize: 10, fontWeight: 600 },
+    })),
+    [topology.edges],
+  )
 
   return (
     <section className="agent-hero" aria-label="Live agent topology">
@@ -107,46 +161,28 @@ export default function AgentTopologyHero({ topology }: Props) {
 
       <div className="agent-hero-body">
         <div className="agent-graph-wrap">
-          <svg className="agent-graph-lines" viewBox="0 0 860 500" aria-hidden="true">
-            {topology.edges.map((edge, index) => {
-              const source = layout.get(edge.source)
-              const target = layout.get(edge.target)
-              if (!source || !target) {
-                return null
-              }
-              return (
-                <g key={`${edge.source}-${edge.target}-${index}`}>
-                  <path
-                    d={`M ${source.x} ${source.y} C ${(source.x + target.x) / 2} ${source.y}, ${(source.x + target.x) / 2} ${target.y}, ${target.x} ${target.y}`}
-                    className="agent-edge"
-                  />
-                </g>
-              )
-            })}
-          </svg>
-
-          {topology.nodes.map((node) => {
-            const point = layout.get(node.id)
-            if (!point) {
-              return null
-            }
-            const isActive = activeNodeId === node.id
-            return (
-              <button
-                key={node.id}
-                type="button"
-                className={`agent-node ${KIND_CLASS[node.kind]}${isActive ? ' is-active' : ''}`}
-                style={{ left: `${(point.x / 860) * 100}%`, top: `${(point.y / 500) * 100}%` }}
-                onMouseEnter={() => setHoveredNodeId(node.id)}
-                onMouseLeave={() => setHoveredNodeId((current) => (current === node.id ? null : current))}
-                onClick={() => setPinnedNodeId((current) => (current === node.id ? null : node.id))}
-                aria-pressed={pinnedNodeId === node.id}
-                aria-label={`${node.label} ${node.kind}`}
-              >
-                <span>{node.label}</span>
-              </button>
-            )
-          })}
+          <div className="agent-flow">
+            <ReactFlow
+              nodes={flowNodes}
+              edges={flowEdges}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              elementsSelectable={false}
+              zoomOnDoubleClick={false}
+              fitView
+              fitViewOptions={{ padding: 0.15 }}
+              onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
+              onNodeMouseLeave={(_, node) => {
+                setHoveredNodeId((current) => (current === node.id ? null : current))
+              }}
+              onNodeClick={(_, node) => {
+                setPinnedNodeId((current) => (current === node.id ? null : node.id))
+              }}
+            >
+              <Background color="rgba(16, 30, 20, 0.08)" gap={22} />
+              <Controls showInteractive={false} />
+            </ReactFlow>
+          </div>
         </div>
 
         <aside className="agent-detail-panel">

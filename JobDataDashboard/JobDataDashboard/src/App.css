@@ -248,44 +248,43 @@
   overflow: hidden;
 }
 
-.agent-graph-lines {
-  width: 100%;
+.agent-flow {
   height: 500px;
-  display: block;
 }
 
-.agent-edge {
-  fill: none;
-  stroke: rgba(22, 41, 30, 0.28);
-  stroke-width: 1.45;
+.agent-flow .react-flow__background {
+  background: transparent;
 }
 
-.agent-node {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  border: 1px solid var(--line);
+.agent-flow .react-flow__node {
+  border: 1px solid;
   border-radius: 999px;
   background: #ffffff;
   color: var(--text);
   font: inherit;
-  padding: 8px 12px;
-  max-width: 185px;
-  cursor: pointer;
-  box-shadow: 0 9px 18px rgba(10, 22, 15, 0.14);
-  transition: transform 120ms ease, box-shadow 120ms ease;
-}
-
-.agent-node:hover,
-.agent-node.is-active {
-  transform: translate(-50%, -50%) scale(1.03);
-  box-shadow: 0 14px 22px rgba(10, 22, 15, 0.2);
-}
-
-.agent-node span {
-  display: block;
   font-size: 0.78rem;
   font-weight: 700;
   line-height: 1.2;
+  padding: 8px 12px;
+  min-width: 120px;
+  max-width: 200px;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 9px 18px rgba(10, 22, 15, 0.14);
+  transition: box-shadow 120ms ease;
+}
+
+.agent-flow .react-flow__node:hover,
+.agent-flow .react-flow__node.is-active {
+  box-shadow: 0 14px 22px rgba(10, 22, 15, 0.2);
+  outline: 2px solid rgba(16, 30, 20, 0.2);
+}
+
+.agent-flow .react-flow__node-default {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
 }
 
 .agent-node-agent,
@@ -316,6 +315,31 @@
 .agent-kind-pill.agent-node-prompt {
   border-color: #513f8c;
   background: #ece8fc;
+}
+
+.agent-flow .react-flow__edge-path,
+.agent-flow .react-flow__connection-path {
+  stroke: rgba(22, 41, 30, 0.28);
+  stroke-width: 1.55;
+}
+
+.agent-flow-edge .react-flow__edge-path {
+  stroke: rgba(22, 41, 30, 0.38);
+}
+
+.agent-flow .react-flow__controls {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.agent-flow .react-flow__controls button {
+  background: #ffffff;
+  border-bottom-color: var(--line);
+}
+
+.agent-flow .react-flow__attribution {
+  display: none;
 }
 
 .agent-detail-panel {
@@ -937,11 +961,11 @@
     min-height: 420px;
   }
 
-  .agent-graph-lines {
+  .agent-flow {
     height: 420px;
   }
 
-  .agent-node {
+  .agent-flow .react-flow__node {
     max-width: 145px;
     padding: 7px 10px;
   }
