@@ -182,6 +182,196 @@
   margin-bottom: 18px;
 }
 
+.agent-hero {
+  margin-bottom: 22px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 18px;
+  background:
+    radial-gradient(circle at 15% 12%, rgba(21, 128, 61, 0.18), transparent 34%),
+    radial-gradient(circle at 85% 6%, rgba(180, 130, 20, 0.12), transparent 30%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.96), rgba(238, 244, 240, 0.95));
+  box-shadow: 0 18px 36px rgba(16, 30, 20, 0.14);
+}
+
+.agent-hero-header h2 {
+  margin: 0;
+  font-size: 1.55rem;
+}
+
+.agent-hero-subtitle {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.agent-hero-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.agent-hero-chip {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 10px 12px;
+}
+
+.agent-hero-chip span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agent-hero-chip strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.92rem;
+}
+
+.agent-hero-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(320px, 0.95fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.agent-graph-wrap {
+  position: relative;
+  min-height: 500px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(231, 239, 233, 0.9));
+  overflow: hidden;
+}
+
+.agent-graph-lines {
+  width: 100%;
+  height: 500px;
+  display: block;
+}
+
+.agent-edge {
+  fill: none;
+  stroke: rgba(22, 41, 30, 0.28);
+  stroke-width: 1.45;
+}
+
+.agent-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text);
+  font: inherit;
+  padding: 8px 12px;
+  max-width: 185px;
+  cursor: pointer;
+  box-shadow: 0 9px 18px rgba(10, 22, 15, 0.14);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.agent-node:hover,
+.agent-node.is-active {
+  transform: translate(-50%, -50%) scale(1.03);
+  box-shadow: 0 14px 22px rgba(10, 22, 15, 0.2);
+}
+
+.agent-node span {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.agent-node-agent,
+.agent-kind-pill.agent-node-agent {
+  border-color: #206144;
+  background: #e5f6ec;
+}
+
+.agent-node-tool,
+.agent-kind-pill.agent-node-tool {
+  border-color: #226991;
+  background: #e4f2fb;
+}
+
+.agent-node-middleware,
+.agent-kind-pill.agent-node-middleware {
+  border-color: #8a5a1f;
+  background: #fff4de;
+}
+
+.agent-node-guardrail,
+.agent-kind-pill.agent-node-guardrail {
+  border-color: #8b2f29;
+  background: #fce9e7;
+}
+
+.agent-node-prompt,
+.agent-kind-pill.agent-node-prompt {
+  border-color: #513f8c;
+  background: #ece8fc;
+}
+
+.agent-detail-panel {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 500px;
+}
+
+.agent-detail-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-kind-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+
+.agent-detail-source,
+.agent-detail-footer {
+  color: var(--muted);
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+}
+
+.agent-detail-content {
+  flex: 1;
+  margin: 12px 0 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+  font: 12px/1.45 'Cascadia Code', 'Consolas', monospace;
+  white-space: pre-wrap;
+  overflow: auto;
+}
+
+.agent-hero-skeleton {
+  margin-bottom: 16px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  color: var(--muted);
+  background: var(--panel-2);
+}
+
 .toolbar-copy,
 .panel-heading > div {
   display: flex;
@@ -735,6 +925,25 @@
   .summary-grid,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .agent-hero-kpis,
+  .agent-hero-body {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-graph-wrap,
+  .agent-detail-panel {
+    min-height: 420px;
+  }
+
+  .agent-graph-lines {
+    height: 420px;
+  }
+
+  .agent-node {
+    max-width: 145px;
+    padding: 7px 10px;
   }
 
   .alluvial-wrap {

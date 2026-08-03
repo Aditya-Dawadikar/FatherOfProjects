@@ -78,6 +78,32 @@ export type PipelineFunnel = {
   failed_matches: number
 }
 
+export type AgentTopologyNodeKind = 'agent' | 'tool' | 'middleware' | 'guardrail' | 'prompt'
+
+export type AgentTopologyNode = {
+  id: string
+  label: string
+  kind: AgentTopologyNodeKind
+  detail: string
+  source: string
+}
+
+export type AgentTopologyEdge = {
+  source: string
+  target: string
+  label: string | null
+}
+
+export type AgentTopology = {
+  generated_at: string
+  agent_name: string
+  threshold: number
+  max_jobs_per_cycle: number
+  tool_call_limit: number
+  nodes: AgentTopologyNode[]
+  edges: AgentTopologyEdge[]
+}
+
 export type EvalRunStatus = 'running' | 'completed' | 'failed'
 
 export type EvalRunResult = {

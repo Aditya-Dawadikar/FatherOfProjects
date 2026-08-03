@@ -1,6 +1,7 @@
 import AlluvialChart from './AlluvialChart'
+import AgentTopologyHero from './AgentTopologyHero'
 import { FiRefreshCw } from 'react-icons/fi'
-import { usePipelineFunnel } from '../hooks'
+import { useAgentTopology, usePipelineFunnel } from '../hooks'
 
 const LEGEND_ITEMS = [
   { key: 'total', label: 'Scraped', swatchClass: 'legend-swatch-total' },
@@ -14,10 +15,24 @@ const LEGEND_ITEMS = [
 
 export default function OverviewView() {
   const funnelQuery = usePipelineFunnel()
+  const topologyQuery = useAgentTopology()
   const funnel = funnelQuery.data
+  const topology = topologyQuery.data
 
   return (
     <section className="content-panel">
+      {topologyQuery.isLoading && (
+        <div className="agent-hero-skeleton">Loading interactive agent topology...</div>
+      )}
+
+      {topologyQuery.error && (
+        <div className="banner banner-error">
+          Could not load live agent topology: {topologyQuery.error.message}
+        </div>
+      )}
+
+      {topology && <AgentTopologyHero topology={topology} />}
+
       <div className="toolbar">
         <div className="toolbar-copy">
           <p className="eyebrow">Scrape &rarr; agent &rarr; match quality</p>

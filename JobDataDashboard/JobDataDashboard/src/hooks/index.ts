@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import type {
+  AgentTopology,
   EvalRun,
   EvalSweepTrigger,
   GuardrailsEvalRun,
@@ -434,6 +435,10 @@ async function fetchGuardrailsEvals(): Promise<GuardrailsEvalRun[]> {
   return requestAgentJson<GuardrailsEvalRun[]>('/agent-api/evals/guardrails')
 }
 
+async function fetchAgentTopology(): Promise<AgentTopology> {
+  return requestAgentJson<AgentTopology>('/agent-api/agent-topology')
+}
+
 async function triggerGuardrailsEval(): Promise<GuardrailsEvalTrigger> {
   return requestAgentJson<GuardrailsEvalTrigger>('/agent-api/evals/guardrails', {
     method: 'POST',
@@ -459,5 +464,13 @@ export function useGuardrailsEvals() {
 export function useTriggerGuardrailsEval() {
   return useMutation({
     mutationFn: triggerGuardrailsEval,
+  })
+}
+
+export function useAgentTopology() {
+  return useQuery({
+    queryKey: ['agentTopology'],
+    queryFn: fetchAgentTopology,
+    staleTime: 60_000,
   })
 }
