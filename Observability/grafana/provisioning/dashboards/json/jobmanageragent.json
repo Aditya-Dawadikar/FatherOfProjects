@@ -2,7 +2,7 @@
   "id": null,
   "uid": "jobmanageragent-system-metrics",
   "title": "JobManagerAgent System Metrics",
-  "description": "CPU, memory, disk, and network usage collected by JobManagerAgent's background metrics collector and scraped from GET /metrics.",
+  "description": "CPU, memory, disk, network, and Python GC stats collected by JobManagerAgent's background metrics collector and scraped from GET /metrics.",
   "tags": ["jobmanageragent"],
   "timezone": "browser",
   "schemaVersion": 39,
@@ -135,6 +135,57 @@
         { "refId": "B", "expr": "rate(jobmanageragent_network_bytes_received_total[5m])", "legendFormat": "Received/s" }
       ],
       "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] }
+    },
+    {
+      "id": 9,
+      "title": "GC Uncollectable Objects",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(python_gc_objects_uncollectable_total)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Total objects across all generations that the collector found but could not free (usually a __del__/reference-cycle leak). Should stay at 0."
+    },
+    {
+      "id": 10,
+      "title": "GC Collections Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 9, "x": 6, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "rate(python_gc_collections_total{generation=\"0\"}[5m])", "legendFormat": "Gen 0" },
+        { "refId": "B", "expr": "rate(python_gc_collections_total{generation=\"1\"}[5m])", "legendFormat": "Gen 1" },
+        { "refId": "C", "expr": "rate(python_gc_collections_total{generation=\"2\"}[5m])", "legendFormat": "Gen 2" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] },
+      "description": "How often gc runs a collection pass per generation. Gen 0 firing constantly is normal; a rising Gen 2 rate can indicate memory pressure."
+    },
+    {
+      "id": 11,
+      "title": "GC Objects Collected Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 9, "x": 15, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "rate(python_gc_objects_collected_total{generation=\"0\"}[5m])", "legendFormat": "Gen 0" },
+        { "refId": "B", "expr": "rate(python_gc_objects_collected_total{generation=\"1\"}[5m])", "legendFormat": "Gen 1" },
+        { "refId": "C", "expr": "rate(python_gc_objects_collected_total{generation=\"2\"}[5m])", "legendFormat": "Gen 2" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "description": "Objects freed per second by generation, from the same reference-counting garbage collector."
     }
   ]
 }
