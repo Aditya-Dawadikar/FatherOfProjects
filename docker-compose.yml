@@ -1,28 +1,73 @@
-# Dev mode: run every deployable service locally via Docker. Prod mode is Railway, driven by
-# each service's own railway.toml -- this file has no effect there and railway.toml is untouched.
+# Dev mode: run every deployable service locally via Docker, including its own local Postgres
+# and Redis, isolated from the hosted Railway instances prod uses -- dev runs never read or
+# write prod data. Prod mode is Railway, driven by each service's own railway.toml; this file
+# has no effect there and railway.toml is untouched.
 #
 # ObservabilityDashboard and ObservabilityServer are intentionally excluded (not part of dev
 # mode yet). The Observability/ folder has its own docker-compose.yml for the Prometheus/Grafana
 # stack, unrelated to this one. SmokeTesting is a manual script, not a deployable service.
 #
-# Each service still reads DATABASE_URL/REDIS_URL/GEMINI_API_KEY/etc. from its own .env file
-# (copy from .env.example if you don't have one yet) -- those stay whatever you've configured
-# (by default the same hosted Railway Postgres/Redis used elsewhere). This file only overrides
-# the handful of vars that need to point at container-network hostnames instead of
-# localhost/Railway addresses, so the containers can reach each other.
+# Each service still reads its non-connection config (API keys, thresholds, etc.) from its own
+# .env file (copy from .env.example if you don't have one yet). DATABASE_URL/REDIS_URL/
+# MLFLOW_TRACKING_URI/MLFLOW_BACKEND_STORE_URI are overridden below to point at the local
+# postgres/redis/mlflowserver containers instead of whatever's in those .env files. Override
+# POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB via a root .env file (next to this one) if you
+# want different local credentials than the postgres/postgres/webscraper defaults below.
 #
 # Usage:
-#   docker compose up --build                        # jobdataserver, jobmanageragent,
-#                                                      # mlflowserver, jobdatadashboard
+#   docker compose up --build                              # postgres, redis, both APIs,
+#                                                            # mlflowserver, dashboard
 #   docker compose --profile scraper run --rm webscraper   # one-shot scrape, on demand
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-webscraper}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Only runs against a fresh volume; creates MLflow's own database alongside the app
+      # database above (same server, separate schema -- see postgres-init/*.sql).
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-webscraper}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   mlflowserver:
     build:
       context: ./MLflowServer
     env_file:
       - path: ./MLflowServer/.env
         required: false
+    environment:
+      MLFLOW_BACKEND_STORE_URI: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/mlflow
+      # serve.py's default allowed-hosts list only covers Railway/localhost hostnames; without
+      # this, MLflow's DNS-rebinding protection 403s every request from jobmanageragent, whose
+      # Host header is the compose service name (mlflowserver:5000).
+      MLFLOW_ALLOWED_HOSTS: mlflowserver:5000,mlflowserver,localhost,127.0.0.1
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "5000:5000"
     restart: unless-stopped
@@ -33,6 +78,14 @@ services:
     env_file:
       - path: ./JobDataServer/.env
         required: false
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-webscraper}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -44,13 +97,20 @@ services:
       - path: ./JobManagerAgent/.env
         required: false
     environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-webscraper}
+      REDIS_URL: redis://redis:6379/0
       # Overrides the .env value (usually http://localhost:5000) so the agent reaches the
       # mlflowserver container instead of trying to hit its own localhost.
       MLFLOW_TRACKING_URI: http://mlflowserver:5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mlflowserver:
+        condition: service_started
     ports:
       - "8080:8080"
-    depends_on:
-      - mlflowserver
     restart: unless-stopped
 
   webscraper:
@@ -59,6 +119,14 @@ services:
     env_file:
       - path: ./WebScraper/.env
         required: false
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-webscraper}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     # Prod runs this as a Railway cron job (see WebScraper/railway.toml), not a long-running
     # service -- mirrored here via a profile so `docker compose up` doesn't scrape on every
     # startup. Trigger a run explicitly: docker compose --profile scraper run --rm webscraper
@@ -79,9 +147,13 @@ services:
       JOB_DATA_API_SCHEME: http
       JOB_MANAGER_AGENT_UPSTREAM: jobmanageragent:8080
       JOB_MANAGER_AGENT_SCHEME: http
-    ports:
-      - "5173:8080"
     depends_on:
       - jobdataserver
       - jobmanageragent
+    ports:
+      - "5173:8080"
     restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:

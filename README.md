@@ -31,16 +31,25 @@ Each service is organized as its own folder with its own code, dependencies, and
   folder has its own separate `docker-compose.yml` for Prometheus/Grafana), and SmokeTesting is a
   manual script, not a deployable service.
 
-  Each service reads its own secrets (DB/Redis/API keys) from its own `.env` file -- copy
-  `.env.example` to `.env` in each service folder first if you don't have one. Those values stay
-  whatever you've configured there (by default the same hosted Railway Postgres/Redis used in
-  prod); `docker-compose.yml` only overrides the vars needed for containers to reach each other
-  (e.g. `MLFLOW_TRACKING_URI`, the dashboard's API upstreams).
+  `docker-compose.yml` also runs its own local Postgres and Redis containers, isolated from the
+  hosted Railway instances prod uses -- dev runs never read or write prod data. Each service
+  still reads its non-connection config (API keys, thresholds, etc.) from its own `.env` file --
+  copy `.env.example` to `.env` in each service folder first if you don't have one --
+  `docker-compose.yml` overrides `DATABASE_URL`/`REDIS_URL`/`MLFLOW_TRACKING_URI`/
+  `MLFLOW_BACKEND_STORE_URI` to point at the local `postgres`/`redis`/`mlflowserver` containers
+  instead of whatever's in those files. The local Postgres server holds two databases: `webscraper`
+  (job_listings/job_matches, shared by JobDataServer/JobManagerAgent/WebScraper, same as prod) and
+  `mlflow` (MLflowServer's backend store) -- both auto-create their schemas on first use, no
+  migration step needed. Data persists in Docker volumes across restarts; `docker compose down -v`
+  wipes it if you want a clean slate.
 
   ```powershell
-  docker compose up --build                              # dashboard + both APIs + MLflow
+  docker compose up --build                              # postgres, redis, both APIs, MLflow, dashboard
   docker compose --profile scraper run --rm webscraper   # one-shot scrape, on demand
   ```
+
+  Override local Postgres credentials (default `postgres`/`postgres`) via a root `.env` file next
+  to `docker-compose.yml`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
 
 - **Prod mode** is Railway, driven by each service's own `railway.toml`. Unchanged by dev mode --
   the Dockerfiles Railway uses (JobDataDashboard) and the railpack build/start commands it uses
