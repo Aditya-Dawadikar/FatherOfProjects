@@ -211,6 +211,32 @@
   margin-top: 14px;
 }
 
+.agent-flow-stages {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.agent-stage-chip {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 8px 10px;
+}
+
+.agent-stage-chip strong {
+  display: block;
+  font-size: 0.78rem;
+}
+
+.agent-stage-chip span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
 .agent-hero-chip {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -237,19 +263,21 @@
   grid-template-columns: minmax(0, 1.75fr) minmax(320px, 0.95fr);
   gap: 16px;
   margin-top: 16px;
+  align-items: start;
 }
 
 .agent-graph-wrap {
   position: relative;
-  min-height: 500px;
+  height: 560px;
+  min-height: 560px;
   border: 1px solid var(--line);
-  border-radius: 20px;
+  border-radius: 14px;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(231, 239, 233, 0.9));
   overflow: hidden;
 }
 
 .agent-flow {
-  height: 500px;
+  height: 560px;
 }
 
 .agent-flow .react-flow__background {
@@ -257,27 +285,28 @@
 }
 
 .agent-flow .react-flow__node {
-  border: 1px solid;
-  border-radius: 999px;
+  border: 2px solid;
+  border-radius: 8px;
   background: #ffffff;
   color: var(--text);
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 700;
   line-height: 1.2;
-  padding: 8px 12px;
-  min-width: 120px;
-  max-width: 200px;
+  padding: 9px 12px;
+  min-width: 132px;
+  max-width: 210px;
   text-align: center;
   cursor: pointer;
-  box-shadow: 0 9px 18px rgba(10, 22, 15, 0.14);
-  transition: box-shadow 120ms ease;
+  box-shadow: 0 8px 14px rgba(10, 22, 15, 0.14);
+  transition: box-shadow 120ms ease, transform 120ms ease;
 }
 
 .agent-flow .react-flow__node:hover,
 .agent-flow .react-flow__node.is-active {
   box-shadow: 0 14px 22px rgba(10, 22, 15, 0.2);
-  outline: 2px solid rgba(16, 30, 20, 0.2);
+  transform: translateY(-1px);
+  outline: 3px solid rgba(16, 30, 20, 0.16);
 }
 
 .agent-flow .react-flow__node-default {
@@ -289,42 +318,66 @@
 
 .agent-node-agent,
 .agent-kind-pill.agent-node-agent {
-  border-color: #206144;
-  background: #e5f6ec;
+  border-color: #17553b;
+  background: #dcf4e8;
 }
 
 .agent-node-tool,
 .agent-kind-pill.agent-node-tool {
-  border-color: #226991;
-  background: #e4f2fb;
+  border-color: #1b5f87;
+  background: #deeffa;
 }
 
 .agent-node-middleware,
 .agent-kind-pill.agent-node-middleware {
-  border-color: #8a5a1f;
-  background: #fff4de;
+  border-color: #785114;
+  background: #fdeecf;
 }
 
 .agent-node-guardrail,
 .agent-kind-pill.agent-node-guardrail {
-  border-color: #8b2f29;
-  background: #fce9e7;
+  border-color: #7e2520;
+  background: #fadeda;
 }
 
 .agent-node-prompt,
 .agent-kind-pill.agent-node-prompt {
-  border-color: #513f8c;
-  background: #ece8fc;
+  border-color: #4b3787;
+  background: #e7e1fc;
 }
 
 .agent-flow .react-flow__edge-path,
 .agent-flow .react-flow__connection-path {
-  stroke: rgba(22, 41, 30, 0.28);
-  stroke-width: 1.55;
+  stroke: rgba(22, 41, 30, 0.24);
+  stroke-width: 1.45;
 }
 
 .agent-flow-edge .react-flow__edge-path {
-  stroke: rgba(22, 41, 30, 0.38);
+  stroke: rgba(22, 41, 30, 0.33);
+}
+
+.agent-flow-edge.edge-primary .react-flow__edge-path {
+  stroke: #14643d;
+  stroke-width: 2.2;
+}
+
+.agent-flow-edge.edge-enforcement .react-flow__edge-path {
+  stroke: rgba(114, 76, 20, 0.65);
+  stroke-dasharray: 4 4;
+}
+
+.agent-flow-edge.edge-guardrail .react-flow__edge-path {
+  stroke: rgba(136, 37, 32, 0.7);
+  stroke-dasharray: 5 5;
+}
+
+.agent-flow .react-flow__handle {
+  width: 0;
+  height: 0;
+  min-width: 0;
+  min-height: 0;
+  opacity: 0;
+  border: 0;
 }
 
 .agent-flow .react-flow__controls {
@@ -344,12 +397,15 @@
 
 .agent-detail-panel {
   border: 1px solid var(--line);
-  border-radius: 20px;
+  border-radius: 14px;
   background: var(--panel);
   padding: 14px;
   display: flex;
   flex-direction: column;
-  min-height: 500px;
+  height: 560px;
+  min-height: 560px;
+  max-height: 560px;
+  overflow: hidden;
 }
 
 .agent-detail-heading {
@@ -377,6 +433,7 @@
 
 .agent-detail-content {
   flex: 1;
+  min-height: 0;
   margin: 12px 0 0;
   padding: 12px;
   border: 1px solid var(--line);
@@ -952,13 +1009,16 @@
   }
 
   .agent-hero-kpis,
+  .agent-flow-stages,
   .agent-hero-body {
     grid-template-columns: 1fr;
   }
 
   .agent-graph-wrap,
   .agent-detail-panel {
+    height: 420px;
     min-height: 420px;
+    max-height: 420px;
   }
 
   .agent-flow {
