@@ -63,8 +63,11 @@ services:
       MLFLOW_BACKEND_STORE_URI: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/mlflow
       # serve.py's default allowed-hosts list only covers Railway/localhost hostnames; without
       # this, MLflow's DNS-rebinding protection 403s every request from jobmanageragent, whose
-      # Host header is the compose service name (mlflowserver:5000).
-      MLFLOW_ALLOWED_HOSTS: mlflowserver:5000,mlflowserver,localhost,127.0.0.1
+      # Host header is the compose service name (mlflowserver:5000). MLflow matches the Host
+      # header exactly (including port) unless the entry itself has a "*" -- so bare "localhost"
+      # only matches Host: localhost with no port, not the browser's Host: localhost:5000. Use
+      # the ":*" wildcard form (same trick MLflow's own built-in defaults use) to match any port.
+      MLFLOW_ALLOWED_HOSTS: mlflowserver:5000,mlflowserver,mlflowserver:*,localhost,localhost:*,127.0.0.1,127.0.0.1:*
     depends_on:
       postgres:
         condition: service_healthy
