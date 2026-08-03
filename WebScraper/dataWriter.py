@@ -45,9 +45,18 @@ def upsert_jobs(database_url: str, jobs: list[dict[str, object]]) -> int:
 			if apply_job_delta(existing_listing, payload):
 				LOGGER.info("Updating job_id=%s payload=%s", job_id, payload)
 				delta_count += 1
+			else:
+				LOGGER.info("Skipping job_id=%s: already up to date, no fields changed", job_id)
 
 		session.commit()
 
+	skipped_count = len(job_records) - delta_count
+	LOGGER.info(
+		"upsert_jobs complete: received=%s inserted_or_updated=%s skipped_unchanged=%s",
+		len(job_records),
+		delta_count,
+		skipped_count,
+	)
 	return delta_count
 
 

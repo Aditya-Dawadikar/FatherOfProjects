@@ -3,13 +3,16 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from shared.job_data import JobListing
 from shared.job_match_data import JobMatch
+from utils.agent_logger import get_agent_logger
 
+
+LOGGER = get_agent_logger(__name__)
 
 Order = Literal["newest", "oldest"]
 
@@ -32,14 +35,28 @@ def get_jobs_to_process(session: Session, *, limit: int, order: Order) -> list[J
 	what makes running this from either mode safe to repeat.
 	"""
 	order_column = JobListing.updated_at.desc() if order == "newest" else JobListing.updated_at.asc()
+	# Idempotency check: a job_id already present in job_matches has already been evaluated (by
+	# this cycle or an earlier one) and is silently excluded here rather than re-evaluated -- the
+	# log line below is what makes that exclusion visible instead of invisible.
+	not_yet_evaluated = JobListing.job_id.notin_(select(JobMatch.job_id))
 	stmt = (
 		select(JobListing.job_id, JobListing.job_url, JobListing.job_role, JobListing.company_name)
-		.where(JobListing.job_id.notin_(select(JobMatch.job_id)))
+		.where(not_yet_evaluated)
 		.order_by(order_column)
 		.limit(limit)
 	)
 	rows = session.execute(stmt).all()
-	return [JobCandidate(job_id=row[0], job_url=row[1], job_role=row[2], company_name=row[3]) for row in rows]
+	candidates = [JobCandidate(job_id=row[0], job_url=row[1], job_role=row[2], company_name=row[3]) for row in rows]
+
+	total_unevaluated_backlog = session.scalar(select(func.count()).select_from(JobListing).where(not_yet_evaluated)) or 0
+	LOGGER.action(
+		"jobs_to_process_selected",
+		order=order,
+		limit=limit,
+		batch_count=len(candidates),
+		total_unevaluated_backlog=total_unevaluated_backlog,
+	)
+	return candidates
 
 
 @dataclass(frozen=True)
@@ -66,4 +83,5 @@ def record_job_result(session: Session, result: JobResult) -> bool:
 		return True
 	except IntegrityError:
 		session.rollback()
+		LOGGER.action("job_result_already_recorded", job_id=result.job_id, reason="duplicate JobMatch primary key")
 		return False
