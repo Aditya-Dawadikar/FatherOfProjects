@@ -339,7 +339,7 @@
 }
 
 .agent-flow .react-flow__node:hover .agent-card-node,
-.agent-flow .react-flow__node.is-active .agent-card-node,
+.agent-card-node.is-active,
 .agent-card-node.is-selected {
   box-shadow: 0 20px 30px rgba(14, 19, 23, 0.22);
   transform: translateY(-2px);

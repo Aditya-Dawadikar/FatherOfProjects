@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { NodeProps } from '@xyflow/react'
 import { Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, useNodesState } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -24,12 +24,13 @@ type DetailNodeData = {
   summary: string
   source: string
   stage: string
-  status: string
   incoming: number
   outgoing: number
   sourcePosition: Position
   targetPosition: Position
 }
+
+const ActiveNodeContext = createContext<string | null>(null)
 
 type FlowStage = {
   title: string
@@ -163,17 +164,19 @@ function shortSourcePath(source: string): string {
   return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`
 }
 
-function DetailNode({ data, selected }: NodeProps) {
+function DetailNode({ id, data, selected }: NodeProps) {
   const nodeData = data as unknown as DetailNodeData
+  const activeNodeId = useContext(ActiveNodeContext)
+  const isActive = activeNodeId === id
   return (
-    <div className={`agent-card-node ${KIND_CLASS[nodeData.kind]}${selected ? ' is-selected' : ''}`}>
+    <div className={`agent-card-node ${KIND_CLASS[nodeData.kind]}${isActive ? ' is-active' : ''}${selected ? ' is-selected' : ''}`}>
       <Handle type="target" position={nodeData.targetPosition} className="agent-handle" />
       <Handle type="source" position={nodeData.sourcePosition} className="agent-handle" />
 
       <div className="agent-card-head">
         <span className="agent-card-kind">{KIND_ICON[nodeData.kind]}</span>
         <strong className="agent-card-title">{nodeData.label}</strong>
-        <span className="agent-card-status">{nodeData.status}</span>
+        <span className="agent-card-status">{isActive ? 'FOCUS' : 'LIVE'}</span>
       </div>
 
       <div className="agent-card-body">
@@ -192,12 +195,10 @@ function DetailNode({ data, selected }: NodeProps) {
 function buildFlowNode(
   node: AgentTopologyNode,
   point: Point,
-  activeNodeId: string | null,
   edgeCounts: { incoming: Map<string, number>; outgoing: Map<string, number> },
 ) {
   const sourcePosition = sourcePositionFor(node.kind)
   const targetPosition = targetPositionFor(node.kind)
-  const isActive = activeNodeId === node.id
   return {
     id: node.id,
     type: 'detailNode',
@@ -208,13 +209,11 @@ function buildFlowNode(
       summary: KIND_SUMMARY[node.kind],
       source: node.source,
       stage: stageLabelFor(node.kind),
-      status: isActive ? 'FOCUS' : 'LIVE',
       incoming: edgeCounts.incoming.get(node.id) ?? 0,
       outgoing: edgeCounts.outgoing.get(node.id) ?? 0,
       sourcePosition,
       targetPosition,
     },
-    className: isActive ? ' is-active' : '',
     sourcePosition,
     targetPosition,
   }
@@ -255,10 +254,10 @@ export default function AgentTopologyHero({ topology }: Props) {
       return topology.nodes.map((node) => {
         const existing = currentById.get(node.id)
         const point = layout.get(node.id) ?? { x: 0, y: 0 }
-        return buildFlowNode(node, existing?.position ?? point, activeNodeId, edgeCounts)
+        return buildFlowNode(node, existing?.position ?? point, edgeCounts)
       })
     })
-  }, [activeNodeId, edgeCounts, layout, topology.nodes, setFlowNodes])
+  }, [edgeCounts, layout, topology.nodes, setFlowNodes])
 
   const primaryPathEdges = useMemo(() => {
     const getToolId = topology.nodes.find((node) => node.kind === 'tool' && node.label === 'get_jobs_to_process')?.id
@@ -359,42 +358,44 @@ export default function AgentTopologyHero({ topology }: Props) {
       <div className="agent-hero-body">
         <div className="agent-graph-wrap">
           <div className="agent-flow">
-            <ReactFlow
-              nodes={flowNodes}
-              edges={flowEdges}
-              nodeTypes={nodeTypes}
-              onNodesChange={onFlowNodesChange}
-              nodesDraggable
-              nodesConnectable={false}
-              elementsSelectable={false}
-              nodeDragThreshold={2}
-              zoomOnDoubleClick={false}
-              panOnScroll
-              minZoom={0.45}
-              maxZoom={1.35}
-              fitView
-              fitViewOptions={{ padding: 0.14, minZoom: 0.45 }}
-              defaultViewport={{ x: 0, y: 0, zoom: 0.7 }}
-              onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
-              onNodeMouseLeave={(_, node) => {
-                setHoveredNodeId((current) => (current === node.id ? null : current))
-              }}
-              onNodeClick={(_, node) => {
-                setPinnedNodeId((current) => (current === node.id ? null : node.id))
-              }}
-            >
-              <Background color="rgba(16, 30, 20, 0.1)" gap={22} size={1.4} />
-              <Controls showInteractive={false} />
-              <MiniMap
-                pannable
-                zoomable
-                nodeStrokeWidth={2}
-                nodeColor={(node) => MINIMAP_COLOR[(node.data as unknown as DetailNodeData)?.kind] ?? '#9db8a6'}
-                maskColor="rgba(16, 30, 20, 0.08)"
-                className="agent-flow-minimap"
-                style={{ width: 140, height: 96 }}
-              />
-            </ReactFlow>
+            <ActiveNodeContext.Provider value={activeNodeId}>
+              <ReactFlow
+                nodes={flowNodes}
+                edges={flowEdges}
+                nodeTypes={nodeTypes}
+                onNodesChange={onFlowNodesChange}
+                nodesDraggable
+                nodesConnectable={false}
+                elementsSelectable={false}
+                nodeDragThreshold={2}
+                zoomOnDoubleClick={false}
+                panOnScroll
+                minZoom={0.45}
+                maxZoom={1.35}
+                fitView
+                fitViewOptions={{ padding: 0.14, minZoom: 0.45 }}
+                defaultViewport={{ x: 0, y: 0, zoom: 0.7 }}
+                onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
+                onNodeMouseLeave={(_, node) => {
+                  setHoveredNodeId((current) => (current === node.id ? null : current))
+                }}
+                onNodeClick={(_, node) => {
+                  setPinnedNodeId((current) => (current === node.id ? null : node.id))
+                }}
+              >
+                <Background color="rgba(20, 26, 31, 0.1)" gap={22} size={1.4} />
+                <Controls showInteractive={false} />
+                <MiniMap
+                  pannable
+                  zoomable
+                  nodeStrokeWidth={2}
+                  nodeColor={(node) => MINIMAP_COLOR[(node.data as unknown as DetailNodeData)?.kind] ?? '#9db8a6'}
+                  maskColor="rgba(20, 26, 31, 0.08)"
+                  className="agent-flow-minimap"
+                  style={{ width: 140, height: 96 }}
+                />
+              </ReactFlow>
+            </ActiveNodeContext.Provider>
           </div>
         </div>
 
