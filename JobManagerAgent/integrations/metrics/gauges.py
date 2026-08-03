@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from prometheus_client import Gauge
 
 from .system_metrics import collect_system_metrics
@@ -8,6 +10,10 @@ from .system_metrics import collect_system_metrics
 # Namespaced so this agent's gauges don't collide with other services' metrics once Prometheus
 # scrapes more than one target (see Observability/prometheus/prometheus.yml).
 _PREFIX = "jobmanageragent"
+
+# Mirrors LAST_COLLECTED_TIMESTAMP below in a plain Python float -- lets router.py report cache
+# staleness on every scrape without reaching into prometheus_client's private Gauge internals.
+_last_collected_at: float | None = None
 
 CPU_USAGE_PERCENT = Gauge(f"{_PREFIX}_cpu_usage_percent", "CPU utilization percent, averaged across all logical cores")
 CPU_COUNT = Gauge(f"{_PREFIX}_cpu_count", "Number of logical CPU cores available to the process")
@@ -22,11 +28,19 @@ NETWORK_BYTES_RECEIVED = Gauge(f"{_PREFIX}_network_bytes_received_total", "Bytes
 LAST_COLLECTED_TIMESTAMP = Gauge(f"{_PREFIX}_metrics_last_collected_timestamp_seconds", "Unix timestamp when these gauges were last refreshed")
 
 
-def update_metrics() -> None:
+def get_last_collected_at() -> float | None:
+    """Unix timestamp of the last successful collection, or None before the first cycle runs."""
+    return _last_collected_at
+
+
+def update_metrics() -> dict[str, Any]:
     """Refreshes the module-level Gauges from a fresh OS sample. Called on an interval by the
     background collector thread (see collector.py) -- never from the /metrics request handler
-    itself, which only reads whatever these Gauges were last set to.
+    itself, which only reads whatever these Gauges were last set to. Returns the snapshot so the
+    collector can log a summary without re-collecting.
     """
+    global _last_collected_at
+
     snapshot = collect_system_metrics()
 
     CPU_USAGE_PERCENT.set(snapshot["cpu"]["usage_percent"])
@@ -44,3 +58,6 @@ def update_metrics() -> None:
     NETWORK_BYTES_RECEIVED.set(snapshot["network"]["bytes_received"])
 
     LAST_COLLECTED_TIMESTAMP.set(snapshot["collected_at"])
+    _last_collected_at = snapshot["collected_at"]
+
+    return snapshot

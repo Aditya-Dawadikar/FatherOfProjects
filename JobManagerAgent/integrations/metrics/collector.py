@@ -26,7 +26,13 @@ def run_metrics_collector(interval_seconds: float | None = None) -> None:
 
     while True:
         try:
-            update_metrics()
+            snapshot = update_metrics()
+            LOGGER.info(
+                "System metrics refreshed cpu_percent=%.1f memory_percent=%.1f disk_percent=%.1f",
+                snapshot["cpu"]["usage_percent"],
+                snapshot["memory"]["usage_percent"],
+                snapshot["disk"]["usage_percent"],
+            )
         except Exception:
             LOGGER.exception("System metrics collection failed; will retry next interval")
         time.sleep(interval)
