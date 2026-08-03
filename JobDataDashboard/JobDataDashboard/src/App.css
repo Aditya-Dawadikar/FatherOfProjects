@@ -1,9 +1,6 @@
 .app-shell {
   min-height: 100svh;
-  background:
-    radial-gradient(circle at top left, rgba(18, 128, 74, 0.10), transparent 38%),
-    radial-gradient(circle at top right, rgba(161, 92, 7, 0.07), transparent 30%),
-    var(--bg);
+  background: var(--bg);
 }
 
 .app-header {
@@ -43,7 +40,7 @@
 .form-panel {
   border: 1px solid var(--line);
   background: var(--panel);
-  box-shadow: 0 16px 32px rgba(16, 30, 20, 0.08);
+  box-shadow: 0 16px 32px rgba(20, 26, 31, 0.08);
 }
 
 .status-card {
@@ -78,7 +75,7 @@
   z-index: 30;
   padding: 10px 32px;
   border-bottom: 1px solid var(--line);
-  background: rgba(244, 247, 245, 0.9);
+  background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(8px);
 }
 
@@ -123,7 +120,7 @@
 }
 
 .view-tab:hover::after {
-  background: rgba(18, 128, 74, 0.35);
+  background: rgba(0, 104, 74, 0.35);
 }
 
 .view-tab.is-active::after {
@@ -165,7 +162,7 @@
   position: fixed;
   inset: 0;
   border: 0;
-  background: rgba(12, 20, 15, 0.48);
+  background: rgba(16, 21, 25, 0.48);
   z-index: 24;
 }
 
@@ -177,7 +174,7 @@
   height: 100svh;
   background: var(--panel);
   border-left: 1px solid var(--line);
-  box-shadow: -18px 0 44px rgba(6, 16, 10, 0.26);
+  box-shadow: -18px 0 44px rgba(8, 11, 13, 0.26);
   transform: translateX(102%);
   transition: transform 220ms ease;
   z-index: 25;
@@ -223,11 +220,8 @@
   border: 1px solid var(--line);
   border-radius: 24px;
   padding: 18px;
-  background:
-    radial-gradient(circle at 15% 12%, rgba(18, 128, 74, 0.18), transparent 34%),
-    radial-gradient(circle at 85% 6%, rgba(161, 92, 7, 0.12), transparent 30%),
-    linear-gradient(160deg, rgba(255, 255, 255, 0.96), rgba(238, 244, 240, 0.95));
-  box-shadow: 0 18px 36px rgba(16, 30, 20, 0.14);
+  background: var(--panel);
+  box-shadow: 0 18px 36px rgba(20, 26, 31, 0.08);
 }
 
 .agent-hero-header h2 {
@@ -308,11 +302,8 @@
   min-height: 560px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background:
-    radial-gradient(circle at 10% 8%, rgba(18, 128, 74, 0.08), transparent 42%),
-    radial-gradient(circle at 92% 92%, rgba(161, 92, 7, 0.07), transparent 40%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.97), rgba(231, 239, 233, 0.92));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  background: var(--panel-2);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
   overflow: hidden;
 }
 
@@ -343,19 +334,19 @@
   border-radius: 14px;
   background: linear-gradient(165deg, #ffffff, rgba(255, 255, 255, 0.85));
   color: var(--text);
-  box-shadow: 0 8px 16px rgba(10, 22, 15, 0.12);
+  box-shadow: 0 8px 16px rgba(14, 19, 23, 0.12);
   transition: box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease;
 }
 
 .agent-flow .react-flow__node:hover .agent-card-node,
 .agent-flow .react-flow__node.is-active .agent-card-node,
 .agent-card-node.is-selected {
-  box-shadow: 0 20px 30px rgba(10, 22, 15, 0.22);
+  box-shadow: 0 20px 30px rgba(14, 19, 23, 0.22);
   transform: translateY(-2px);
 }
 
 .agent-flow .react-flow__node.dragging .agent-card-node {
-  box-shadow: 0 26px 40px rgba(10, 22, 15, 0.3);
+  box-shadow: 0 26px 40px rgba(14, 19, 23, 0.3);
   transform: scale(1.03) rotate(-0.4deg);
 }
 
@@ -365,7 +356,7 @@
   gap: 8px;
   align-items: center;
   padding: 9px 10px;
-  border-bottom: 1px solid rgba(16, 30, 20, 0.1);
+  border-bottom: 1px solid rgba(20, 26, 31, 0.1);
 }
 
 .agent-card-kind {
@@ -375,7 +366,7 @@
   width: 22px;
   height: 22px;
   border-radius: 999px;
-  border: 1px solid rgba(16, 30, 20, 0.18);
+  border: 1px solid rgba(20, 26, 31, 0.18);
   font-size: 0.6rem;
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -396,8 +387,8 @@
   font-weight: 800;
   letter-spacing: 0.06em;
   padding: 2px 8px 2px 6px;
-  border: 1px solid rgba(16, 30, 20, 0.18);
-  background: rgba(16, 30, 20, 0.05);
+  border: 1px solid rgba(20, 26, 31, 0.18);
+  background: rgba(20, 26, 31, 0.05);
 }
 
 .agent-card-status::before {
@@ -427,7 +418,7 @@
 }
 
 .agent-card-meta-row span {
-  border: 1px solid rgba(16, 30, 20, 0.14);
+  border: 1px solid rgba(20, 26, 31, 0.14);
   border-radius: 6px;
   font-size: 0.64rem;
   font-weight: 700;
@@ -519,12 +510,12 @@
 
 .agent-flow .react-flow__edge-path,
 .agent-flow .react-flow__connection-path {
-  stroke: rgba(22, 41, 30, 0.24);
+  stroke: rgba(26, 33, 38, 0.24);
   stroke-width: 1.45;
 }
 
 .agent-flow-edge .react-flow__edge-path {
-  stroke: rgba(22, 41, 30, 0.33);
+  stroke: rgba(26, 33, 38, 0.33);
 }
 
 .agent-flow-edge.edge-primary .react-flow__edge-path {
@@ -573,7 +564,7 @@
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 6px 14px rgba(10, 22, 15, 0.12);
+  box-shadow: 0 6px 14px rgba(14, 19, 23, 0.12);
 }
 
 .agent-flow .react-flow__controls button {
@@ -585,7 +576,7 @@
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 6px 14px rgba(10, 22, 15, 0.12);
+  box-shadow: 0 6px 14px rgba(14, 19, 23, 0.12);
   background: rgba(255, 255, 255, 0.85);
 }
 
@@ -1227,17 +1218,17 @@
   background: var(--accent);
   color: #ffffff;
   font-weight: 700;
-  box-shadow: 0 8px 16px rgba(18, 128, 74, 0.22);
+  box-shadow: 0 8px 16px rgba(0, 104, 74, 0.22);
 }
 
 .primary-button:hover {
   background: var(--accent-strong);
-  box-shadow: 0 10px 20px rgba(18, 128, 74, 0.28);
+  box-shadow: 0 10px 20px rgba(0, 104, 74, 0.28);
 }
 
 .primary-button:active {
   transform: translateY(1px);
-  box-shadow: 0 4px 10px rgba(18, 128, 74, 0.24);
+  box-shadow: 0 4px 10px rgba(0, 104, 74, 0.24);
 }
 
 .danger-button {
