@@ -56,6 +56,13 @@ services:
   mlflowserver:
     build:
       context: ./MLflowServer
+    develop:
+      watch:
+        - path: ./MLflowServer/requirements.txt
+          action: rebuild
+        - path: ./MLflowServer
+          target: /app
+          action: sync+restart
     env_file:
       - path: ./MLflowServer/.env
         required: false
@@ -78,6 +85,13 @@ services:
   jobdataserver:
     build:
       context: ./JobDataServer
+    develop:
+      watch:
+        - path: ./JobDataServer/requirements.txt
+          action: rebuild
+        - path: ./JobDataServer
+          target: /app
+          action: sync+restart
     env_file:
       - path: ./JobDataServer/.env
         required: false
@@ -96,6 +110,13 @@ services:
   jobmanageragent:
     build:
       context: ./JobManagerAgent
+    develop:
+      watch:
+        - path: ./JobManagerAgent/requirements.txt
+          action: rebuild
+        - path: ./JobManagerAgent
+          target: /app
+          action: sync+restart
     env_file:
       - path: ./JobManagerAgent/.env
         required: false
@@ -133,6 +154,8 @@ services:
     # Prod runs this as a Railway cron job (see WebScraper/railway.toml), not a long-running
     # service -- mirrored here via a profile so `docker compose up` doesn't scrape on every
     # startup. Trigger a run explicitly: docker compose --profile scraper run --rm webscraper
+    # No `develop.watch` here -- it's a one-shot run-to-completion job, not a process `watch`
+    # can restart in place; re-run the command above after making changes.
     profiles:
       - scraper
     restart: "no"
@@ -141,6 +164,13 @@ services:
     build:
       context: ./JobDataDashboard
       dockerfile: Dockerfile
+    develop:
+      watch:
+        # Static build served by Caddy -- there's no running process to sync into, so any
+        # source change (including the Caddyfile itself, also under this context) needs a full
+        # multi-stage rebuild (npm run build) rather than sync/sync+restart.
+        - path: ./JobDataDashboard
+          action: rebuild
     environment:
       # Bare hostname + scheme, consumed by Caddyfile's {$JOB_DATA_API_UPSTREAM}/
       # {$JOB_MANAGER_AGENT_UPSTREAM} placeholders (see JobDataDashboard/Caddyfile). Plain http

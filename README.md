@@ -48,6 +48,18 @@ Each service is organized as its own folder with its own code, dependencies, and
   docker compose --profile scraper run --rm webscraper   # one-shot scrape, on demand
   ```
 
+  For an edit-and-see-it-immediately loop, use `docker compose watch` instead of `up`: it watches
+  each buildable service's source and automatically syncs+restarts (Python services) or rebuilds
+  (the dashboard's static build, and any service's `requirements.txt`) just the container that
+  changed -- see the `develop.watch` block on each service in `docker-compose.yml`. (We tried
+  Skaffold for this first, per an earlier ask -- its docker-compose deploy support is an
+  unimplemented stub as of v2.24.0, confirmed by a real `skaffold run` failing with "docker
+  compose not yet supported by skaffold". `docker compose watch` does the same job natively.)
+
+  ```powershell
+  docker compose watch
+  ```
+
   Override local Postgres credentials (default `postgres`/`postgres`) via a root `.env` file next
   to `docker-compose.yml`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
 
