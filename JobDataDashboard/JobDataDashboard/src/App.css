@@ -338,6 +338,15 @@
   color: var(--error);
 }
 
+.grafana-embed {
+  width: 100%;
+  height: 80vh;
+  min-height: 640px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel-2);
+}
+
 .eval-run-list {
   display: flex;
   flex-direction: column;

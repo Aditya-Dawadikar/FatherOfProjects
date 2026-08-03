@@ -593,19 +593,30 @@ const BEHAVIOR_KPI_METRICS: Array<keyof NonNullable<ToolEvalRun['result']>> = [
   'cost_per_successful_run',
 ]
 
-type VitalsTab = 'kpis' | 'prompt' | 'behavior' | 'history'
+type VitalsTab = 'kpis' | 'prompt' | 'behavior' | 'history' | 'system'
 
 // First N tabs are one per experiment type this dashboard tracks (currently prompt-version
 // comparison and tool-selection/agent-behavior evals); the last tab is always run history,
 // spanning every experiment type at once. Adding a new experiment type later means adding one
 // more entry here before 'history', not restructuring the tab bar. KPIs is a fixed extra tab up
 // front, not one-per-experiment-type -- it's a curated cross-experiment summary, not raw data.
+// System Metrics is last since it's infra-level (CPU/memory/disk/network), not an eval result.
 const VITALS_TABS: Array<{ id: VitalsTab; label: string }> = [
   { id: 'kpis', label: 'KPIs' },
   { id: 'prompt', label: 'Prompt Version Comparison' },
   { id: 'behavior', label: 'Agent Behavior' },
   { id: 'history', label: 'Run History' },
+  { id: 'system', label: 'System Metrics' },
 ]
+
+// JobManagerAgent System Metrics dashboard (Observability/grafana/provisioning/dashboards/json/jobmanageragent.json).
+// kiosk=tv hides Grafana's own nav chrome so it reads as one panel of this dashboard rather than
+// a page-within-a-page; theme=light matches this app's palette (see src/index.css's --bg/--panel).
+// Grafana must have GF_SECURITY_ALLOW_EMBEDDING=true (Observability/grafana/Dockerfile) or every
+// browser refuses this iframe outright via X-Frame-Options.
+const GRAFANA_DASHBOARD_URL =
+  import.meta.env.VITE_GRAFANA_DASHBOARD_URL ??
+  'https://fatherofprojects-production-181c.up.railway.app/d/jobmanageragent-system-metrics/jobmanageragent-system-metrics?orgId=1&kiosk=tv&theme=light'
 
 export default function AgentVitalsView() {
   const [activeTab, setActiveTab] = useState<VitalsTab>('kpis')
@@ -898,6 +909,23 @@ export default function AgentVitalsView() {
               })}
             </div>
           )}
+        </>
+      )}
+
+      {activeTab === 'system' && (
+        <>
+          <div className="toolbar">
+            <div className="toolbar-copy">
+              <p className="eyebrow">JobManagerAgent</p>
+              <h2>System metrics</h2>
+            </div>
+          </div>
+          <iframe
+            className="grafana-embed"
+            src={GRAFANA_DASHBOARD_URL}
+            title="JobManagerAgent System Metrics (Grafana)"
+            loading="lazy"
+          />
         </>
       )}
     </section>
