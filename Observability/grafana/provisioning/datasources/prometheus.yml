@@ -4,6 +4,10 @@ datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
+    # Fixed (rather than Grafana's auto-generated one) so the provisioned dashboard
+    # (provisioning/dashboards/jobmanageragent.json) can reference this datasource reliably
+    # across environments/reinstalls instead of guessing an auto-generated uid.
+    uid: prometheus
     # Grafana expands $VARS in provisioning files natively (unlike Prometheus's own config).
     # docker-compose.yml sets PROMETHEUS_URL=http://prometheus:9090 (the compose service DNS
     # name) for local dev; the Dockerfile's default targets Railway's internal hostname instead.
