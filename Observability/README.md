@@ -56,13 +56,15 @@ no manual setup needed to start building dashboards.
 ## Deploy to Railway
 
 Prometheus and Grafana are two independent Railway services, both built from this repo via a
-Dockerfile (`builder = "DOCKERFILE"` in each `railway.toml`, same as `ObservabilityServer`) --
-Railway doesn't run docker-compose directly, so each container needs its own service.
+Dockerfile (`builder = "DOCKERFILE"` in each `railway.toml`) -- Railway doesn't run
+docker-compose directly, so each container needs its own service.
 
 1. In the Railway project, add a new service for each of `Observability/prometheus/` and
-   `Observability/grafana/`, pointing each at this repo. Railway will pick up the
-   `dockerfilePath` from that folder's `railway.toml` automatically (repo root stays the build
-   context, matching `ObservabilityServer`).
+   `Observability/grafana/`, pointing each at this repo. **Set that service's Root Directory**
+   to `Observability/prometheus` (or `Observability/grafana`) in its settings -- the Dockerfiles
+   `COPY` from their own folder (same convention as JobManagerAgent/MLflowServer/JobDataServer),
+   so `dockerfilePath = "Dockerfile"` only resolves correctly once the root directory is scoped
+   down to that folder.
 2. Set `SCRAPE_TARGET` on the **prometheus** service and `PROMETHEUS_URL` on the **grafana**
    service -- see the Environment variables tables above for values. Both services read
    Railway's `$PORT` automatically; don't set it yourself.

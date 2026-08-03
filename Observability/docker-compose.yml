@@ -1,8 +1,7 @@
 services:
   prometheus:
     build:
-      context: ..
-      dockerfile: Observability/prometheus/Dockerfile
+      context: ./prometheus
     container_name: jobmanageragent-prometheus
     environment:
       # host.docker.internal reaches a JobManagerAgent running directly on the host (Docker
@@ -18,8 +17,7 @@ services:
 
   grafana:
     build:
-      context: ..
-      dockerfile: Observability/grafana/Dockerfile
+      context: ./grafana
     container_name: jobmanageragent-grafana
     environment:
       # http://prometheus:9090 relies on compose's built-in service-name DNS; the Dockerfile's

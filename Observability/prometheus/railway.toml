@@ -1,6 +1,6 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Observability/prometheus/Dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 healthcheckPath = "/-/healthy"

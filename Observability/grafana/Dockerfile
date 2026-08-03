@@ -10,8 +10,9 @@ ENV GF_AUTH_DISABLE_LOGIN_FORM=true
 # environment (docker-compose.yml overrides this for local dev).
 ENV PROMETHEUS_URL=http://prometheus.railway.internal:9090
 
-# Build context is the repo root (see railway.toml's dockerfilePath / docker-compose.yml's
-# build.context), same convention as ObservabilityServer/Dockerfile.
+# Build context is this folder (docker-compose.yml's build.context; on Railway, this service's
+# Root Directory must be set to Observability/grafana so dockerfilePath="Dockerfile" resolves
+# here too) -- not the repo root.
 USER root
 COPY ./provisioning /etc/grafana/provisioning
 COPY ./docker-entrypoint.sh /docker-entrypoint.sh
