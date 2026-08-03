@@ -2,7 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { FiActivity, FiDatabase, FiLayout, FiTrendingUp } from 'react-icons/fi'
 
 function tabClassName({ isActive }: { isActive: boolean }) {
-  return `view-tab ghost-button-with-icon${isActive ? ' is-active' : ''}`
+  return `view-tab${isActive ? ' is-active' : ''}`
 }
 
 export default function Layout() {

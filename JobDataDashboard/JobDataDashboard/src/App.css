@@ -84,25 +84,50 @@
 
 .view-tabs {
   display: flex;
-  gap: 8px;
+  gap: 20px;
   padding: 0;
   overflow-x: auto;
 }
 
 .view-tab {
-  border: 1px solid var(--line);
-  background: var(--panel);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
-  border-radius: 999px;
-  padding: 9px 18px;
+  text-decoration: none;
+  padding: 10px 0;
   font: inherit;
-  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .view-tab.is-active {
-  background: var(--accent-dim);
   color: var(--text);
-  border-color: var(--accent);
+}
+
+.view-tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background 140ms ease;
+}
+
+.view-tab:hover {
+  color: var(--text);
+}
+
+.view-tab:hover::after {
+  background: rgba(21, 128, 61, 0.35);
+}
+
+.view-tab.is-active::after {
+  background: var(--accent);
 }
 
 .app-body {
