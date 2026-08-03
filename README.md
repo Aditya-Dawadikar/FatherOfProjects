@@ -23,6 +23,29 @@ Each service is organized as its own folder with its own code, dependencies, and
 2. Set up the required environment variables for that service.
 3. Start the services needed for your workflow.
 
+## Dev mode vs. prod mode
+
+- **Dev mode** runs the deployable services locally via Docker, orchestrated by the root
+  `docker-compose.yml`. Covers JobManagerAgent, JobDataDashboard, JobDataServer, WebScraper, and
+  MLflowServer. ObservabilityDashboard and ObservabilityServer are excluded (the `Observability/`
+  folder has its own separate `docker-compose.yml` for Prometheus/Grafana), and SmokeTesting is a
+  manual script, not a deployable service.
+
+  Each service reads its own secrets (DB/Redis/API keys) from its own `.env` file -- copy
+  `.env.example` to `.env` in each service folder first if you don't have one. Those values stay
+  whatever you've configured there (by default the same hosted Railway Postgres/Redis used in
+  prod); `docker-compose.yml` only overrides the vars needed for containers to reach each other
+  (e.g. `MLFLOW_TRACKING_URI`, the dashboard's API upstreams).
+
+  ```powershell
+  docker compose up --build                              # dashboard + both APIs + MLflow
+  docker compose --profile scraper run --rm webscraper   # one-shot scrape, on demand
+  ```
+
+- **Prod mode** is Railway, driven by each service's own `railway.toml`. Unchanged by dev mode --
+  the Dockerfiles Railway uses (JobDataDashboard) and the railpack build/start commands it uses
+  for the rest are independent of the root `docker-compose.yml`.
+
 ## Notes
 
 - JobManagerAgent uses MLflow for prompt versioning and eval tracking.

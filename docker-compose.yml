@@ -1,0 +1,87 @@
+# Dev mode: run every deployable service locally via Docker. Prod mode is Railway, driven by
+# each service's own railway.toml -- this file has no effect there and railway.toml is untouched.
+#
+# ObservabilityDashboard and ObservabilityServer are intentionally excluded (not part of dev
+# mode yet). The Observability/ folder has its own docker-compose.yml for the Prometheus/Grafana
+# stack, unrelated to this one. SmokeTesting is a manual script, not a deployable service.
+#
+# Each service still reads DATABASE_URL/REDIS_URL/GEMINI_API_KEY/etc. from its own .env file
+# (copy from .env.example if you don't have one yet) -- those stay whatever you've configured
+# (by default the same hosted Railway Postgres/Redis used elsewhere). This file only overrides
+# the handful of vars that need to point at container-network hostnames instead of
+# localhost/Railway addresses, so the containers can reach each other.
+#
+# Usage:
+#   docker compose up --build                        # jobdataserver, jobmanageragent,
+#                                                      # mlflowserver, jobdatadashboard
+#   docker compose --profile scraper run --rm webscraper   # one-shot scrape, on demand
+
+services:
+  mlflowserver:
+    build:
+      context: ./MLflowServer
+    env_file:
+      - path: ./MLflowServer/.env
+        required: false
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+
+  jobdataserver:
+    build:
+      context: ./JobDataServer
+    env_file:
+      - path: ./JobDataServer/.env
+        required: false
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  jobmanageragent:
+    build:
+      context: ./JobManagerAgent
+    env_file:
+      - path: ./JobManagerAgent/.env
+        required: false
+    environment:
+      # Overrides the .env value (usually http://localhost:5000) so the agent reaches the
+      # mlflowserver container instead of trying to hit its own localhost.
+      MLFLOW_TRACKING_URI: http://mlflowserver:5000
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mlflowserver
+    restart: unless-stopped
+
+  webscraper:
+    build:
+      context: ./WebScraper
+    env_file:
+      - path: ./WebScraper/.env
+        required: false
+    # Prod runs this as a Railway cron job (see WebScraper/railway.toml), not a long-running
+    # service -- mirrored here via a profile so `docker compose up` doesn't scrape on every
+    # startup. Trigger a run explicitly: docker compose --profile scraper run --rm webscraper
+    profiles:
+      - scraper
+    restart: "no"
+
+  jobdatadashboard:
+    build:
+      context: ./JobDataDashboard
+      dockerfile: Dockerfile
+    environment:
+      # Bare hostname + scheme, consumed by Caddyfile's {$JOB_DATA_API_UPSTREAM}/
+      # {$JOB_MANAGER_AGENT_UPSTREAM} placeholders (see JobDataDashboard/Caddyfile). Plain http
+      # since these are container-to-container calls on the compose network, not TLS-terminated
+      # Railway URLs.
+      JOB_DATA_API_UPSTREAM: jobdataserver:8000
+      JOB_DATA_API_SCHEME: http
+      JOB_MANAGER_AGENT_UPSTREAM: jobmanageragent:8080
+      JOB_MANAGER_AGENT_SCHEME: http
+    ports:
+      - "5173:8080"
+    depends_on:
+      - jobdataserver
+      - jobmanageragent
+    restart: unless-stopped

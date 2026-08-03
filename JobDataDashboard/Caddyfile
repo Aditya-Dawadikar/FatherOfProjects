@@ -11,23 +11,29 @@
 	}
 
 	route {
+		# JOB_DATA_API_UPSTREAM/JOB_DATA_API_SCHEME default to the deployed JobDataServer's
+		# Railway URL below (this dashboard's prod behavior, unchanged from before these were
+		# configurable). dev mode's docker-compose.yml overrides both to reach the jobdataserver
+		# container over plain http instead.
 		handle_path /api/* {
 			header X-Dashboard-Proxy "job-data-api"
 			header X-Caddy-Route "api-proxy"
-			header X-Job-Data-Upstream "https://peaceful-dream-production-9540.up.railway.app"
-			reverse_proxy https://peaceful-dream-production-9540.up.railway.app {
-				header_up Host peaceful-dream-production-9540.up.railway.app
+			header X-Job-Data-Upstream "{$JOB_DATA_API_UPSTREAM:peaceful-dream-production-9540.up.railway.app}"
+			reverse_proxy {$JOB_DATA_API_SCHEME:https}://{$JOB_DATA_API_UPSTREAM:peaceful-dream-production-9540.up.railway.app} {
+				header_up Host {$JOB_DATA_API_UPSTREAM:peaceful-dream-production-9540.up.railway.app}
 			}
 		}
 
 		# JOB_MANAGER_AGENT_UPSTREAM is a bare hostname (e.g. job-manager-agent-production-xxxx.up.railway.app),
 		# set as an env var on this dashboard's Railway service -- not hardcoded like the /api/* block above,
 		# since JobManagerAgent's deployed URL isn't known at the time this route was added.
+		# JOB_MANAGER_AGENT_SCHEME defaults to https (prod); dev mode's docker-compose.yml sets it
+		# to http since jobmanageragent is a plain container without TLS.
 		handle_path /agent-api/* {
 			header X-Dashboard-Proxy "job-manager-agent-api"
 			header X-Caddy-Route "agent-api-proxy"
 			header X-Job-Manager-Agent-Upstream "{$JOB_MANAGER_AGENT_UPSTREAM}"
-			reverse_proxy https://{$JOB_MANAGER_AGENT_UPSTREAM} {
+			reverse_proxy {$JOB_MANAGER_AGENT_SCHEME:https}://{$JOB_MANAGER_AGENT_UPSTREAM} {
 				header_up Host {$JOB_MANAGER_AGENT_UPSTREAM}
 			}
 		}

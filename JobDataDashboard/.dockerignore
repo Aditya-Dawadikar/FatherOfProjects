@@ -1,0 +1,6 @@
+JobDataDashboard/node_modules/
+JobDataDashboard/dist/
+JobDataDashboard/.env
+JobDataDashboard/.env.*
+!JobDataDashboard/.env.example
+.git
