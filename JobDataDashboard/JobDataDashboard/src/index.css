@@ -1,19 +1,23 @@
 :root {
-  --bg: #f4f8f5;
-  --panel: rgba(255, 255, 255, 0.94);
-  --panel-2: #eef4f0;
-  --line: #d7e3db;
-  --text: #17241c;
-  --muted: #55665c;
-  --accent: #15803d;
-  --accent-dim: rgba(21, 128, 61, 0.12);
-  --warn: #96660a;
-  --warn-dim: rgba(180, 130, 20, 0.16);
+  --bg: #f4f7f5;
+  --panel: rgba(255, 255, 255, 0.97);
+  --panel-2: #eef3f0;
+  --line: #dbe6e0;
+  --text: #16211b;
+  --muted: #51625a;
+  --accent: #12804a;
+  --accent-strong: #0b5c37;
+  --accent-dim: rgba(18, 128, 74, 0.12);
+  --warn: #a15c07;
+  --warn-strong: #7c4405;
+  --warn-dim: rgba(161, 92, 7, 0.14);
   --error: #b3261e;
+  --error-strong: #8c1e17;
   --error-dim: rgba(179, 38, 30, 0.10);
   --overlay: rgba(16, 30, 20, 0.045);
   --overlay-strong: rgba(16, 30, 20, 0.08);
-  font: 14px/1.5 'Segoe UI', system-ui, sans-serif;
+  --focus-ring: rgba(18, 128, 74, 0.38);
+  font: 14px/1.55 -apple-system, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -32,10 +36,23 @@ body,
 
 body {
   margin: 0;
+  scrollbar-color: var(--line) transparent;
+  scrollbar-width: thin;
 }
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
+}
+
+::selection {
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
