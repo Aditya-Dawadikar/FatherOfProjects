@@ -72,10 +72,21 @@
   box-shadow: 0 0 0 6px var(--accent-dim);
 }
 
+.top-nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: 10px 32px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(244, 248, 245, 0.9);
+  backdrop-filter: blur(8px);
+}
+
 .view-tabs {
   display: flex;
   gap: 8px;
-  padding: 0 32px 18px;
+  padding: 0;
+  overflow-x: auto;
 }
 
 .view-tab {
@@ -1075,14 +1086,17 @@
 }
 
 @media (max-width: 720px) {
-  .app-header,
-  .app-body,
-  .view-tabs {
+  .top-nav,
+  .app-body {
     padding-left: 18px;
     padding-right: 18px;
   }
 
-  .app-header,
+  .view-tabs {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
   .toolbar,
   .panel-heading,
   .form-actions,
