@@ -11,8 +11,9 @@ RUN chmod +x /docker-entrypoint.sh
 # only the COPY/chmod above needed root.
 USER nobody
 
-# Inherited from the base image already, but declared explicitly here since Railway uses this
-# (and the healthcheck path in railway.toml) to find the fixed port docker-entrypoint.sh binds to.
+# Documents the port docker-entrypoint.sh binds to by default. Railway's healthcheck actually
+# targets whatever $PORT it assigns this service at runtime (see docker-entrypoint.sh), not this
+# EXPOSE -- set PORT=9090 explicitly as a Railway variable on this service so the two agree.
 EXPOSE 9090
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
