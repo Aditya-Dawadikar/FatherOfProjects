@@ -37,11 +37,11 @@ type FlowStage = {
 }
 
 const FLOW_STAGES: FlowStage[] = [
-  { title: '1. Middleware', subtitle: 'Wraps and enforces guardrails' },
-  { title: '2. Orchestrator', subtitle: 'Decides next action' },
-  { title: '3. Tool Sequence', subtitle: 'Fetch -> Crawl -> Evaluate -> Record' },
-  { title: '4. Scoring LLM', subtitle: 'evaluate_match renders prompt and scores' },
-  { title: '5. Guardrails', subtitle: 'Injection, output, and tool-usage checks' },
+  { title: 'Stage 1. Middleware', subtitle: 'Wraps and enforces guardrails' },
+  { title: 'Stage 2. Orchestrator', subtitle: 'Decides next action' },
+  { title: 'Stage 3. Tool Sequence', subtitle: 'Fetch -> Crawl -> Evaluate -> Record' },
+  { title: 'Stage 4. Scoring LLM', subtitle: 'evaluate_match renders prompt and scores' },
+  { title: 'Stage 5. Guardrails', subtitle: 'Injection, output, and tool-usage checks' },
 ]
 
 const KIND_CLASS: Record<AgentTopologyNodeKind, string> = {
@@ -294,7 +294,7 @@ export default function AgentTopologyHero({ topology }: Props) {
     <section className="agent-hero" aria-label="Live agent topology">
       <div className="agent-hero-header">
         <p className="eyebrow">Live Agent Blueprint</p>
-        <h2>Interactive JobManagerAgent graph</h2>
+        <h2>Job Manager Agent</h2>
         <p className="agent-hero-subtitle">
           Hover or click nodes to inspect exact runtime prompt text, tool descriptions, middleware, and guardrails.
         </p>
@@ -319,6 +319,7 @@ export default function AgentTopologyHero({ topology }: Props) {
         </article>
       </div>
 
+      <h3>Agent Workflow Stages</h3>
       <div className="agent-flow-stages" aria-label="Flow stages">
         {FLOW_STAGES.map((stage) => (
           <article key={stage.title} className="agent-stage-chip">
