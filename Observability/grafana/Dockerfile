@@ -13,8 +13,8 @@ ENV PROMETHEUS_URL=http://prometheus.railway.internal:9090
 # Build context is the repo root (see railway.toml's dockerfilePath / docker-compose.yml's
 # build.context), same convention as ObservabilityServer/Dockerfile.
 USER root
-COPY Observability/grafana/provisioning /etc/grafana/provisioning
-COPY Observability/grafana/docker-entrypoint.sh /docker-entrypoint.sh
+COPY ./provisioning /etc/grafana/provisioning
+COPY ./docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 # Restore the base image's own non-root user -- only the COPY/chmod above needed root.
 USER grafana
