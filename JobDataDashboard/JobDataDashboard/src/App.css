@@ -138,10 +138,6 @@
   display: block;
 }
 
-.app-body-jobs {
-  display: block;
-}
-
 .content-panel,
 .form-panel {
   border-radius: 24px;
@@ -847,6 +843,12 @@
 
 .overview-subtabs {
   margin-bottom: 16px;
+}
+
+.etl-subnav {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
 }
 
 .overview-tab-panel {

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Navigate, Route, HashRouter as Router, Routes } from 'react-router-dom'
 import './App.css'
 import Layout from './components/Layout'
+import EtlDataLayout from './pages/EtlDataLayout'
 import JobsPage from './pages/JobsPage'
 import MatchesPage from './pages/MatchesPage'
 import OverviewPage from './pages/OverviewPage'
@@ -26,8 +27,11 @@ export default function App() {
                 so its Grafana iframe doesn't reload every time this tab is revisited) -- this
                 route exists only so /observability is a real, matchable, refreshable URL. */}
             <Route path="observability" element={null} />
-            <Route path="jobs" element={<JobsPage />} />
-            <Route path="matches" element={<MatchesPage />} />
+            <Route path="etl-data" element={<EtlDataLayout />}>
+              <Route index element={<Navigate to="jobs" replace />} />
+              <Route path="jobs" element={<JobsPage />} />
+              <Route path="matches" element={<MatchesPage />} />
+            </Route>
             <Route path="evals" element={<EvalsPage />}>
               <Route element={<EvalsLayout />}>
                 <Route index element={<Navigate to="kpis" replace />} />

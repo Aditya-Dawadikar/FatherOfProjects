@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { FiActivity, FiBarChart2, FiDatabase, FiLayout, FiTrendingUp } from 'react-icons/fi'
+import { FiActivity, FiBarChart2, FiDatabase, FiLayout } from 'react-icons/fi'
 import ObservabilityPage from '../pages/ObservabilityPage'
 
 function tabClassName({ isActive }: { isActive: boolean }) {
@@ -28,17 +28,13 @@ export default function Layout() {
             <FiBarChart2 aria-hidden="true" className="button-icon" />
             Agent Observability
           </NavLink>
-          <NavLink to="/jobs" className={tabClassName}>
-            <FiDatabase aria-hidden="true" className="button-icon" />
-            Jobs
-          </NavLink>
-          <NavLink to="/matches" className={tabClassName}>
-            <FiTrendingUp aria-hidden="true" className="button-icon" />
-            Matches
-          </NavLink>
           <NavLink to="/evals" className={tabClassName}>
             <FiActivity aria-hidden="true" className="button-icon" />
             Agent Evals
+          </NavLink>
+          <NavLink to="/etl-data" className={tabClassName}>
+            <FiDatabase aria-hidden="true" className="button-icon" />
+            ETL Data
           </NavLink>
         </nav>
       </div>

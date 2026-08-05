@@ -169,85 +169,81 @@ export default function JobsPage() {
 
   return (
     <>
-      <main className="app-body app-body-jobs">
-        <section className="content-panel">
-          <div className="toolbar records-toolbar">
-            <div className="toolbar-copy">
-              <p className="eyebrow">Records</p>
-              <h2>{jobsQuery.isLoading ? 'Loading jobs...' : `${totalRows} total records`}</h2>
-            </div>
-            <div className="toolbar-actions">
-              <button
-                type="button"
-                className="primary-button ghost-button-with-icon"
-                onClick={openCreateForm}
-              >
-                <FiPlus aria-hidden="true" className="button-icon" />
-                New Job
-              </button>
-              <input
-                className="search-input"
-                type="search"
-                value={searchText}
-                onChange={(event) => changeSearchText(event.target.value)}
-                placeholder="Search company, role, or location"
-              />
-              <button
-                type="button"
-                className="ghost-button ghost-button-with-icon"
-                onClick={() => jobsQuery.refetch()}
-                disabled={jobsQuery.isFetching}
-              >
-                <FiRefreshCw
-                  aria-hidden="true"
-                  className={jobsQuery.isFetching ? 'button-icon spin' : 'button-icon'}
-                />
-                {jobsQuery.isFetching ? 'Refreshing...' : 'Refresh'}
-              </button>
-            </div>
-          </div>
-
-          {feedback && <div className="banner banner-info">{feedback}</div>}
-          {mutationError && <div className="banner banner-error">{mutationError.message}</div>}
-          {jobsQuery.error && <div className="banner banner-error">{jobsQuery.error.message}</div>}
-          {jobsCountQuery.error && <div className="banner banner-error">{jobsCountQuery.error.message}</div>}
-
-          <JobsTable
-            jobs={jobList}
-            selectedJobId={selectedJobId}
-            busy={busy}
-            onSelectJob={selectJob}
-            onDeleteJob={removeJob}
+      <div className="toolbar records-toolbar">
+        <div className="toolbar-copy">
+          <p className="eyebrow">Records</p>
+          <h2>{jobsQuery.isLoading ? 'Loading jobs...' : `${totalRows} total records`}</h2>
+        </div>
+        <div className="toolbar-actions">
+          <button
+            type="button"
+            className="primary-button ghost-button-with-icon"
+            onClick={openCreateForm}
+          >
+            <FiPlus aria-hidden="true" className="button-icon" />
+            New Job
+          </button>
+          <input
+            className="search-input"
+            type="search"
+            value={searchText}
+            onChange={(event) => changeSearchText(event.target.value)}
+            placeholder="Search company, role, or location"
           />
+          <button
+            type="button"
+            className="ghost-button ghost-button-with-icon"
+            onClick={() => jobsQuery.refetch()}
+            disabled={jobsQuery.isFetching}
+          >
+            <FiRefreshCw
+              aria-hidden="true"
+              className={jobsQuery.isFetching ? 'button-icon spin' : 'button-icon'}
+            />
+            {jobsQuery.isFetching ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
 
-          <div className="pagination-bar">
-            <div className="pagination-copy">
-              <span className="eyebrow">Pagination</span>
-              <strong>Page {page} of {totalPages}</strong>
-            </div>
-            <div className="pagination-actions">
-              <button
-                type="button"
-                className="ghost-button ghost-button-with-icon"
-                onClick={goToPreviousPage}
-                disabled={page === 1 || jobsQuery.isFetching}
-              >
-                <FiChevronLeft aria-hidden="true" className="button-icon" />
-                Previous
-              </button>
-              <button
-                type="button"
-                className="ghost-button ghost-button-with-icon"
-                onClick={goToNextPage}
-                disabled={!hasNextPage || jobsQuery.isFetching}
-              >
-                <FiChevronRight aria-hidden="true" className="button-icon" />
-                Next
-              </button>
-            </div>
-          </div>
-        </section>
-      </main>
+      {feedback && <div className="banner banner-info">{feedback}</div>}
+      {mutationError && <div className="banner banner-error">{mutationError.message}</div>}
+      {jobsQuery.error && <div className="banner banner-error">{jobsQuery.error.message}</div>}
+      {jobsCountQuery.error && <div className="banner banner-error">{jobsCountQuery.error.message}</div>}
+
+      <JobsTable
+        jobs={jobList}
+        selectedJobId={selectedJobId}
+        busy={busy}
+        onSelectJob={selectJob}
+        onDeleteJob={removeJob}
+      />
+
+      <div className="pagination-bar">
+        <div className="pagination-copy">
+          <span className="eyebrow">Pagination</span>
+          <strong>Page {page} of {totalPages}</strong>
+        </div>
+        <div className="pagination-actions">
+          <button
+            type="button"
+            className="ghost-button ghost-button-with-icon"
+            onClick={goToPreviousPage}
+            disabled={page === 1 || jobsQuery.isFetching}
+          >
+            <FiChevronLeft aria-hidden="true" className="button-icon" />
+            Previous
+          </button>
+          <button
+            type="button"
+            className="ghost-button ghost-button-with-icon"
+            onClick={goToNextPage}
+            disabled={!hasNextPage || jobsQuery.isFetching}
+          >
+            <FiChevronRight aria-hidden="true" className="button-icon" />
+            Next
+          </button>
+        </div>
+      </div>
 
       {isFormDrawerOpen && (
         <button

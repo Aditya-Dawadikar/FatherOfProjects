@@ -52,7 +52,7 @@ export default function MatchesView() {
   }
 
   return (
-    <section className="content-panel matches-panel">
+    <>
       <div className="toolbar records-toolbar">
         <div className="toolbar-copy">
           <p className="eyebrow">Processed by JobManagerAgent</p>
@@ -150,6 +150,6 @@ export default function MatchesView() {
           </button>
         </div>
       </div>
-    </section>
+    </>
   )
 }
