@@ -4,12 +4,10 @@ import OverviewAgentGraphTab from './overview/OverviewAgentGraphTab'
 import OverviewDataOverviewTab from './overview/OverviewDataOverviewTab'
 
 export default function OverviewView() {
-  const [activeTab, setActiveTab] = useState<'agent' | 'data'>('agent')
+  const [activeTab, setActiveTab] = useState<'agent' | 'data' | 'tracking'>('agent')
 
   return (
     <section className="content-panel">
-      <MlflowSummaryStrip />
-
       <div className="overview-subtabs pane-tabs" role="tablist" aria-label="Overview sub-tabs">
         <button
           type="button"
@@ -29,10 +27,24 @@ export default function OverviewView() {
         >
           Data Overview
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'tracking'}
+          className={`pane-tab${activeTab === 'tracking' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('tracking')}
+        >
+          Agent Tracking
+        </button>
       </div>
 
       {activeTab === 'agent' && <OverviewAgentGraphTab />}
       {activeTab === 'data' && <OverviewDataOverviewTab />}
+      {activeTab === 'tracking' && (
+        <div className="overview-tab-panel" role="tabpanel" aria-label="Agent Tracking">
+          <MlflowSummaryStrip />
+        </div>
+      )}
     </section>
   )
 }
