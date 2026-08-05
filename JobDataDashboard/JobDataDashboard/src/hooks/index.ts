@@ -12,6 +12,7 @@ import type {
   JobsQuery,
   MatchedJobRecord,
   MatchesQuery,
+  MlflowSummary,
   PipelineFunnel,
   ToolEvalRun,
   ToolEvalTrigger,
@@ -439,6 +440,10 @@ async function fetchAgentTopology(): Promise<AgentTopology> {
   return requestAgentJson<AgentTopology>('/agent-api/agent-topology')
 }
 
+async function fetchMlflowSummary(): Promise<MlflowSummary> {
+  return requestAgentJson<MlflowSummary>('/agent-api/mlflow-summary')
+}
+
 async function triggerGuardrailsEval(): Promise<GuardrailsEvalTrigger> {
   return requestAgentJson<GuardrailsEvalTrigger>('/agent-api/evals/guardrails', {
     method: 'POST',
@@ -471,6 +476,14 @@ export function useAgentTopology() {
   return useQuery({
     queryKey: ['agentTopology'],
     queryFn: fetchAgentTopology,
+    staleTime: 60_000,
+  })
+}
+
+export function useMlflowSummary() {
+  return useQuery({
+    queryKey: ['mlflowSummary'],
+    queryFn: fetchMlflowSummary,
     staleTime: 60_000,
   })
 }

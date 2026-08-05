@@ -18,6 +18,7 @@ from utils.mlflow_utils import get_tracking_uri
 from .agent_worker import run_agent_worker
 from .agent_topology import router as agent_topology_router
 from .eval_runs import router as eval_runs_router
+from .mlflow_summary import router as mlflow_summary_router
 
 
 load_dotenv(ENV_FILE)
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
 	)
 	app.include_router(eval_runs_router)
 	app.include_router(agent_topology_router)
+	app.include_router(mlflow_summary_router)
 	app.include_router(metrics_router)
 
 	@app.get("/health")

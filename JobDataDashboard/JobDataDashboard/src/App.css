@@ -853,6 +853,105 @@
   display: block;
 }
 
+.mlflow-summary-strip {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mlflow-summary-strip-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.mlflow-summary-strip-header h3 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+
+.mlflow-summary-strip-subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.mlflow-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.mlflow-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* .summary-card's base rule sizes every <strong> for the single-number KpiCard case; scope
+   that back down here so MlflowLink's "not configured" fallback (also a bare <strong>) doesn't
+   inherit the headline-number size and wrap awkwardly across two lines. */
+.mlflow-summary-card strong {
+  font-size: inherit;
+}
+
+.mlflow-summary-value {
+  font-size: 1.35rem;
+}
+
+.mlflow-summary-card > .mlflow-link,
+.mlflow-summary-card > strong:not(.mlflow-summary-value) {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.mlflow-summary-card-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.mlflow-summary-breakdown {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mlflow-summary-breakdown li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.mlflow-summary-breakdown li > span {
+  white-space: nowrap;
+}
+
+.mlflow-summary-breakdown .mlflow-link,
+.mlflow-summary-breakdown strong {
+  margin-top: 0;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.mlflow-summary-skeleton {
+  margin-bottom: 20px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
 .banner {
   margin-bottom: 14px;
   border-radius: 14px;
@@ -1313,7 +1412,8 @@
   }
 
   .summary-grid,
-  .form-grid {
+  .form-grid,
+  .mlflow-summary-grid {
     grid-template-columns: 1fr;
   }
 

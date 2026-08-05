@@ -104,6 +104,26 @@ export type AgentTopology = {
   edges: AgentTopologyEdge[]
 }
 
+export type MlflowEvalTypeCount = {
+  label: string
+  experiment_name: string
+  run_count: number
+  mlflow_url: string | null
+}
+
+export type MlflowSummary = {
+  generated_at: string
+  mlflow_base_url: string | null
+  traces_collected: number
+  traces_mlflow_url: string | null
+  offline_evals_triggered: number
+  offline_evals_by_type: MlflowEvalTypeCount[]
+  registered_prompt_versions: number
+  production_prompt_version: string | null
+  total_tokens_tracked: number
+  total_cost_usd_tracked: number
+}
+
 export type EvalRunStatus = 'running' | 'completed' | 'failed'
 
 export type EvalRunResult = {

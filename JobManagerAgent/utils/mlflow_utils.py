@@ -113,6 +113,24 @@ def _load_mlflow_ui_base_url() -> str | None:
 	return base_url
 
 
+def get_mlflow_ui_base_url() -> str | None:
+	"""Publicly reachable MLflow UI origin, or None if MLFLOW_UI_BASE_URL isn't set -- exposed
+	for callers (e.g. api/mlflow_summary.py) that need a bare "open MLflow" link rather than a
+	deep link into a specific run/trace/experiment."""
+	return _load_mlflow_ui_base_url()
+
+
+def build_mlflow_experiment_url(experiment_id: str) -> str | None:
+	"""Links out to an experiment's run list in the MLflow UI, or None if MLFLOW_UI_BASE_URL
+	isn't set. Unlike build_mlflow_run_url/build_mlflow_trace_url below, this only needs an
+	experiment to exist -- useful for summary KPIs that want a working link before any run has
+	been logged yet."""
+	base_url = _load_mlflow_ui_base_url()
+	if base_url is None:
+		return None
+	return f"{base_url}/#/experiments/{experiment_id}"
+
+
 def build_mlflow_run_url(experiment_id: str, run_id: str) -> str | None:
 	"""Links out to a run in the MLflow UI, or None if MLFLOW_UI_BASE_URL isn't set."""
 	base_url = _load_mlflow_ui_base_url()

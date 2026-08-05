@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import MlflowSummaryStrip from './overview/MlflowSummaryStrip'
 import OverviewAgentGraphTab from './overview/OverviewAgentGraphTab'
 import OverviewDataOverviewTab from './overview/OverviewDataOverviewTab'
 
@@ -7,6 +8,8 @@ export default function OverviewView() {
 
   return (
     <section className="content-panel">
+      <MlflowSummaryStrip />
+
       <div className="overview-subtabs pane-tabs" role="tablist" aria-label="Overview sub-tabs">
         <button
           type="button"
