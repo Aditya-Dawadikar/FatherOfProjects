@@ -22,11 +22,11 @@ export default function Layout() {
         <nav className="view-tabs">
           <NavLink to="/" end className={tabClassName}>
             <FiLayout aria-hidden="true" className="button-icon" />
-            Overview
+            Agent Overview
           </NavLink>
           <NavLink to="/observability" className={tabClassName}>
             <FiBarChart2 aria-hidden="true" className="button-icon" />
-            Observability
+            Agent Observability
           </NavLink>
           <NavLink to="/jobs" className={tabClassName}>
             <FiDatabase aria-hidden="true" className="button-icon" />
@@ -36,9 +36,9 @@ export default function Layout() {
             <FiTrendingUp aria-hidden="true" className="button-icon" />
             Matches
           </NavLink>
-          <NavLink to="/vitals" className={tabClassName}>
+          <NavLink to="/evals" className={tabClassName}>
             <FiActivity aria-hidden="true" className="button-icon" />
-            Agent Vitals
+            Agent Evals
           </NavLink>
         </nav>
       </div>

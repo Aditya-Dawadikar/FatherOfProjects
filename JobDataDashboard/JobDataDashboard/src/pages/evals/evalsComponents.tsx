@@ -14,7 +14,7 @@ import {
   latestGuardrailsRun,
   latestSweepGroup,
   latestToolRun,
-} from './vitalsUtils'
+} from './evalsUtils'
 
 export function MlflowLink({ href, label, onClick }: { href: string | null; label: string; onClick?: () => void }) {
   if (!href) {

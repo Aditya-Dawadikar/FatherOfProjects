@@ -1,6 +1,6 @@
 import { FiRefreshCw, FiZap } from 'react-icons/fi'
 import { useToolEvals, useTriggerToolEval } from '../../hooks'
-import { AgentBehaviorTable } from './vitalsComponents'
+import { AgentBehaviorTable } from './evalsComponents'
 
 export default function AgentBehaviorTab() {
   const toolEvalsQuery = useToolEvals()

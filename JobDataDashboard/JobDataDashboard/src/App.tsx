@@ -5,13 +5,13 @@ import Layout from './components/Layout'
 import JobsPage from './pages/JobsPage'
 import MatchesPage from './pages/MatchesPage'
 import OverviewPage from './pages/OverviewPage'
-import VitalsPage from './pages/VitalsPage'
-import AgentBehaviorTab from './pages/vitals/AgentBehaviorTab'
-import GuardrailsTab from './pages/vitals/GuardrailsTab'
-import KpisTab from './pages/vitals/KpisTab'
-import PromptComparisonTab from './pages/vitals/PromptComparisonTab'
-import RunHistoryTab from './pages/vitals/RunHistoryTab'
-import VitalsLayout from './pages/vitals/VitalsLayout'
+import EvalsPage from './pages/EvalsPage'
+import AgentBehaviorTab from './pages/evals/AgentBehaviorTab'
+import GuardrailsTab from './pages/evals/GuardrailsTab'
+import KpisTab from './pages/evals/KpisTab'
+import PromptComparisonTab from './pages/evals/PromptComparisonTab'
+import RunHistoryTab from './pages/evals/RunHistoryTab'
+import EvalsLayout from './pages/evals/EvalsLayout'
 
 const queryClient = new QueryClient()
 
@@ -28,8 +28,8 @@ export default function App() {
             <Route path="observability" element={null} />
             <Route path="jobs" element={<JobsPage />} />
             <Route path="matches" element={<MatchesPage />} />
-            <Route path="vitals" element={<VitalsPage />}>
-              <Route element={<VitalsLayout />}>
+            <Route path="evals" element={<EvalsPage />}>
+              <Route element={<EvalsLayout />}>
                 <Route index element={<Navigate to="kpis" replace />} />
                 <Route path="kpis" element={<KpisTab />} />
                 <Route path="prompt" element={<PromptComparisonTab />} />

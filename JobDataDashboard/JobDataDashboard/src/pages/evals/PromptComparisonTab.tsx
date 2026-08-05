@@ -1,6 +1,6 @@
 import { FiRefreshCw, FiZap } from 'react-icons/fi'
 import { useEvals, useTriggerEvalSweep } from '../../hooks'
-import { PromptComparisonTable } from './vitalsComponents'
+import { PromptComparisonTable } from './evalsComponents'
 
 export default function PromptComparisonTab() {
   const evalsQuery = useEvals()

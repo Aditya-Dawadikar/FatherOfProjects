@@ -1,6 +1,6 @@
 import { FiRefreshCw, FiZap } from 'react-icons/fi'
 import { useGuardrailsEvals, useTriggerGuardrailsEval } from '../../hooks'
-import { GuardrailsTable } from './vitalsComponents'
+import { GuardrailsTable } from './evalsComponents'
 
 export default function GuardrailsTab() {
   const guardrailsEvalsQuery = useGuardrailsEvals()

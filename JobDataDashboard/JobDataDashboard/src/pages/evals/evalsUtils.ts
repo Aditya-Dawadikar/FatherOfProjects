@@ -185,7 +185,7 @@ export function latestCompletedRun<T extends { status: EvalRunStatus; started_at
   return [...completed].sort((a, b) => (b.started_at ?? '').localeCompare(a.started_at ?? ''))[0]
 }
 
-export type VitalsListItem =
+export type EvalsListItem =
   | { kind: 'single'; run: EvalRun; sortKey: string }
   | { kind: 'sweep'; sweepId: string; runs: EvalRun[]; sortKey: string }
   | { kind: 'tool'; run: ToolEvalRun; sortKey: string }
@@ -195,9 +195,9 @@ export function groupRunsForDisplay(
   runs: EvalRun[],
   toolRuns: ToolEvalRun[],
   guardrailsRuns: GuardrailsEvalRun[] = [],
-): VitalsListItem[] {
+): EvalsListItem[] {
   const sweepGroups = new Map<string, EvalRun[]>()
-  const items: VitalsListItem[] = []
+  const items: EvalsListItem[] = []
 
   for (const run of runs) {
     if (!run.sweep_id) {

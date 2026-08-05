@@ -6,7 +6,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 // Metrics (infra-level, not an eval result) now lives on its own top-level Observability tab
 // (see Layout.tsx) rather than as a sub-tab here. Adding a new experiment type later means adding
 // one more tab here, not restructuring the tab bar.
-const VITALS_TABS = [
+const EVALS_TABS = [
   { path: 'kpis', label: 'KPIs' },
   { path: 'prompt', label: 'Prompt Version Comparison' },
   { path: 'behavior', label: 'Agent Behavior' },
@@ -14,11 +14,11 @@ const VITALS_TABS = [
   { path: 'history', label: 'Run History' },
 ]
 
-export default function VitalsLayout() {
+export default function EvalsLayout() {
   return (
     <section className="content-panel">
-      <div className="vitals-tabs-bar pane-tabs">
-        {VITALS_TABS.map((tab) => (
+      <div className="evals-tabs-bar pane-tabs">
+        {EVALS_TABS.map((tab) => (
           <NavLink
             key={tab.path}
             to={tab.path}

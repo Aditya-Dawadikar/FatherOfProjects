@@ -1,5 +1,5 @@
 import { useEvals, useGuardrailsEvals, useToolEvals } from '../../hooks'
-import { KpiCard } from './vitalsComponents'
+import { KpiCard } from './evalsComponents'
 import {
   BEHAVIOR_KPI_METRICS,
   GUARDRAILS_KPI_METRICS,
@@ -12,7 +12,7 @@ import {
   formatMetric,
   formatToolMetric,
   latestCompletedRun,
-} from './vitalsUtils'
+} from './evalsUtils'
 
 export default function KpisTab() {
   const evalsQuery = useEvals()

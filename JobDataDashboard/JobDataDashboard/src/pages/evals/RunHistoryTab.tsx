@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { FiRefreshCw } from 'react-icons/fi'
 import { useEvals, useGuardrailsEvals, useToolEvals } from '../../hooks'
-import { EvalRunRow, GuardrailsEvalRunRow, SweepGroupRow, ToolEvalRunRow } from './vitalsComponents'
+import { EvalRunRow, GuardrailsEvalRunRow, SweepGroupRow, ToolEvalRunRow } from './evalsComponents'
 import {
   distinctExperimentNames,
   groupRunsForDisplay,
   matchesHistoryFilters,
   type HistoryFilters,
-} from './vitalsUtils'
+} from './evalsUtils'
 
 export default function RunHistoryTab() {
   const evalsQuery = useEvals()

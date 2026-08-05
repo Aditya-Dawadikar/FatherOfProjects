@@ -1,5 +1,5 @@
 import { useMlflowSummary } from '../../hooks'
-import { MlflowLink } from '../../pages/vitals/vitalsComponents'
+import { MlflowLink } from '../../pages/evals/evalsComponents'
 
 function formatCount(value: number): string {
   return value.toLocaleString()
@@ -14,13 +14,13 @@ export default function MlflowSummaryStrip() {
   const summary = summaryQuery.data
 
   if (summaryQuery.isLoading) {
-    return <div className="mlflow-summary-skeleton">Loading MLflow observability signal...</div>
+    return <div className="mlflow-summary-skeleton">Loading Agent Evals KPIs...</div>
   }
 
   if (summaryQuery.error || !summary) {
     return (
       <div className="banner banner-error">
-        Could not load MLflow summary
+        Could not load Agent Evals summary
         {summaryQuery.error ? `: ${summaryQuery.error.message}` : ''}
       </div>
     )
@@ -30,7 +30,7 @@ export default function MlflowSummaryStrip() {
     <section className="mlflow-summary-strip">
       <div className="mlflow-summary-strip-header">
         <div>
-          <h3>Agent Observability — MLflow</h3>
+          <h3>Agent Evals Overview</h3>
           <p className="mlflow-summary-strip-subtitle">
             Every agent cycle and every prompt/tool/guardrail evaluation is tracked in MLflow.
           </p>
