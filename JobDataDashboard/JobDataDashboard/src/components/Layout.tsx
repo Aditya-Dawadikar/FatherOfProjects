@@ -1,11 +1,21 @@
-import { NavLink, Outlet } from 'react-router-dom'
-import { FiActivity, FiDatabase, FiLayout, FiTrendingUp } from 'react-icons/fi'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { FiActivity, FiBarChart2, FiDatabase, FiLayout, FiTrendingUp } from 'react-icons/fi'
+import ObservabilityPage from '../pages/ObservabilityPage'
 
 function tabClassName({ isActive }: { isActive: boolean }) {
   return `view-tab${isActive ? ' is-active' : ''}`
 }
 
 export default function Layout() {
+  // React Router unmounts/remounts whatever <Outlet /> renders on every navigation -- fine for
+  // every other page, but it would tear down and reload the Grafana iframe (losing its own
+  // client-side state, e.g. zoom/time-range) every time this tab is merely revisited. Rendered
+  // here instead, once, for the app's whole lifetime, and just shown/hidden with CSS based on
+  // the current route -- the "observability" child route below still exists (so /observability
+  // is a real, refreshable, linkable URL and its NavLink still activates) but renders nothing;
+  // this is the thing actually on screen there.
+  const isObservability = useLocation().pathname === '/observability'
+
   return (
     <div className="app-shell">
       <div className="top-nav">
@@ -13,6 +23,10 @@ export default function Layout() {
           <NavLink to="/" end className={tabClassName}>
             <FiLayout aria-hidden="true" className="button-icon" />
             Overview
+          </NavLink>
+          <NavLink to="/observability" className={tabClassName}>
+            <FiBarChart2 aria-hidden="true" className="button-icon" />
+            Observability
           </NavLink>
           <NavLink to="/jobs" className={tabClassName}>
             <FiDatabase aria-hidden="true" className="button-icon" />
@@ -29,7 +43,12 @@ export default function Layout() {
         </nav>
       </div>
 
-      <Outlet />
+      <div style={{ display: isObservability ? 'contents' : 'none' }}>
+        <ObservabilityPage />
+      </div>
+      <div style={{ display: isObservability ? 'none' : 'contents' }}>
+        <Outlet />
+      </div>
     </div>
   )
 }

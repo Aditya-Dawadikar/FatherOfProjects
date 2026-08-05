@@ -7,21 +7,23 @@ const GRAFANA_DASHBOARD_URL =
   import.meta.env.VITE_GRAFANA_DASHBOARD_URL ??
   'https://fatherofprojects-production-181c.up.railway.app/d/jobmanageragent-system-metrics/jobmanageragent-system-metrics?orgId=1&kiosk=tv&theme=light'
 
-export default function SystemMetricsTab() {
+export default function ObservabilityPage() {
   return (
-    <>
-      <div className="toolbar">
-        <div className="toolbar-copy">
-          <p className="eyebrow">JobManagerAgent</p>
-          <h2>System metrics</h2>
+    <main className="app-body app-body-single">
+      <section className="content-panel">
+        <div className="toolbar">
+          <div className="toolbar-copy">
+            <p className="eyebrow">JobManagerAgent</p>
+            <h2>System metrics</h2>
+          </div>
         </div>
-      </div>
-      <iframe
-        className="grafana-embed"
-        src={GRAFANA_DASHBOARD_URL}
-        title="JobManagerAgent System Metrics (Grafana)"
-        loading="lazy"
-      />
-    </>
+        <iframe
+          className="grafana-embed"
+          src={GRAFANA_DASHBOARD_URL}
+          title="JobManagerAgent System Metrics (Grafana)"
+          loading="lazy"
+        />
+      </section>
+    </main>
   )
 }
