@@ -486,6 +486,26 @@
   background: rgba(255, 255, 255, 0.55);
 }
 
+/* The rules a single consolidated guardrail node enforces (agent_topology.py's guardrail:all,
+   rule_labels) -- stacked vertically, unlike .agent-card-meta-row's wrapped horizontal row,
+   since this list is the whole point of the card, not a secondary detail. */
+.agent-card-rule-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 9px;
+}
+
+.agent-card-rule-chip {
+  border: 1px solid rgba(20, 26, 31, 0.14);
+  border-radius: 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
 .agent-card-source {
   margin: 8px 0 0;
   color: var(--muted);

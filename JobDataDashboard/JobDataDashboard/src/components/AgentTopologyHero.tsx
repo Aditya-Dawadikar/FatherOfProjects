@@ -31,6 +31,7 @@ type DetailNodeData = {
   outgoing: number
   sourcePosition: Position
   targetPosition: Position
+  ruleLabels: string[] | null
 }
 
 const ActiveNodeContext = createContext<string | null>(null)
@@ -90,11 +91,13 @@ const MINIMAP_COLOR: Record<AgentTopologyNodeKind, string> = {
   guardrail: '#c8534a',
 }
 
-const GUARDRAIL_NODE_WIDTH = 220
-const GUARDRAIL_GAP = 60
-const GUARDRAIL_X_STEP = GUARDRAIL_NODE_WIDTH + GUARDRAIL_GAP
-const GUARDRAIL_START_X = 80
-const GUARDRAIL_Y = 660
+// Guardrail rules are now stacked inside one consolidated node (see agent_topology.py's
+// guardrail:all) rather than spread across one card per rule. The rules feed INTO the middleware
+// that enforces them (GuardrailMiddleware/ToolCallLimitMiddleware), which is what actually stands
+// between the rules and the agent -- so this sits upstream of the middleware column (x=120), not
+// under the agent: rules -> middleware -> agent, left to right.
+const GUARDRAIL_X = -160
+const GUARDRAIL_Y = 255
 
 function distribute(nodes: AgentTopologyNode[], x: number, minY: number, maxY: number): NodeLayout[] {
   if (nodes.length === 0) {
@@ -131,9 +134,9 @@ function buildLayout(nodes: AgentTopologyNode[]): Map<string, Point> {
   for (const item of distribute(promptNodes, 1010, 350, 390)) {
     layout.set(item.node.id, item.point)
   }
-  guardrailNodes.forEach((node, index) => {
-    layout.set(node.id, { x: GUARDRAIL_START_X + GUARDRAIL_X_STEP * index, y: GUARDRAIL_Y })
-  })
+  for (const item of distribute(guardrailNodes, GUARDRAIL_X, GUARDRAIL_Y, GUARDRAIL_Y)) {
+    layout.set(item.node.id, item.point)
+  }
 
   return layout
 }
@@ -145,6 +148,10 @@ function sourcePositionFor(kind: AgentTopologyNodeKind): Position {
   if (kind === 'tool' || kind === 'prompt') {
     return Position.Bottom
   }
+  if (kind === 'guardrail') {
+    // Sits upstream of the middleware column (see GUARDRAIL_X above) and feeds into it left-to-right.
+    return Position.Right
+  }
   return Position.Top
 }
 
@@ -153,6 +160,10 @@ function targetPositionFor(kind: AgentTopologyNodeKind): Position {
     return Position.Left
   }
   if (kind === 'tool') {
+    return Position.Left
+  }
+  if (kind === 'middleware') {
+    // Only edge that ever targets middleware is guardrail:all, arriving from the left.
     return Position.Left
   }
   if (kind === 'prompt' || kind === 'guardrail') {
@@ -205,6 +216,15 @@ function DetailNode({ id, data, selected }: NodeProps) {
               <span>{nodeData.incoming} in</span>
               <span>{nodeData.outgoing} out</span>
             </div>
+            {nodeData.ruleLabels && nodeData.ruleLabels.length > 0 && (
+              <div className="agent-card-rule-stack">
+                {nodeData.ruleLabels.map((rule) => (
+                  <span key={rule} className="agent-card-rule-chip">
+                    {rule}
+                  </span>
+                ))}
+              </div>
+            )}
             <p className="agent-card-source">{shortSourcePath(nodeData.source)}</p>
           </div>
         </div>
@@ -234,6 +254,7 @@ function buildFlowNode(
       outgoing: edgeCounts.outgoing.get(node.id) ?? 0,
       sourcePosition,
       targetPosition,
+      ruleLabels: node.rule_labels,
     },
     sourcePosition,
     targetPosition,

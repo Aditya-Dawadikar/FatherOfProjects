@@ -86,6 +86,7 @@ export type AgentTopologyNode = {
   kind: AgentTopologyNodeKind
   detail: string
   source: string
+  rule_labels: string[] | null
 }
 
 export type AgentTopologyEdge = {

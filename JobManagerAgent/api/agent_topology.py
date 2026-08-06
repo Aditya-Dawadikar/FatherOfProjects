@@ -32,6 +32,10 @@ class AgentTopologyNode(BaseModel):
 	kind: Literal["agent", "tool", "middleware", "guardrail", "prompt"]
 	detail: str
 	source: str
+	# Only populated on the single consolidated guardrail node -- every individual guardrail check
+	# is a rule this node enforces, not a node of its own (see the guardrail:all -> middleware:*
+	# edges below), so the UI renders these as a stacked list inside that one card instead.
+	rule_labels: list[str] | None = None
 
 
 class AgentTopologyEdge(BaseModel):
@@ -139,53 +143,30 @@ def get_agent_topology() -> AgentTopologyResponse:
 			source=scoring_prompt_source,
 		),
 		AgentTopologyNode(
-			id="guardrail:prompt-injection",
-			label="prompt_injection",
+			id="guardrail:all",
+			label="Guardrails",
 			kind="guardrail",
-			detail="\n".join(f"- {pattern}" for pattern in GUARDRAIL_INJECTION_PATTERNS),
-			source="guardrails/injection.py + utils/config.py",
-		),
-		AgentTopologyNode(
-			id="guardrail:empty-reasoning",
-			label="empty_reasoning",
-			kind="guardrail",
-			detail="Blocks scoring output when reasoning is empty or whitespace.",
-			source="guardrails/checks.py",
-		),
-		AgentTopologyNode(
-			id="guardrail:oversized-reasoning",
-			label="oversized_reasoning",
-			kind="guardrail",
-			detail=f"Blocks scoring output when reasoning exceeds {GUARDRAIL_MAX_REASONING_CHARS} characters.",
-			source="guardrails/checks.py + utils/config.py",
-		),
-		AgentTopologyNode(
-			id="guardrail:unknown-job-id",
-			label="unknown_job_id",
-			kind="guardrail",
-			detail="Blocks crawl_job(job_id) when job_id was not returned by get_jobs_to_process.",
-			source="tools/agent_tools.py",
-		),
-		AgentTopologyNode(
-			id="guardrail:evaluate-before-crawl",
-			label="evaluate_before_crawl",
-			kind="guardrail",
-			detail="Blocks evaluate_match(job_id) before crawl_job(job_id) has produced job detail.",
-			source="tools/agent_tools.py",
-		),
-		AgentTopologyNode(
-			id="guardrail:record-before-evaluate",
-			label="record_before_evaluate",
-			kind="guardrail",
-			detail="Blocks record_job_result(job_id) before evaluate_match(job_id) has produced a score.",
-			source="tools/agent_tools.py",
-		),
-		AgentTopologyNode(
-			id="guardrail:tool-call-limit",
-			label="tool_call_limit_exceeded",
-			kind="guardrail",
-			detail="Raised by ToolCallLimitMiddleware when run_limit is exceeded.",
-			source="agents/react_agent.py",
+			rule_labels=[
+				"prompt_injection",
+				"empty_reasoning",
+				"oversized_reasoning",
+				"unknown_job_id",
+				"evaluate_before_crawl",
+				"record_before_evaluate",
+				"tool_call_limit_exceeded",
+			],
+			detail="\n\n".join(
+				[
+					"prompt_injection\n" + "\n".join(f"- {pattern}" for pattern in GUARDRAIL_INJECTION_PATTERNS),
+					"empty_reasoning\nBlocks scoring output when reasoning is empty or whitespace.",
+					f"oversized_reasoning\nBlocks scoring output when reasoning exceeds {GUARDRAIL_MAX_REASONING_CHARS} characters.",
+					"unknown_job_id\nBlocks crawl_job(job_id) when job_id was not returned by get_jobs_to_process.",
+					"evaluate_before_crawl\nBlocks evaluate_match(job_id) before crawl_job(job_id) has produced job detail.",
+					"record_before_evaluate\nBlocks record_job_result(job_id) before evaluate_match(job_id) has produced a score.",
+					"tool_call_limit_exceeded\nRaised by ToolCallLimitMiddleware when run_limit is exceeded.",
+				]
+			),
+			source="guardrails/injection.py, guardrails/checks.py, tools/agent_tools.py, agents/react_agent.py, utils/config.py",
 		),
 	]
 	nodes.extend(tool_nodes)
@@ -194,20 +175,16 @@ def get_agent_topology() -> AgentTopologyResponse:
 		AgentTopologyEdge(source="middleware:guardrail", target="agent:react", label="middleware"),
 		AgentTopologyEdge(source="middleware:tool-limit", target="agent:react", label="middleware"),
 		AgentTopologyEdge(source="agent:react", target="prompt:scoring", label="evaluate_match uses"),
-		AgentTopologyEdge(source="middleware:guardrail", target="guardrail:prompt-injection", label="enforces"),
-		AgentTopologyEdge(source="middleware:guardrail", target="guardrail:empty-reasoning", label="enforces"),
-		AgentTopologyEdge(source="middleware:guardrail", target="guardrail:oversized-reasoning", label="enforces"),
-		AgentTopologyEdge(source="middleware:guardrail", target="guardrail:unknown-job-id", label="enforces"),
-		AgentTopologyEdge(source="middleware:guardrail", target="guardrail:evaluate-before-crawl", label="enforces"),
-		AgentTopologyEdge(source="middleware:guardrail", target="guardrail:record-before-evaluate", label="enforces"),
-		AgentTopologyEdge(source="middleware:tool-limit", target="guardrail:tool-call-limit", label="enforces"),
+		# Rules feed into whichever middleware actually enforces them -- GuardrailMiddleware catches
+		# GuardrailBlockedError for 6 of the 7 rules; ToolCallLimitMiddleware separately enforces
+		# tool_call_limit_exceeded via a different exception path (react_agent.py). Neither guardrail
+		# reaches the agent directly; the middleware is what stands between the rules and the agent.
+		AgentTopologyEdge(source="guardrail:all", target="middleware:guardrail", label="enforced by"),
+		AgentTopologyEdge(source="guardrail:all", target="middleware:tool-limit", label="enforced by"),
 	]
 	for tool_node in tool_nodes:
 		edges.append(AgentTopologyEdge(source="agent:react", target=tool_node.id, label="calls"))
 		if tool_node.id == "tool:evaluate_match":
-			edges.append(AgentTopologyEdge(source=tool_node.id, target="guardrail:prompt-injection", label="checks"))
-			edges.append(AgentTopologyEdge(source=tool_node.id, target="guardrail:empty-reasoning", label="checks"))
-			edges.append(AgentTopologyEdge(source=tool_node.id, target="guardrail:oversized-reasoning", label="checks"))
 			edges.append(AgentTopologyEdge(source=tool_node.id, target="prompt:scoring", label="renders"))
 
 	return AgentTopologyResponse(
