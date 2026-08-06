@@ -2,6 +2,9 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { NodeProps } from '@xyflow/react'
 import { Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, useNodesState } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import type { IconType } from 'react-icons'
+import { FiLayers, FiShield, FiTool } from 'react-icons/fi'
+import { SiGooglegemini, SiLangchain } from 'react-icons/si'
 import type { AgentTopology, AgentTopologyNode, AgentTopologyNodeKind } from '../types'
 
 type Point = {
@@ -61,12 +64,22 @@ const KIND_SUMMARY: Record<AgentTopologyNodeKind, string> = {
   guardrail: 'Safety gate',
 }
 
-const KIND_ICON: Record<AgentTopologyNodeKind, string> = {
-  middleware: 'MW',
-  agent: 'AG',
-  tool: 'TL',
-  prompt: 'LL',
-  guardrail: 'GR',
+// A brand logo for the two nodes with an actual named underlying tech (the ReAct orchestrator is
+// built on LangChain; the scoring prompt is rendered and sent to Gemini). Keyed by node id, not
+// kind, since it's specifically these two nodes, not "every agent-kind node" / "every prompt-kind
+// node" -- every other node (tools, middleware, guardrails) is our own code with no single vendor
+// to badge, so those fall back to a generic icon per kind instead (KIND_FALLBACK_ICON below).
+const NODE_ICON: Record<string, IconType> = {
+  'agent:react': SiLangchain,
+  'prompt:scoring': SiGooglegemini,
+}
+
+const KIND_FALLBACK_ICON: Record<AgentTopologyNodeKind, IconType> = {
+  middleware: FiLayers,
+  agent: SiLangchain,
+  tool: FiTool,
+  prompt: SiGooglegemini,
+  guardrail: FiShield,
 }
 
 const MINIMAP_COLOR: Record<AgentTopologyNodeKind, string> = {
@@ -168,25 +181,33 @@ function DetailNode({ id, data, selected }: NodeProps) {
   const nodeData = data as unknown as DetailNodeData
   const activeNodeId = useContext(ActiveNodeContext)
   const isActive = activeNodeId === id
+  const TechIcon = NODE_ICON[id] ?? KIND_FALLBACK_ICON[nodeData.kind]
   return (
     <div className={`agent-card-node ${KIND_CLASS[nodeData.kind]}${isActive ? ' is-active' : ''}${selected ? ' is-selected' : ''}`}>
       <Handle type="target" position={nodeData.targetPosition} className="agent-handle" />
       <Handle type="source" position={nodeData.sourcePosition} className="agent-handle" />
 
-      <div className="agent-card-head">
-        <span className="agent-card-kind">{KIND_ICON[nodeData.kind]}</span>
-        <strong className="agent-card-title">{nodeData.label}</strong>
-        <span className="agent-card-status">{isActive ? 'FOCUS' : 'LIVE'}</span>
-      </div>
-
-      <div className="agent-card-body">
-        <p className="agent-card-summary">{nodeData.summary}</p>
-        <div className="agent-card-meta-row">
-          <span>{nodeData.stage}</span>
-          <span>{nodeData.incoming} in</span>
-          <span>{nodeData.outgoing} out</span>
+      <div className="node-card-layout">
+        <div className="node-card-logo-rail">
+          <TechIcon aria-hidden="true" />
         </div>
-        <p className="agent-card-source">{shortSourcePath(nodeData.source)}</p>
+
+        <div className="node-card-content">
+          <div className="node-card-head">
+            <strong className="agent-card-title">{nodeData.label}</strong>
+            <span className="agent-card-status">{isActive ? 'FOCUS' : 'LIVE'}</span>
+          </div>
+
+          <div className="agent-card-body">
+            <p className="agent-card-summary">{nodeData.summary}</p>
+            <div className="agent-card-meta-row">
+              <span>{nodeData.stage}</span>
+              <span>{nodeData.incoming} in</span>
+              <span>{nodeData.outgoing} out</span>
+            </div>
+            <p className="agent-card-source">{shortSourcePath(nodeData.source)}</p>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -326,7 +347,7 @@ export default function AgentTopologyHero({ topology }: Props) {
         </p>
       </div>
 
-      <div className="agent-hero-kpis">
+      {/* <div className="agent-hero-kpis">
         <article className="agent-hero-chip">
           <span>Agent</span>
           <strong>{topology.agent_name}</strong>
@@ -343,7 +364,7 @@ export default function AgentTopologyHero({ topology }: Props) {
           <span>Tool Call Limit</span>
           <strong>{topology.tool_call_limit}</strong>
         </article>
-      </div>
+      </div> */}
 
       <h3>Agent Workflow Stages</h3>
       <div className="agent-flow-stages" aria-label="Flow stages">

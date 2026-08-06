@@ -325,6 +325,7 @@
 }
 
 .agent-card-node {
+  position: relative;
   width: 220px;
   border: 1.5px solid;
   border-radius: 14px;
@@ -332,6 +333,46 @@
   color: var(--text);
   box-shadow: 0 8px 16px rgba(14, 19, 23, 0.12);
   transition: box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease;
+}
+
+.you-are-here-badge {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: 0 6px 14px rgba(20, 26, 31, 0.28);
+  z-index: 5;
+}
+
+.you-are-here-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #ffffff;
+  animation: you-are-here-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes you-are-here-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .agent-flow .react-flow__node:hover .agent-card-node,
@@ -346,27 +387,49 @@
   transform: scale(1.03) rotate(-0.4deg);
 }
 
-.agent-card-head {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 8px;
+/* Standard card layout, shared by AgentTopologyHero and SystemArchitectureHero: a big logo rail
+   (40% of the card) beside a content column, so every node card across both graphs reads the
+   same way -- one tech/tool logo, sized to actually be legible, not a tiny corner badge. */
+.node-card-layout {
+  display: flex;
+  align-items: stretch;
+}
+
+.node-card-logo-rail {
+  flex: 0 0 40%;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  padding: 10px 8px;
+  border-right: 1px solid rgba(20, 26, 31, 0.12);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.node-card-logo-rail svg {
+  width: 100%;
+  height: auto;
+  max-width: 60px;
+  max-height: 60px;
+}
+
+.node-card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.node-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 9px 10px;
   border-bottom: 1px solid rgba(20, 26, 31, 0.1);
 }
 
-.agent-card-kind {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  border: 1px solid rgba(20, 26, 31, 0.18);
-  font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  background: rgba(255, 255, 255, 0.6);
+.agent-detail-tech-icon {
+  width: 15px;
+  height: 15px;
+  color: var(--muted);
 }
 
 .agent-card-title {
@@ -479,29 +542,102 @@
   color: #4b3787;
 }
 
-.agent-node-agent .agent-card-kind {
+.agent-node-agent .node-card-logo-rail {
   color: #17553b;
-  background: rgba(255, 255, 255, 0.7);
 }
 
-.agent-node-tool .agent-card-kind {
+.agent-node-tool .node-card-logo-rail {
   color: #1b5f87;
-  background: rgba(255, 255, 255, 0.7);
 }
 
-.agent-node-middleware .agent-card-kind {
+.agent-node-middleware .node-card-logo-rail {
   color: #785114;
-  background: rgba(255, 255, 255, 0.7);
 }
 
-.agent-node-guardrail .agent-card-kind {
+.agent-node-guardrail .node-card-logo-rail {
   color: #7e2520;
-  background: rgba(255, 255, 255, 0.7);
 }
 
-.agent-node-prompt .agent-card-kind {
+.agent-node-prompt .node-card-logo-rail {
   color: #4b3787;
-  background: rgba(255, 255, 255, 0.7);
+}
+
+/* System-architecture node kinds (SystemArchitectureHero.tsx) -- same pattern as the
+   .agent-node-* set above, one border/background/status/kind-badge color per kind, just a
+   distinct palette from the agent-topology kinds so the two graphs don't look identical. */
+.arch-node-ingestion,
+.agent-kind-pill.arch-node-ingestion {
+  border-color: #1b5f87;
+  background: linear-gradient(165deg, #eaf6fd, #d3ebf8);
+}
+
+.arch-node-datastore,
+.agent-kind-pill.arch-node-datastore {
+  border-color: #785114;
+  background: linear-gradient(165deg, #fef4de, #fbe6bc);
+}
+
+.arch-node-compute,
+.agent-kind-pill.arch-node-compute {
+  border-color: #17553b;
+  background: linear-gradient(165deg, #e6f9ee, #cdeedb);
+}
+
+.arch-node-observability,
+.agent-kind-pill.arch-node-observability {
+  border-color: #4b3787;
+  background: linear-gradient(165deg, #f0ecfd, #e0d7fa);
+}
+
+.arch-node-frontend,
+.agent-kind-pill.arch-node-frontend {
+  border-color: #7e2520;
+  background: linear-gradient(165deg, #fdeae7, #f8d1cb);
+}
+
+.arch-node-ingestion .agent-card-status {
+  color: #1b5f87;
+}
+
+.arch-node-datastore .agent-card-status {
+  color: #785114;
+}
+
+.arch-node-compute .agent-card-status {
+  color: #17553b;
+}
+
+.arch-node-observability .agent-card-status {
+  color: #4b3787;
+}
+
+.arch-node-frontend .agent-card-status {
+  color: #7e2520;
+}
+
+.arch-node-ingestion .node-card-logo-rail {
+  color: #1b5f87;
+}
+
+.arch-node-datastore .node-card-logo-rail {
+  color: #785114;
+}
+
+.arch-node-compute .node-card-logo-rail {
+  color: #17553b;
+}
+
+.arch-node-observability .node-card-logo-rail {
+  color: #4b3787;
+}
+
+.arch-node-frontend .node-card-logo-rail {
+  color: #7e2520;
+}
+
+.agent-flow-edge.edge-observability .react-flow__edge-path {
+  stroke: rgba(75, 55, 135, 0.55);
+  stroke-dasharray: 3 5;
 }
 
 .agent-flow .react-flow__edge-path,

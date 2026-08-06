@@ -2,9 +2,10 @@ import { useState } from 'react'
 import MlflowSummaryStrip from './overview/MlflowSummaryStrip'
 import OverviewAgentGraphTab from './overview/OverviewAgentGraphTab'
 import OverviewDataOverviewTab from './overview/OverviewDataOverviewTab'
+import OverviewEtlArchitectureTab from './overview/OverviewEtlArchitectureTab'
 
 export default function OverviewView() {
-  const [activeTab, setActiveTab] = useState<'agent' | 'data' | 'tracking'>('agent')
+  const [activeTab, setActiveTab] = useState<'agent' | 'data' | 'tracking' | 'architecture'>('agent')
 
   return (
     <section className="content-panel">
@@ -16,16 +17,7 @@ export default function OverviewView() {
           className={`pane-tab${activeTab === 'agent' ? ' is-active' : ''}`}
           onClick={() => setActiveTab('agent')}
         >
-          Agent Graph
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'data'}
-          className={`pane-tab${activeTab === 'data' ? ' is-active' : ''}`}
-          onClick={() => setActiveTab('data')}
-        >
-          Data Overview
+          Agent Architecture
         </button>
         <button
           type="button"
@@ -36,6 +28,24 @@ export default function OverviewView() {
         >
           Agent Tracking
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'architecture'}
+          className={`pane-tab${activeTab === 'architecture' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('architecture')}
+        >
+          ETL Architecture
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'data'}
+          className={`pane-tab${activeTab === 'data' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('data')}
+        >
+          Data Overview
+        </button>
       </div>
 
       {activeTab === 'agent' && <OverviewAgentGraphTab />}
@@ -45,6 +55,7 @@ export default function OverviewView() {
           <MlflowSummaryStrip />
         </div>
       )}
+      {activeTab === 'architecture' && <OverviewEtlArchitectureTab />}
     </section>
   )
 }
