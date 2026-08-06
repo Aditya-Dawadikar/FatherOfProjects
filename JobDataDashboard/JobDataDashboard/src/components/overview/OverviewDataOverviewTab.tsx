@@ -21,7 +21,7 @@ export default function OverviewDataOverviewTab() {
       <div className="toolbar">
         <div className="toolbar-copy">
           <p className="eyebrow">Scrape &rarr; agent &rarr; match quality</p>
-          <h2>{funnelQuery.isLoading ? 'Loading pipeline...' : 'Pipeline overview'}</h2>
+          <h2>{funnelQuery.isLoading ? 'Loading Data Overview...' : 'Processed Data Distribution'}</h2>
         </div>
         <div className="toolbar-actions">
           <button
@@ -39,7 +39,7 @@ export default function OverviewDataOverviewTab() {
         </div>
       </div>
 
-      {funnel && (
+      {/* {funnel && (
         <div className="summary-grid">
           <article className="summary-card">
             <span>Jobs Scraped</span>
@@ -66,7 +66,7 @@ export default function OverviewDataOverviewTab() {
             <strong>{funnel.failed_matches}</strong>
           </article>
         </div>
-      )}
+      )} */}
 
       {funnelQuery.error && <div className="banner banner-error">{funnelQuery.error.message}</div>}
 
