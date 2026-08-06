@@ -91,13 +91,12 @@ const MINIMAP_COLOR: Record<AgentTopologyNodeKind, string> = {
   guardrail: '#c8534a',
 }
 
-// Guardrail rules are now stacked inside one consolidated node (see agent_topology.py's
-// guardrail:all) rather than spread across one card per rule. The rules feed INTO the middleware
-// that enforces them (GuardrailMiddleware/ToolCallLimitMiddleware), which is what actually stands
-// between the rules and the agent -- so this sits upstream of the middleware column (x=120), not
-// under the agent: rules -> middleware -> agent, left to right.
+// Guardrail rules are stacked inside per-middleware nodes (see agent_topology.py's guardrail:checks
+// and guardrail:tool-call-limit) rather than one card per rule -- one guardrail node per middleware
+// that actually enforces its rules, never shared. Sits upstream of the middleware column (x=120),
+// using the same y-range so each guardrail node lines up with the one middleware it feeds into:
+// rules -> middleware -> agent, left to right, top-to-bottom pairing preserved.
 const GUARDRAIL_X = -160
-const GUARDRAIL_Y = 255
 
 function distribute(nodes: AgentTopologyNode[], x: number, minY: number, maxY: number): NodeLayout[] {
   if (nodes.length === 0) {
@@ -134,7 +133,7 @@ function buildLayout(nodes: AgentTopologyNode[]): Map<string, Point> {
   for (const item of distribute(promptNodes, 1010, 350, 390)) {
     layout.set(item.node.id, item.point)
   }
-  for (const item of distribute(guardrailNodes, GUARDRAIL_X, GUARDRAIL_Y, GUARDRAIL_Y)) {
+  for (const item of distribute(guardrailNodes, GUARDRAIL_X, 150, 360)) {
     layout.set(item.node.id, item.point)
   }
 
@@ -163,7 +162,7 @@ function targetPositionFor(kind: AgentTopologyNodeKind): Position {
     return Position.Left
   }
   if (kind === 'middleware') {
-    // Only edge that ever targets middleware is guardrail:all, arriving from the left.
+    // The only edges that ever target middleware are the two guardrail nodes, each arriving from the left.
     return Position.Left
   }
   if (kind === 'prompt' || kind === 'guardrail') {

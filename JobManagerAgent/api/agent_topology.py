@@ -32,9 +32,10 @@ class AgentTopologyNode(BaseModel):
 	kind: Literal["agent", "tool", "middleware", "guardrail", "prompt"]
 	detail: str
 	source: str
-	# Only populated on the single consolidated guardrail node -- every individual guardrail check
-	# is a rule this node enforces, not a node of its own (see the guardrail:all -> middleware:*
-	# edges below), so the UI renders these as a stacked list inside that one card instead.
+	# Only populated on guardrail nodes -- each individual guardrail check is a rule this node
+	# enforces, not a node of its own (see the guardrail:* -> middleware:* edges below, one
+	# guardrail node per middleware that actually enforces its rules), so the UI renders these as
+	# a stacked list inside that one card instead.
 	rule_labels: list[str] | None = None
 
 
@@ -143,9 +144,12 @@ def get_agent_topology() -> AgentTopologyResponse:
 			source=scoring_prompt_source,
 		),
 		AgentTopologyNode(
-			id="guardrail:all",
-			label="Guardrails",
+			id="guardrail:checks",
+			label="Guardrail Checks",
 			kind="guardrail",
+			# Exactly the 6 rules GuardrailMiddleware enforces (guardrails/middleware.py catches
+			# GuardrailBlockedError raised by each of these) -- tool_call_limit_exceeded is a
+			# separate node below since it's a different middleware/exception path entirely.
 			rule_labels=[
 				"prompt_injection",
 				"empty_reasoning",
@@ -153,7 +157,6 @@ def get_agent_topology() -> AgentTopologyResponse:
 				"unknown_job_id",
 				"evaluate_before_crawl",
 				"record_before_evaluate",
-				"tool_call_limit_exceeded",
 			],
 			detail="\n\n".join(
 				[
@@ -163,10 +166,20 @@ def get_agent_topology() -> AgentTopologyResponse:
 					"unknown_job_id\nBlocks crawl_job(job_id) when job_id was not returned by get_jobs_to_process.",
 					"evaluate_before_crawl\nBlocks evaluate_match(job_id) before crawl_job(job_id) has produced job detail.",
 					"record_before_evaluate\nBlocks record_job_result(job_id) before evaluate_match(job_id) has produced a score.",
-					"tool_call_limit_exceeded\nRaised by ToolCallLimitMiddleware when run_limit is exceeded.",
 				]
 			),
-			source="guardrails/injection.py, guardrails/checks.py, tools/agent_tools.py, agents/react_agent.py, utils/config.py",
+			source="guardrails/injection.py, guardrails/checks.py, tools/agent_tools.py",
+		),
+		AgentTopologyNode(
+			id="guardrail:tool-call-limit",
+			label="Tool Call Limit",
+			kind="guardrail",
+			# ToolCallLimitMiddleware's own rule -- raises ToolCallLimitExceededError, a distinct
+			# exception path from GuardrailBlockedError above, so it's not enforced by (or grouped
+			# with) GuardrailMiddleware's checks.
+			rule_labels=["tool_call_limit_exceeded"],
+			detail="tool_call_limit_exceeded\nRaised by ToolCallLimitMiddleware when run_limit is exceeded.",
+			source="agents/react_agent.py",
 		),
 	]
 	nodes.extend(tool_nodes)
@@ -175,12 +188,12 @@ def get_agent_topology() -> AgentTopologyResponse:
 		AgentTopologyEdge(source="middleware:guardrail", target="agent:react", label="middleware"),
 		AgentTopologyEdge(source="middleware:tool-limit", target="agent:react", label="middleware"),
 		AgentTopologyEdge(source="agent:react", target="prompt:scoring", label="evaluate_match uses"),
-		# Rules feed into whichever middleware actually enforces them -- GuardrailMiddleware catches
-		# GuardrailBlockedError for 6 of the 7 rules; ToolCallLimitMiddleware separately enforces
-		# tool_call_limit_exceeded via a different exception path (react_agent.py). Neither guardrail
+		# Each guardrail node feeds into the one middleware that actually enforces it -- never both,
+		# since GuardrailMiddleware and ToolCallLimitMiddleware catch different exception types for
+		# an entirely disjoint set of rules (see each node's comment above). Neither guardrail
 		# reaches the agent directly; the middleware is what stands between the rules and the agent.
-		AgentTopologyEdge(source="guardrail:all", target="middleware:guardrail", label="enforced by"),
-		AgentTopologyEdge(source="guardrail:all", target="middleware:tool-limit", label="enforced by"),
+		AgentTopologyEdge(source="guardrail:checks", target="middleware:guardrail", label="enforced by"),
+		AgentTopologyEdge(source="guardrail:tool-call-limit", target="middleware:tool-limit", label="enforced by"),
 	]
 	for tool_node in tool_nodes:
 		edges.append(AgentTopologyEdge(source="agent:react", target=tool_node.id, label="calls"))
