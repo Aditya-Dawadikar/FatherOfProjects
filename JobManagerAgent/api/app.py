@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from integrations.metrics import metrics_router, run_metrics_collector
 from integrations.mlflow import register_prompt_variants
 from integrations.streaming import RedisStreamPublisher
+from scripts.run_migrations import run_pending_migrations
 from utils.agent_logger import configure_logging, get_agent_logger
 from utils.env_utils import ENV_FILE
 from utils.mlflow_utils import get_tracking_uri
@@ -30,6 +31,17 @@ LOGGER = get_agent_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+	# Runs first, before anything below can touch the database -- the agent worker thread started
+	# further down begins writing to job_matches almost immediately, so the schema has to already
+	# be current by the time it does. Unlike register_prompt_variants below, a failure here is not
+	# swallowed: a schema still missing something the code assumes exists should fail startup
+	# loudly rather than let the server come up and start throwing on every write. Applies
+	# whichever migrations in scripts/migrations/ haven't been recorded as applied yet (see
+	# scripts/run_migrations.py) -- adding a migration never requires touching this call site.
+	# Safe on every boot: an already-current schema is a fast no-op.
+	applied = run_pending_migrations()
+	LOGGER.info("Schema migrations applied=%s", applied or "none (already current)")
+
 	publisher = RedisStreamPublisher.from_env()
 	tracking_uri = get_tracking_uri()
 	LOGGER.info("MLflow startup target uri=%s", tracking_uri)
