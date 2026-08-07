@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.job_data import Base
@@ -26,15 +26,22 @@ class JobMatch(Base):
 
 	__tablename__ = load_job_match_table_name()
 
+	# Composite PK (job_id, prompt_version): a job can carry one row per prompt version it's
+	# been scored under (its original score plus any backfilled rubric score), not just one
+	# ever. See JobManagerAgent/scripts/migrate_job_matches_v2.py for the one-time migration.
 	job_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+	prompt_version: Mapped[str] = mapped_column(String(50), primary_key=True)
 	match_score: Mapped[int] = mapped_column(Integer, nullable=False)
 	is_match: Mapped[bool] = mapped_column(Boolean, nullable=False)
 	reasoning: Mapped[str | None] = mapped_column(Text)
 	prompt_name: Mapped[str] = mapped_column(String(255), nullable=False)
-	prompt_version: Mapped[str] = mapped_column(String(50), nullable=False)
 	model_name: Mapped[str] = mapped_column(String(255), nullable=False)
 	evaluated_at: Mapped[datetime] = mapped_column(
 		DateTime(timezone=False),
 		default=datetime.utcnow,
 		nullable=False,
 	)
+	# Raw per-criterion breakdown from a rubric-based prompt; NULL for legacy (v1-v3) rows.
+	# See JobManagerAgent/llm_providers/base.py:compute_match_result for how match_score is
+	# deterministically derived from this rather than being LLM-decided.
+	score_breakdown: Mapped[dict | None] = mapped_column(JSON)

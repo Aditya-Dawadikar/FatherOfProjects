@@ -31,6 +31,7 @@ from utils.config import (
 	load_resume,
 )
 from utils.env_utils import load_env_value
+from utils.matching_controls import unscored_backfill_pause_reason
 from utils.mlflow_utils import (
 	ensure_tracking_uri_configured,
 	get_tracking_uri,
@@ -104,6 +105,17 @@ def run_matching_cycle_with_agent(
 	cycle_id = cycle_id or new_id()
 	log = LOGGER.bind(cycle_id=cycle_id, mode=mode)
 
+	# Only mode="backfill" (idle-triggered draining of never-scored jobs) can be paused -- live
+	# cycles (mode="live", triggered by pipeline_completed or boot catch-up) always run. See
+	# utils/matching_controls.py for why this exists alongside get_active_prompt() already
+	# re-resolving 'production' fresh every cycle: this gives an operator a clean, predictable
+	# window during a prompt cutover rather than depending solely on that automatic resolution.
+	if mode == "backfill":
+		pause_reason = unscored_backfill_pause_reason()
+		if pause_reason is not None:
+			log.action("cycle_skipped_unscored_backfill_paused", pause_reason=pause_reason)
+			return {"cycle_id": cycle_id, "mode": mode, "skipped": True, "reason": "unscored_backfill_paused"}
+
 	engine = create_db_engine(load_database_url())
 	Base.metadata.create_all(engine)
 
@@ -111,8 +123,18 @@ def run_matching_cycle_with_agent(
 	order = _ORDER_BY_MODE[mode]
 	threshold = load_match_threshold()
 	resume_text = load_resume()
-	prompt_version_obj = get_active_prompt()
-	prompt_version = str(prompt_version_obj.version)
+	prompt_version_obj = get_active_prompt(engine)
+	prompt_version = prompt_version_obj.version_id
+	# Structured, grep-able record of exactly which prompt version/schema this cycle used --
+	# separate from the MLflow params logged below, which need the MLflow UI to inspect. This is
+	# the log line to check when verifying a prompt cutover (POST /admin/active-prompt) actually
+	# took effect on the next live/backfill cycle.
+	log.action(
+		"cycle_prompt_resolved",
+		prompt_name=PROMPT_NAME,
+		prompt_version=prompt_version,
+		schema_mode=prompt_version_obj.schema_mode,
+	)
 	model_name = DEFAULT_MODEL
 	provider = load_provider_name()
 	# Separate from the ChatGoogleGenerativeAI instance below: this is the raw google-genai

@@ -1,0 +1,6 @@
+{
+  "schema_mode": "single",
+  "rubric_version": 2,
+  "criteria": ["skills_match", "experience_fit", "location_visa_fit", "compensation_fit", "role_scope_fit"],
+  "criterion_scale": [0, 10]
+}

@@ -59,6 +59,7 @@ _SUMMARY_METRIC_KEYS = (
 	"recall",
 	"f1",
 	"score_in_range_rate",
+	"criteria_in_range_rate",
 	"mean_predicted_score",
 	"total_prompt_tokens",
 	"total_completion_tokens",
@@ -141,6 +142,12 @@ class EvalTriggerRequest(BaseModel):
 		description="Only score the first N cases. Recommended when testing via this page -- "
 		"omitting it scores the entire dataset (60 cases in golden_dataset.jsonl), which makes "
 		"that many real, billed Gemini calls and can take 10+ minutes under the default RPM cap.",
+	)
+	batch_size: int | None = Field(
+		default=None,
+		description="Only applies when the resolved prompt has schema_mode='batch' (e.g. "
+		"job_match_v5.txt): how many cases go into one score_jobs_batch() call. Defaults to "
+		"BACKFILL_BATCH_SIZE. Ignored for schema_mode='single'/'legacy' prompts.",
 	)
 
 	model_config = {
@@ -626,6 +633,7 @@ def _run_eval_in_background(
 			run_name=run_name,
 			limit=payload.limit,
 			sweep_id=sweep_id,
+			batch_size=payload.batch_size,
 		)
 	except Exception:
 		# run_offline_eval() already tagged error_message on the MLflow run and marked it FAILED

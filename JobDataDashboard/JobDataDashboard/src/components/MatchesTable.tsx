@@ -2,6 +2,8 @@ import type { MatchedJobRecord } from '../types'
 
 type MatchesTableProps = {
   matches: MatchedJobRecord[]
+  selectedJobId?: number | null
+  onSelectMatch?: (match: MatchedJobRecord) => void
 }
 
 function scoreBand(score: number): 'high' | 'mid' | 'low' {
@@ -14,7 +16,7 @@ function scoreBand(score: number): 'high' | 'mid' | 'low' {
   return 'low'
 }
 
-export default function MatchesTable({ matches }: MatchesTableProps) {
+export default function MatchesTable({ matches, selectedJobId = null, onSelectMatch }: MatchesTableProps) {
   if (!matches.length) {
     return (
       <div className="empty-state">
@@ -42,7 +44,11 @@ export default function MatchesTable({ matches }: MatchesTableProps) {
         </thead>
         <tbody>
           {matches.map((match) => (
-            <tr key={match.job_id}>
+            <tr
+              key={match.job_id}
+              className={match.job_id === selectedJobId ? 'is-selected' : undefined}
+              onClick={() => onSelectMatch?.(match)}
+            >
               <td>{match.job_id}</td>
               <td>
                 <div className="company-cell">

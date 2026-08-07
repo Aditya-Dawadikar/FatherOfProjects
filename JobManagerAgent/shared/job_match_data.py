@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, Select, String, Text, select
+from sqlalchemy import JSON, Boolean, DateTime, Integer, Select, String, Text, func, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.job_data import Base, JobListing
@@ -17,18 +17,28 @@ def load_job_match_table_name() -> str:
 class JobMatch(Base):
 	__tablename__ = load_job_match_table_name()
 
+	# Composite PK (job_id, prompt_version) -- not job_id alone -- so the same job can carry
+	# one row per prompt version it's been scored under (e.g. its original v1 score and a
+	# rubric-based v4/v5 backfill score can coexist) instead of a re-score overwriting/colliding
+	# with history. See scripts/migrate_job_matches_v2.py for the one-time migration that widens
+	# an existing table's PK to match.
 	job_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+	prompt_version: Mapped[str] = mapped_column(String(50), primary_key=True)
 	match_score: Mapped[int] = mapped_column(Integer, nullable=False)
 	is_match: Mapped[bool] = mapped_column(Boolean, nullable=False)
 	reasoning: Mapped[str | None] = mapped_column(Text)
 	prompt_name: Mapped[str] = mapped_column(String(255), nullable=False)
-	prompt_version: Mapped[str] = mapped_column(String(50), nullable=False)
 	model_name: Mapped[str] = mapped_column(String(255), nullable=False)
 	evaluated_at: Mapped[datetime] = mapped_column(
 		DateTime(timezone=False),
 		default=datetime.utcnow,
 		nullable=False,
 	)
+	# Raw per-criterion breakdown from a rubric-based prompt (schema_mode "single"/"batch"):
+	# {"skills_match": {"score": 0-10, "reasoning": "..."}, ...}. NULL for legacy (v1-v3)
+	# results, whose match_score/reasoning were decided by the LLM directly rather than
+	# aggregated deterministically from criteria -- see llm_providers/base.py:compute_match_result.
+	score_breakdown: Mapped[dict | None] = mapped_column(JSON)
 
 
 def unevaluated_job_ids_stmt(limit: int) -> Select:
@@ -36,5 +46,37 @@ def unevaluated_job_ids_stmt(limit: int) -> Select:
 		select(JobListing.job_id, JobListing.job_url, JobListing.job_role, JobListing.company_name)
 		.where(JobListing.job_id.notin_(select(JobMatch.job_id)))
 		.order_by(JobListing.updated_at.desc())
+		.limit(limit)
+	)
+
+
+def reprocess_candidates_stmt(*, target_prompt_version: str, limit: int) -> Select:
+	"""Jobs that have at least one job_matches row (under any prompt_version) but none yet
+	under `target_prompt_version` -- the backfill candidate set for re-scoring already-matched
+	jobs under a new prompt, as opposed to unevaluated_job_ids_stmt's "never scored at all"
+	set. Ordered is_match DESC (a job counts as "matched" for priority purposes if ANY of its
+	existing prompt-version rows say so, per the agreed backfill priority: match=true jobs
+	first, then non-matches) then oldest-first-evaluated within each group, so a repeated/resumed
+	backfill run always makes forward progress instead of re-picking recently-touched rows.
+
+	Aggregates per job_id (bool_or/min) rather than joining JobMatch directly onto JobListing --
+	a job can now have multiple job_matches rows (one per prompt_version), and a plain join would
+	fan out into one duplicate JobListing row per existing version instead of one candidate per job.
+	"""
+	already_has_target_version = select(JobMatch.job_id).where(JobMatch.prompt_version == target_prompt_version)
+	existing_match_summary = (
+		select(
+			JobMatch.job_id.label("job_id"),
+			func.bool_or(JobMatch.is_match).label("ever_matched"),
+			func.min(JobMatch.evaluated_at).label("first_evaluated_at"),
+		)
+		.group_by(JobMatch.job_id)
+		.subquery()
+	)
+	return (
+		select(JobListing.job_id, JobListing.job_url, JobListing.job_role, JobListing.company_name)
+		.join(existing_match_summary, existing_match_summary.c.job_id == JobListing.job_id)
+		.where(JobListing.job_id.notin_(already_has_target_version))
+		.order_by(existing_match_summary.c.ever_matched.desc(), existing_match_summary.c.first_evaluated_at.asc())
 		.limit(limit)
 	)

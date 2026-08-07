@@ -9,6 +9,7 @@ from mlflow.exceptions import MlflowException
 from pydantic import BaseModel
 
 from integrations.mlflow import PROMPT_NAME, get_active_prompt
+from shared.job_data import get_shared_engine
 from utils.mlflow_utils import (
     build_mlflow_experiment_url,
     ensure_tracking_uri_configured,
@@ -81,7 +82,7 @@ def _load_prompt_registry_stats() -> tuple[int, str | None]:
         version_count = 0
 
     try:
-        production_version = str(get_active_prompt().version)
+        production_version = get_active_prompt(get_shared_engine()).version_id
     except Exception:
         production_version = None
 

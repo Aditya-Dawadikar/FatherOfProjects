@@ -134,6 +134,7 @@ class JobMatchRead(BaseModel):
 	prompt_version: str
 	model_name: str
 	evaluated_at: datetime
+	score_breakdown: dict[str, dict[str, object]] | None = None
 
 	model_config = ConfigDict(from_attributes=True)
 
@@ -146,6 +147,15 @@ class JobWithMatchRead(JobRead):
 	prompt_version: str
 	model_name: str
 	evaluated_at: datetime
+	score_breakdown: dict[str, dict[str, object]] | None = None
+
+
+class PromptVersionSummary(BaseModel):
+	prompt_version: str
+	prompt_name: str
+	model_name: str
+	row_count: int
+	latest_evaluated_at: datetime
 
 
 class PipelineFunnelResponse(BaseModel):
@@ -177,6 +187,7 @@ def serialize_job_with_match(listing: JobListing, match: JobMatch) -> dict[str, 
 		prompt_version=match.prompt_version,
 		model_name=match.model_name,
 		evaluated_at=match.evaluated_at.isoformat() if match.evaluated_at else None,
+		score_breakdown=match.score_breakdown,
 	)
 	return payload
 
@@ -250,6 +261,20 @@ def with_match_filters(
 		statement = statement.where(JobMatch.prompt_version == prompt_version)
 
 	return statement
+
+
+def resolve_prompt_version(session: Session, prompt_version: str | None) -> str | None:
+	"""job_matches can now hold multiple rows per job_id (one per prompt_version a job's been
+	scored under -- see shared/job_match_data.py). Every endpoint that filters/joins on JobMatch
+	needs an explicit prompt_version to avoid returning one duplicate row per version for the
+	same job; when the caller doesn't pass one, default to whichever prompt_version has the most
+	recent evaluated_at across the whole table, so existing callers that never passed
+	prompt_version still get one row per job instead of duplicates. Returns None only if
+	job_matches is empty (nothing to default to yet).
+	"""
+	if prompt_version:
+		return prompt_version
+	return session.scalar(select(JobMatch.prompt_version).order_by(JobMatch.evaluated_at.desc()).limit(1))
 
 
 def get_job_or_404(session: Session, job_id: int, company_name: str | None) -> JobListing:
@@ -364,7 +389,12 @@ def get_matched_jobs(
 	"""job_listings inner-joined with job_matches -- every job JobManagerAgent has already
 	scored, with the full listing plus its score/reasoning/prompt/model provenance in one row.
 	Jobs not yet evaluated (no job_matches row) are excluded; that's the whole point of this
-	endpoint over plain /jobs, which knows nothing about match state."""
+	endpoint over plain /jobs, which knows nothing about match state.
+
+	A job can now have one job_matches row per prompt_version it's been scored under -- see
+	resolve_prompt_version -- so this always filters to exactly one prompt_version (given or
+	defaulted to the most recent) rather than returning one row per version per job."""
+	resolved_prompt_version = resolve_prompt_version(session, prompt_version)
 	statement = (
 		select(JobListing, JobMatch)
 		.join(JobMatch, JobMatch.job_id == JobListing.job_id)
@@ -375,7 +405,7 @@ def get_matched_jobs(
 	statement = with_company_filter(statement, company_name)
 	statement = with_search_filters(statement, job_role=job_role, location=location, query=query)
 	statement = with_match_filters(
-		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=prompt_version
+		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=resolved_prompt_version
 	)
 	statement = statement.offset(offset).limit(limit)
 
@@ -396,15 +426,17 @@ def count_matched_jobs(
 	max_score: int | None = Query(default=None, ge=0, le=100),
 	prompt_version: str | None = Query(default=None),
 ) -> dict[str, int]:
-	"""Mirrors /jobs/matched's filters exactly (same join, same helpers) so a caller paginating
-	that endpoint can compute total pages instead of guessing from a short page."""
+	"""Mirrors /jobs/matched's filters exactly (same join, same helpers, same prompt_version
+	defaulting) so a caller paginating that endpoint can compute total pages instead of guessing
+	from a short page."""
+	resolved_prompt_version = resolve_prompt_version(session, prompt_version)
 	statement = select(func.count()).select_from(JobListing).join(JobMatch, JobMatch.job_id == JobListing.job_id)
 	if job_id is not None:
 		statement = statement.where(JobListing.job_id == job_id)
 	statement = with_company_filter(statement, company_name)
 	statement = with_search_filters(statement, job_role=job_role, location=location, query=query)
 	statement = with_match_filters(
-		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=prompt_version
+		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=resolved_prompt_version
 	)
 	total = session.scalar(statement) or 0
 	return {"total": int(total)}
@@ -506,11 +538,12 @@ def get_matches(
 	limit: int = Query(default=100, ge=1, le=500),
 	offset: int = Query(default=0, ge=0),
 ) -> list[JobMatch]:
+	resolved_prompt_version = resolve_prompt_version(session, prompt_version)
 	statement = select(JobMatch).order_by(JobMatch.evaluated_at.desc(), JobMatch.job_id.desc())
 	if job_id is not None:
 		statement = statement.where(JobMatch.job_id == job_id)
 	statement = with_match_filters(
-		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=prompt_version
+		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=resolved_prompt_version
 	)
 	statement = statement.offset(offset).limit(limit)
 	return list(session.scalars(statement))
@@ -524,54 +557,78 @@ def count_matches(
 	max_score: int | None = Query(default=None, ge=0, le=100),
 	prompt_version: str | None = Query(default=None),
 ) -> dict[str, int]:
+	resolved_prompt_version = resolve_prompt_version(session, prompt_version)
 	statement = select(func.count()).select_from(JobMatch)
 	statement = with_match_filters(
-		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=prompt_version
+		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=resolved_prompt_version
 	)
 	total = session.scalar(statement) or 0
 	return {"total": int(total)}
 
 
+@app.get("/matches/prompt-versions", response_model=list[PromptVersionSummary])
+def get_prompt_versions(session: SessionDependency) -> list[PromptVersionSummary]:
+	"""Distinct prompt_version values present in job_matches, newest-evaluated first -- powers
+	the dashboard's Matches prompt-version filter dropdown and its default selection (see
+	resolve_prompt_version for the same "most recent" rule used server-side when the filter is
+	omitted)."""
+	statement = (
+		select(
+			JobMatch.prompt_version,
+			func.max(JobMatch.prompt_name).label("prompt_name"),
+			func.max(JobMatch.model_name).label("model_name"),
+			func.count().label("row_count"),
+			func.max(JobMatch.evaluated_at).label("latest_evaluated_at"),
+		)
+		.group_by(JobMatch.prompt_version)
+		.order_by(func.max(JobMatch.evaluated_at).desc())
+	)
+	rows = session.execute(statement).all()
+	return [
+		PromptVersionSummary(
+			prompt_version=row.prompt_version,
+			prompt_name=row.prompt_name,
+			model_name=row.model_name,
+			row_count=row.row_count,
+			latest_evaluated_at=row.latest_evaluated_at,
+		)
+		for row in rows
+	]
+
+
 @app.get("/matches/funnel", response_model=PipelineFunnelResponse)
-def get_pipeline_funnel(session: SessionDependency) -> PipelineFunnelResponse:
+def get_pipeline_funnel(
+	session: SessionDependency,
+	prompt_version: str | None = Query(default=None, description="Defaults to the most recently evaluated prompt_version."),
+) -> PipelineFunnelResponse:
 	"""Counts for the scrape -> agent-processed -> good/moderate/bad/failed funnel the dashboard's
-	alluvial chart renders. total_processed is every job_matches row regardless of score;
-	total_scraped - total_processed is how many job_listings rows JobManagerAgent hasn't reached
-	yet. good/moderate/bad/failed always sum to total_processed -- failed (404'd postings) is
-	carved out of the score bands rather than counted as a genuine bad match."""
+	alluvial chart renders. total_processed is job_matches rows under one prompt_version (given or
+	defaulted to the most recent -- see resolve_prompt_version; a job can now have a row per
+	prompt_version, so counting the whole table unfiltered would double-count jobs backfilled
+	under a second prompt). total_scraped - total_processed is how many job_listings rows
+	JobManagerAgent hasn't reached yet under that prompt_version. good/moderate/bad/failed always
+	sum to total_processed -- failed (404'd postings) is carved out of the score bands rather than
+	counted as a genuine bad match."""
+	resolved_prompt_version = resolve_prompt_version(session, prompt_version)
 	not_found = JobMatch.reasoning.like(f"{_NOT_FOUND_REASON_PREFIX}%")
+	version_filter = (JobMatch.prompt_version == resolved_prompt_version) if resolved_prompt_version else None
+
+	def _count(*conditions):
+		statement = select(func.count()).select_from(JobMatch)
+		if version_filter is not None:
+			statement = statement.where(version_filter)
+		for condition in conditions:
+			statement = statement.where(condition)
+		return session.scalar(statement) or 0
 
 	total_scraped = session.scalar(select(func.count()).select_from(JobListing)) or 0
-	total_processed = session.scalar(select(func.count()).select_from(JobMatch)) or 0
-	failed_matches = session.scalar(select(func.count()).select_from(JobMatch).where(not_found)) or 0
-	good_matches = (
-		session.scalar(
-			select(func.count())
-			.select_from(JobMatch)
-			.where(JobMatch.match_score >= _GOOD_MATCH_MIN_SCORE, ~not_found)
-		)
-		or 0
+	total_processed = _count()
+	failed_matches = _count(not_found)
+	good_matches = _count(JobMatch.match_score >= _GOOD_MATCH_MIN_SCORE, ~not_found)
+	moderate_matches = _count(
+		JobMatch.match_score >= _MODERATE_MATCH_MIN_SCORE, JobMatch.match_score < _GOOD_MATCH_MIN_SCORE, ~not_found
 	)
-	moderate_matches = (
-		session.scalar(
-			select(func.count())
-			.select_from(JobMatch)
-			.where(
-				JobMatch.match_score >= _MODERATE_MATCH_MIN_SCORE,
-				JobMatch.match_score < _GOOD_MATCH_MIN_SCORE,
-				~not_found,
-			)
-		)
-		or 0
-	)
-	bad_matches = (
-		session.scalar(
-			select(func.count())
-			.select_from(JobMatch)
-			.where(JobMatch.match_score < _MODERATE_MATCH_MIN_SCORE, ~not_found)
-		)
-		or 0
-	)
+	bad_matches = _count(JobMatch.match_score < _MODERATE_MATCH_MIN_SCORE, ~not_found)
 	return PipelineFunnelResponse(
 		total_scraped=int(total_scraped),
 		total_processed=int(total_processed),
@@ -583,8 +640,16 @@ def get_pipeline_funnel(session: SessionDependency) -> PipelineFunnelResponse:
 
 
 @app.get("/matches/{job_id}", response_model=JobMatchRead)
-def get_match(job_id: int, session: SessionDependency) -> JobMatch:
-	match = session.get(JobMatch, job_id)
+def get_match(
+	job_id: int,
+	session: SessionDependency,
+	prompt_version: str | None = Query(default=None, description="Defaults to the most recently evaluated prompt_version."),
+) -> JobMatch:
+	resolved_prompt_version = resolve_prompt_version(session, prompt_version)
+	statement = select(JobMatch).where(JobMatch.job_id == job_id)
+	if resolved_prompt_version:
+		statement = statement.where(JobMatch.prompt_version == resolved_prompt_version)
+	match = session.scalar(statement.order_by(JobMatch.evaluated_at.desc()))
 	if match is None:
 		raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No match recorded for job {job_id}")
 	return match

@@ -17,7 +17,7 @@ from utils.config import (
 	THINKING_LEVEL,
 )
 from utils.env_utils import load_env_value
-from utils.rate_limiter import RedisRpmLimiter
+from utils.rate_limiter import RedisRpmLimiter, load_backfill_rpm_cap
 
 from .base import MatchResponseError, RateLimitError, TokenUsage, TransientProviderError
 
@@ -113,11 +113,17 @@ def _usage_from_response(response: genai_types.GenerateContentResponse) -> Token
 	)
 
 
-def _generate_content(client: genai.Client, *, model: str, prompt: str) -> tuple[str, TokenUsage]:
+def _generate_content(client: genai.Client, *, model: str, prompt: str, bucket: str = "live") -> tuple[str, TokenUsage]:
 	# Single choke point for every actual network call this provider makes (primary and
 	# fallback both route through here), so the RPM budget is enforced no matter which branch
-	# of call_model/_call_fallback_model reached it.
-	_rpm_limiter().acquire(model)
+	# of call_model/_call_fallback_model reached it. `bucket` ("live" or "backfill", threaded
+	# down from score_job/score_jobs_batch via call_scoring_model) determines which independent
+	# sliding-window counter this call draws from and which cap applies -- this is the actual
+	# enforcement point for the reserved backfill RPM budget (see RedisRpmLimiter.acquire and
+	# utils/config.py:BACKFILL_RPM_CAP); a caller-side acquire() on its own is not enough, since
+	# every real call has to pass through here regardless of who called it.
+	cap = load_backfill_rpm_cap(model) if bucket == "backfill" else None
+	_rpm_limiter().acquire(model, cap=cap, bucket=bucket)
 	response = client.models.generate_content(
 		model=model,
 		contents=prompt,
@@ -154,9 +160,9 @@ def _should_try_fallback(*, model: str) -> bool:
 	return model == DEFAULT_MODEL and FALLBACK_MODEL != DEFAULT_MODEL
 
 
-def _call_fallback_model(client: genai.Client, *, prompt: str) -> tuple[str, TokenUsage]:
+def _call_fallback_model(client: genai.Client, *, prompt: str, bucket: str = "live") -> tuple[str, TokenUsage]:
 	try:
-		return _generate_content(client, model=FALLBACK_MODEL, prompt=prompt)
+		return _generate_content(client, model=FALLBACK_MODEL, prompt=prompt, bucket=bucket)
 	except genai_errors.ClientError as fallback_error:
 		if fallback_error.code == 429:
 			raise RateLimitError(str(fallback_error)) from fallback_error
@@ -165,16 +171,16 @@ def _call_fallback_model(client: genai.Client, *, prompt: str) -> tuple[str, Tok
 		raise TransientProviderError(str(fallback_error)) from fallback_error
 
 
-def call_model(client: genai.Client, *, model: str, prompt: str) -> tuple[str, TokenUsage]:
+def call_model(client: genai.Client, *, model: str, prompt: str, bucket: str = "live") -> tuple[str, TokenUsage]:
 	if _should_try_fallback(model=model) and _is_primary_in_cooldown():
-		return _call_fallback_model(client, prompt=prompt)
+		return _call_fallback_model(client, prompt=prompt, bucket=bucket)
 
 	try:
-		return _generate_content(client, model=model, prompt=prompt)
+		return _generate_content(client, model=model, prompt=prompt, bucket=bucket)
 	except genai_errors.ClientError as error:
 		if _should_try_fallback(model=model):
 			_set_primary_cooldown(error)
-			return _call_fallback_model(client, prompt=prompt)
+			return _call_fallback_model(client, prompt=prompt, bucket=bucket)
 
 		if error.code == 429:
 			raise RateLimitError(str(error)) from error
@@ -183,7 +189,7 @@ def call_model(client: genai.Client, *, model: str, prompt: str) -> tuple[str, T
 	except genai_errors.ServerError as error:
 		if _should_try_fallback(model=model):
 			_set_primary_cooldown(error)
-			return _call_fallback_model(client, prompt=prompt)
+			return _call_fallback_model(client, prompt=prompt, bucket=bucket)
 
 		# 5xx from Gemini -- most commonly 503 "currently experiencing high demand", which its
 		# own error message says is usually temporary, so worth a retry rather than failing hard.

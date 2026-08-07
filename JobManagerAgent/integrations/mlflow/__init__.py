@@ -1,3 +1,33 @@
-from .prompt_registry import PROMPT_ALIAS, PROMPT_FILE, PROMPT_NAME, get_active_prompt, register_prompt_variants
+from .prompt_registry import (
+	PROMPT_ALIAS,
+	PROMPT_FILE,
+	PROMPT_NAME,
+	LoadedPrompt,
+	PromptActiveHistoryEntry,
+	RegisteredPromptSummary,
+	build_loaded_prompt,
+	get_active_prompt,
+	get_active_prompt_history,
+	list_registered_prompt_versions,
+	load_prompt_version,
+	register_prompt_variants,
+	revert_active_prompt_version,
+	set_active_prompt_version,
+)
 
-__all__ = ["PROMPT_ALIAS", "PROMPT_FILE", "PROMPT_NAME", "get_active_prompt", "register_prompt_variants"]
+__all__ = [
+	"PROMPT_ALIAS",
+	"PROMPT_FILE",
+	"PROMPT_NAME",
+	"LoadedPrompt",
+	"PromptActiveHistoryEntry",
+	"RegisteredPromptSummary",
+	"build_loaded_prompt",
+	"get_active_prompt",
+	"get_active_prompt_history",
+	"list_registered_prompt_versions",
+	"load_prompt_version",
+	"register_prompt_variants",
+	"revert_active_prompt_version",
+	"set_active_prompt_version",
+]

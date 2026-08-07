@@ -34,6 +34,15 @@ def load_max_jobs_per_cycle() -> int:
 	return int(load_env_value("MAX_JOBS_PER_CYCLE", "5"))
 
 
+def load_backfill_batch_size() -> int:
+	return int(load_env_value("BACKFILL_BATCH_SIZE", str(BACKFILL_BATCH_SIZE)))
+
+
+def load_provider_rpm_quota() -> int | None:
+	value = load_env_value("PROVIDER_RPM_QUOTA", "").strip()
+	return int(value) if value else PROVIDER_RPM_QUOTA
+
+
 # --- Gemini LLM provider (llm_providers/gemini_provider.py) -----------------------------------
 DEFAULT_MODEL = "gemini-3.5-flash"
 FALLBACK_MODEL = "gemini-3.6-flash"
@@ -53,8 +62,49 @@ MAX_OUTPUT_TOKENS = 8192
 THINKING_LEVEL = "minimal"
 
 # --- Rate limiting (utils/rate_limiter.py) -----------------------------------------------------
+#
+# The rate-limit budget model: x + y + z + w = the real per-model quota shown in the provider's
+# own console (checked manually, never hardcoded from guesswork -- see PROVIDER_RPM_QUOTA below).
+#   x = DEFAULT_RPM_CAP    (bucket="live")     -- live matching cycles + the ReAct agent
+#   y = BACKFILL_RPM_CAP   (bucket="backfill") -- the backfill/ package's rescore-under-a-new-
+#                                                 prompt process (see docs/backfill-design.md)
+#   z = EVAL_RPM_CAP       (bucket="eval")     -- evals/run_offline_eval.py
+#   w = headroom, unallocated on purpose        -- absorbs anything sharing the same API
+#                                                 key/project outside this repo's control
+# Each bucket is tracked as an independent Redis sliding-window counter (RedisRpmLimiter.acquire's
+# `bucket` param) -- they never share a counter, so none of them can silently eat another's share.
+# GET /admin/rate-limits reports live usage against all four for the dashboard's RPM breakdown.
 DEFAULT_RPM_CAP = 4
 WINDOW_SECONDS = 60.0
+
+# Reserved RPM budget for backfill's own Redis bucket -- deliberately small (a large historical
+# backlog can afford to trickle through slowly) so a backfill run can never eat into live
+# scoring's share of the real external per-model quota. Override per-model via
+# LLM_RPM_CAP__<MODEL>__BACKFILL. Only one backfill run is ever allowed to be "running" at a time
+# (see backfill/engine.py's supersession logic) -- this is what keeps "y" a single, cleanly
+# reassignable allocation rather than something N concurrent runs would have to split further.
+BACKFILL_RPM_CAP = 1
+
+# Reserved RPM budget for the offline eval harness's own bucket -- separate from "live" so a
+# triggered eval run (POST /evals, potentially scoring 60+ cases) can't compete with real live
+# traffic for the same counter. Override per-model via LLM_RPM_CAP__<MODEL>__EVAL.
+EVAL_RPM_CAP = 1
+
+# The real external RPM quota for this model/project, as shown in the provider's own console
+# (for Gemini: https://aistudio.google.com/rate-limit) -- set this explicitly per the existing
+# "checked in the console, not guessed" policy (see docs/evals-mlflow-design.md's operational
+# guidance). Purely informational: nothing in this codebase enforces against it, it only lets
+# GET /admin/rate-limits compute and display headroom (w = quota - x - y - z) on the dashboard.
+# Left unset (None) by default -- headroom is reported as unknown rather than a guessed number
+# until an operator sets PROVIDER_RPM_QUOTA from what they actually see in the console.
+PROVIDER_RPM_QUOTA: int | None = None
+
+# How many jobs go into one LLM call when backfilling with a schema_mode="batch" prompt
+# (job_match_v5.txt). Bounded by MAX_OUTPUT_TOKENS above -- each job's per-criterion breakdown
+# (5 criteria, score + 1-2 sentence reasoning each) runs a few hundred output tokens, so this
+# default leaves comfortable headroom under MAX_OUTPUT_TOKENS=8192 even for verbose responses.
+# Override via BACKFILL_BATCH_SIZE if a specific model/rubric needs a different budget.
+BACKFILL_BATCH_SIZE = 6
 
 # --- Crawler (services/crawler.py) -------------------------------------------------------------
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -63,6 +113,15 @@ REQUEST_TIMEOUT_SECONDS = 30
 # --- Database tables (shared/job_data.py, shared/job_match_data.py) -------------------------
 DEFAULT_JOB_TABLE_NAME = "job_listings"
 DEFAULT_JOB_MATCH_TABLE_NAME = "job_matches"
+
+# --- Migration history tables (backfill/models.py, integrations/mlflow/models.py) -------------
+# Durable (Postgres, not Redis) audit trails for the two "what happened during a prompt cutover"
+# histories -- see docs/backfill-design.md. Deliberately in Postgres rather than Redis: this is
+# audit/history data (survive-anything, queryable, backed up alongside job_matches), not the
+# fast/ephemeral operational state Redis is used for elsewhere (RPM counters, the
+# unscored-backfill pause flag).
+DEFAULT_BACKFILL_RUNS_TABLE_NAME = "backfill_runs"
+DEFAULT_PROMPT_ACTIVE_HISTORY_TABLE_NAME = "prompt_active_history"
 
 # --- MLflow prompt registry (integrations/mlflow/prompt_registry.py) ------------------------
 PROMPT_NAME = "job_match_prompt"

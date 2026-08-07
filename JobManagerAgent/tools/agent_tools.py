@@ -199,7 +199,7 @@ def build_agent_tools(
 				client=llm_client,
 				model=model_name,
 				provider=provider,
-				prompt_version=prompt_version_obj,
+				loaded_prompt=prompt_version_obj,
 				resume=resume_text,
 				job=detail,
 				threshold=threshold,
@@ -248,6 +248,7 @@ def build_agent_tools(
 					prompt_name=prompt_name,
 					prompt_version=prompt_version,
 					model_name=model_name,
+					score_breakdown=score.score_breakdown,
 				),
 			)
 		if written:

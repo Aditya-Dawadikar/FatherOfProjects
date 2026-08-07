@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Imported from llm_providers.base directly (not the llm_providers package __init__) to avoid
+# pulling in gemini_provider/guardrails just to parse a golden dataset file -- CRITERIA_KEYS is a
+# plain constant with no SDK dependencies.
+from llm_providers.base import CRITERIA_KEYS  # noqa: E402
 
 
 # Mirrors exactly what llm_providers.render_prompt() reads off a job dict (see crawler.fetch_job_detail
@@ -35,6 +44,11 @@ class EvalCase:
 	expected_is_match: bool
 	expected_score_min: int | None = None
 	expected_score_max: int | None = None
+	# Per-criterion expected range on the LLM's raw 0-10 scale (see llm_providers.base.CRITERIA_KEYS
+	# and compute_match_result) -- only meaningful for cases evaluated against a rubric-based
+	# (schema_mode "single"/"batch") prompt; a case can omit this and still assert
+	# expected_score_min/max against the deterministically-computed overall score.
+	expected_criteria: dict[str, tuple[int, int]] | None = None
 	resume: str | None = None
 	notes: str = ""
 
@@ -75,15 +89,50 @@ def _parse_case(raw: dict[str, Any], *, line_number: int) -> EvalCase:
 	if resume is not None and not isinstance(resume, str):
 		raise DatasetError(f"line {line_number} (id={case_id}): 'resume' must be a string if provided")
 
+	expected_criteria = _parse_expected_criteria(raw.get("expected_criteria"), case_id=case_id, line_number=line_number)
+
 	return EvalCase(
 		id=case_id,
 		job=job,
 		expected_is_match=expected_is_match,
 		expected_score_min=score_min,
 		expected_score_max=score_max,
+		expected_criteria=expected_criteria,
 		resume=resume,
 		notes=str(raw.get("notes") or ""),
 	)
+
+
+def _parse_expected_criteria(
+	raw: Any, *, case_id: str, line_number: int
+) -> dict[str, tuple[int, int]] | None:
+	if raw is None:
+		return None
+	if not isinstance(raw, dict):
+		raise DatasetError(f"line {line_number} (id={case_id}): 'expected_criteria' must be an object if provided")
+
+	unknown = sorted(set(raw) - set(CRITERIA_KEYS))
+	if unknown:
+		raise DatasetError(
+			f"line {line_number} (id={case_id}): expected_criteria has unknown keys {unknown}; "
+			f"valid keys are {list(CRITERIA_KEYS)}"
+		)
+
+	parsed: dict[str, tuple[int, int]] = {}
+	for key, bounds in raw.items():
+		if (
+			not isinstance(bounds, dict)
+			or not isinstance(bounds.get("min"), int)
+			or not isinstance(bounds.get("max"), int)
+			or not (0 <= bounds["min"] <= bounds["max"] <= 10)
+		):
+			raise DatasetError(
+				f"line {line_number} (id={case_id}): expected_criteria[{key!r}] must be "
+				"{'min': int, 'max': int} with 0 <= min <= max <= 10"
+			)
+		parsed[key] = (bounds["min"], bounds["max"])
+
+	return parsed
 
 
 def load_golden_dataset(path: Path) -> list[EvalCase]:

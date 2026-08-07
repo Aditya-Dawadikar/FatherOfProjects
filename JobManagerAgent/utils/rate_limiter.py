@@ -3,24 +3,72 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from dataclasses import dataclass
 
 from langchain_core.rate_limiters import BaseRateLimiter
 from redis import Redis
 
 from .agent_logger import get_agent_logger
-from .config import DEFAULT_RPM_CAP, WINDOW_SECONDS
+from .config import BACKFILL_RPM_CAP, DEFAULT_RPM_CAP, EVAL_RPM_CAP, WINDOW_SECONDS
 from .env_utils import load_env_value
 
 
 LOGGER = get_agent_logger(__name__)
 
+@dataclass(frozen=True)
+class RpmUsage:
+	"""One bucket's current standing against its RPM cap, as of the moment it was read --
+	returned by RedisRpmLimiter.current_usage(), the read-only counterpart to acquire()."""
 
-def _cap_env_key(model: str) -> str:
-	return f"LLM_RPM_CAP__{model.upper().replace('-', '_').replace('.', '_')}"
+	bucket: str
+	model: str
+	count: int
+	cap: int
+
+	@property
+	def remaining(self) -> int:
+		return max(0, self.cap - self.count)
+
+
+# Every bucket this codebase tracks, in the order the x+y+z+w model documents them in
+# utils/config.py -- the single source of truth GET /admin/rate-limits iterates to build the
+# dashboard's RPM breakdown, so a new bucket only needs to be added here (plus a cap loader) to
+# show up there automatically.
+RPM_BUCKETS: tuple[str, ...] = ("live", "backfill", "eval")
+
+
+def _cap_env_key(model: str, *, suffix: str = "") -> str:
+	base = f"LLM_RPM_CAP__{model.upper().replace('-', '_').replace('.', '_')}"
+	return f"{base}__{suffix}" if suffix else base
 
 
 def load_rpm_cap(model: str) -> int:
 	return int(load_env_value(_cap_env_key(model), str(DEFAULT_RPM_CAP)))
+
+
+def load_backfill_rpm_cap(model: str) -> int:
+	"""Reserved RPM budget for the "backfill" bucket, deliberately small and kept separate from
+	load_rpm_cap's "live" budget for the same model (see RedisRpmLimiter.acquire's `bucket`
+	param) -- this is what lets a large rescore-under-a-new-prompt backfill run without ever
+	crowding out live scoring's share of the model's real external quota.
+	"""
+	return int(load_env_value(_cap_env_key(model, suffix="BACKFILL"), str(BACKFILL_RPM_CAP)))
+
+
+def load_eval_rpm_cap(model: str) -> int:
+	"""Reserved RPM budget for the "eval" bucket -- kept separate from "live" so a triggered
+	offline eval run (potentially scoring the full golden dataset) can't compete with real live
+	traffic for the same counter. See utils/config.py's x+y+z+w budget model.
+	"""
+	return int(load_env_value(_cap_env_key(model, suffix="EVAL"), str(EVAL_RPM_CAP)))
+
+
+def load_cap_for_bucket(model: str, bucket: str) -> int:
+	if bucket == "backfill":
+		return load_backfill_rpm_cap(model)
+	if bucket == "eval":
+		return load_eval_rpm_cap(model)
+	return load_rpm_cap(model)
 
 
 class RedisRpmLimiter:
@@ -38,14 +86,35 @@ class RedisRpmLimiter:
 		self._client = client or Redis.from_url(load_env_value("REDIS_URL"), decode_responses=True)
 		self._key_prefix = key_prefix
 
-	def _key(self, model: str) -> str:
-		return f"{self._key_prefix}:{model}"
+	def _key(self, model: str, bucket: str) -> str:
+		return f"{self._key_prefix}:{model}:{bucket}"
 
-	def acquire(self, model: str, *, cap: int | None = None) -> float:
+	def current_usage(self, model: str, bucket: str, *, cap: int | None = None) -> "RpmUsage":
+		"""Read-only peek at a bucket's current sliding-window count -- trims expired entries
+		(same window logic as acquire()) but never adds one, so calling this to render a
+		dashboard never itself consumes budget. Used by GET /admin/rate-limits.
+		"""
+		effective_cap = cap if cap is not None else load_cap_for_bucket(model, bucket)
+		key = self._key(model, bucket)
+		now = time.time()
+		self._client.zremrangebyscore(key, 0, now - WINDOW_SECONDS)
+		count = self._client.zcard(key)
+		return RpmUsage(bucket=bucket, model=model, count=int(count), cap=effective_cap)
+
+	def acquire(self, model: str, *, cap: int | None = None, bucket: str = "live") -> float:
 		"""Blocks (sleeping) until a call slot for `model` is available under its RPM cap,
-		reserves the slot, then returns. Returns total seconds spent waiting."""
+		reserves the slot, then returns. Returns total seconds spent waiting.
+
+		`bucket` picks an independent sliding-window counter within the same model's budget --
+		"live" (the default, used by the live/backfill-unscored cycle and the ReAct agent) and
+		"backfill" (used by the rescore-under-a-new-prompt backfill process, see
+		utils/config.py:BACKFILL_RPM_CAP) never share a counter, so a large backfill run can
+		never starve live scoring of RPM headroom by filling the same window. Each bucket's cap
+		is a slice of the model's real external quota, not additive on top of it -- see
+		BACKFILL_RPM_CAP's definition for the accounting.
+		"""
 		effective_cap = cap if cap is not None else load_rpm_cap(model)
-		key = self._key(model)
+		key = self._key(model, bucket)
 		waited = 0.0
 
 		while True:
@@ -84,7 +153,8 @@ class LangChainRedisRpmLimiter(BaseRateLimiter):
 
 	Every LangChain call site invokes `acquire`/`aacquire` with `blocking=True`, so the
 	`blocking=False` case is intentionally unimplemented (RedisRpmLimiter has no non-blocking
-	peek) rather than faked with a wrong answer.
+	acquire -- current_usage() is a read-only peek that never reserves a slot, a different thing
+	entirely) rather than faked with a wrong answer.
 	"""
 
 	def __init__(self, model: str, limiter: RedisRpmLimiter | None = None) -> None:

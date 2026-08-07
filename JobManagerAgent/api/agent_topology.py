@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 
 from agents.react_agent import _system_prompt
 from integrations.mlflow import get_active_prompt
+from shared.job_data import get_shared_engine
 from tools import build_agent_tools
 from utils.config import (
 	DEFAULT_MODEL,
@@ -62,8 +63,8 @@ class _PromptVersionStub:
 
 def _load_scoring_prompt() -> tuple[str, str]:
 	try:
-		active_prompt = get_active_prompt()
-		return active_prompt.template, f"mlflow prompt alias production (version={active_prompt.version})"
+		active_prompt = get_active_prompt(get_shared_engine())
+		return active_prompt.version.template, f"mlflow prompt alias production (version={active_prompt.version_id})"
 	except Exception:
 		# UI should still render if MLflow is unavailable; show local prompt template exactly as on disk.
 		return PROMPT_FILE.read_text(encoding="utf-8"), "local prompt file fallback (prompts/job_match_v1.txt)"

@@ -1,6 +1,9 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AgentTopology,
+  BackfillProcessSummary,
+  BackfillRun,
+  BackfillRunTrigger,
   EvalRun,
   EvalSweepTrigger,
   GuardrailsEvalRun,
@@ -14,8 +17,14 @@ import type {
   MatchesQuery,
   MlflowSummary,
   PipelineFunnel,
+  PromptActiveHistoryEntry,
+  PromptVersionSummary,
+  RegisteredPrompt,
+  RpmBreakdown,
+  SetActivePromptResult,
   ToolEvalRun,
   ToolEvalTrigger,
+  UnscoredBackfillStatus,
 } from '../types'
 
 const API_BASE = (import.meta.env.DEV ? import.meta.env.VITE_JOB_DATA_API_BASE_URL ?? '' : '').replace(/\/$/, '')
@@ -133,7 +142,7 @@ async function fetchHealth(): Promise<HealthResponse> {
   return requestJson<HealthResponse>('/api/health')
 }
 
-function buildMatchesParams({ searchText, matchFilter, minScore }: Omit<MatchesQuery, 'limit' | 'offset'>) {
+function buildMatchesParams({ searchText, matchFilter, minScore, promptVersion }: Omit<MatchesQuery, 'limit' | 'offset'>) {
   const params = new URLSearchParams()
   const trimmedQuery = searchText.trim()
 
@@ -146,12 +155,15 @@ function buildMatchesParams({ searchText, matchFilter, minScore }: Omit<MatchesQ
   if (minScore !== null) {
     params.set('min_score', String(minScore))
   }
+  if (promptVersion !== null) {
+    params.set('prompt_version', promptVersion)
+  }
 
   return params
 }
 
-async function fetchMatchedJobs({ searchText, matchFilter, minScore, limit, offset }: MatchesQuery): Promise<MatchedJobRecord[]> {
-  const params = buildMatchesParams({ searchText, matchFilter, minScore })
+async function fetchMatchedJobs({ searchText, matchFilter, minScore, promptVersion, limit, offset }: MatchesQuery): Promise<MatchedJobRecord[]> {
+  const params = buildMatchesParams({ searchText, matchFilter, minScore, promptVersion })
   params.set('limit', String(limit))
   params.set('offset', String(offset))
   return requestJson<MatchedJobRecord[]>(`/api/jobs/matched?${params.toString()}`)
@@ -165,6 +177,10 @@ async function fetchMatchedJobsCount(filters: Omit<MatchesQuery, 'limit' | 'offs
 
 async function fetchPipelineFunnel(): Promise<PipelineFunnel> {
   return requestJson<PipelineFunnel>('/api/matches/funnel')
+}
+
+async function fetchPromptVersions(): Promise<PromptVersionSummary[]> {
+  return requestJson<PromptVersionSummary[]>('/api/matches/prompt-versions')
 }
 
 function toNullable(value: string) {
@@ -301,6 +317,14 @@ export function usePipelineFunnel() {
     queryKey: ['pipelineFunnel'],
     queryFn: fetchPipelineFunnel,
     staleTime: 5_000,
+  })
+}
+
+export function usePromptVersions() {
+  return useQuery({
+    queryKey: ['promptVersions'],
+    queryFn: fetchPromptVersions,
+    staleTime: 15_000,
   })
 }
 
@@ -485,5 +509,196 @@ export function useMlflowSummary() {
     queryKey: ['mlflowSummary'],
     queryFn: fetchMlflowSummary,
     staleTime: 60_000,
+  })
+}
+
+// --- Migration control (feature flag / prompt cutover / backfill / RPM breakdown) -------------
+// All against JobManagerAgent (api/admin.py, api/backfill.py) -- see requestAgentJson above.
+// See JobManagerAgent/docs/backfill-design.md for the design these hooks drive a UI for.
+
+async function fetchPrompts(): Promise<RegisteredPrompt[]> {
+  return requestAgentJson<RegisteredPrompt[]>('/agent-api/admin/prompts')
+}
+
+async function fetchPromptHistory(): Promise<PromptActiveHistoryEntry[]> {
+  return requestAgentJson<PromptActiveHistoryEntry[]>('/agent-api/admin/active-prompt/history')
+}
+
+async function setActivePrompt(version: string): Promise<SetActivePromptResult> {
+  return requestAgentJson<SetActivePromptResult>('/agent-api/admin/active-prompt', {
+    method: 'POST',
+    body: JSON.stringify({ version }),
+  })
+}
+
+async function revertActivePrompt(): Promise<SetActivePromptResult> {
+  return requestAgentJson<SetActivePromptResult>('/agent-api/admin/active-prompt/revert', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+export function usePrompts() {
+  return useQuery({
+    queryKey: ['prompts'],
+    queryFn: fetchPrompts,
+    staleTime: 5_000,
+  })
+}
+
+export function usePromptHistory() {
+  return useQuery({
+    queryKey: ['promptActiveHistory'],
+    queryFn: fetchPromptHistory,
+    staleTime: 5_000,
+  })
+}
+
+// Both the "set active" and "revert" mutations invalidate the same three queries -- the prompt
+// list (is_active moved), the history (a new entry was appended), and the Matches page's
+// prompt-version dropdown (JobDataServer, a different service, but a cutover changes what
+// "latest" means there too) -- so the whole dashboard reflects a cutover immediately rather than
+// waiting for each panel's own staleTime to lapse.
+function useInvalidateAfterPromptChange() {
+  const queryClient = useQueryClient()
+  return () => {
+    queryClient.invalidateQueries({ queryKey: ['prompts'] })
+    queryClient.invalidateQueries({ queryKey: ['promptActiveHistory'] })
+    queryClient.invalidateQueries({ queryKey: ['promptVersions'] })
+  }
+}
+
+export function useSetActivePrompt() {
+  const invalidate = useInvalidateAfterPromptChange()
+  return useMutation({
+    mutationFn: setActivePrompt,
+    onSuccess: invalidate,
+  })
+}
+
+export function useRevertActivePrompt() {
+  const invalidate = useInvalidateAfterPromptChange()
+  return useMutation({
+    mutationFn: revertActivePrompt,
+    onSuccess: invalidate,
+  })
+}
+
+async function fetchUnscoredBackfillStatus(): Promise<UnscoredBackfillStatus> {
+  return requestAgentJson<UnscoredBackfillStatus>('/agent-api/admin/unscored-backfill/status')
+}
+
+async function pauseUnscoredBackfill(reason: string): Promise<UnscoredBackfillStatus> {
+  return requestAgentJson<UnscoredBackfillStatus>('/agent-api/admin/unscored-backfill/pause', {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+}
+
+async function resumeUnscoredBackfill(): Promise<UnscoredBackfillStatus> {
+  return requestAgentJson<UnscoredBackfillStatus>('/agent-api/admin/unscored-backfill/resume', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+export function useUnscoredBackfillStatus() {
+  return useQuery({
+    queryKey: ['unscoredBackfillStatus'],
+    queryFn: fetchUnscoredBackfillStatus,
+    staleTime: 3_000,
+    refetchInterval: 10_000,
+  })
+}
+
+export function usePauseUnscoredBackfill() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: pauseUnscoredBackfill,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['unscoredBackfillStatus'] }),
+  })
+}
+
+export function useResumeUnscoredBackfill() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: resumeUnscoredBackfill,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['unscoredBackfillStatus'] }),
+  })
+}
+
+async function fetchRateLimits(): Promise<RpmBreakdown> {
+  return requestAgentJson<RpmBreakdown>('/agent-api/admin/rate-limits')
+}
+
+export function useRateLimits() {
+  return useQuery({
+    queryKey: ['rateLimits'],
+    queryFn: fetchRateLimits,
+    staleTime: 2_000,
+    // "Real-time" breakdown -- polls continuously (not just while something's running) since the
+    // whole point is watching x/y/z shift live during a handoff, including live traffic the
+    // dashboard has no other signal for.
+    refetchInterval: 4_000,
+  })
+}
+
+async function fetchBackfillProcesses(): Promise<BackfillProcessSummary[]> {
+  return requestAgentJson<BackfillProcessSummary[]>('/agent-api/backfill/processes')
+}
+
+export function useBackfillProcesses() {
+  return useQuery({
+    queryKey: ['backfillProcesses'],
+    queryFn: fetchBackfillProcesses,
+    staleTime: 60_000,
+  })
+}
+
+async function fetchBackfillRuns(): Promise<BackfillRun[]> {
+  return requestAgentJson<BackfillRun[]>('/agent-api/backfill/runs')
+}
+
+export function useBackfillRuns() {
+  return useQuery({
+    queryKey: ['backfillRuns'],
+    queryFn: fetchBackfillRuns,
+    staleTime: 3_000,
+    // Poll while a run is in flight so progress (processed/rescored/... counts) updates without
+    // a manual refresh; stop once nothing is running.
+    refetchInterval: (query) => {
+      const runs = query.state.data
+      const hasRunningRun = runs?.some((run) => run.status === 'running') ?? false
+      return hasRunningRun ? 4_000 : false
+    },
+  })
+}
+
+async function triggerBackfill(payload: { process: string; params: Record<string, unknown>; limit: number | null }): Promise<BackfillRunTrigger> {
+  return requestAgentJson<BackfillRunTrigger>('/agent-api/backfill/run', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function useTriggerBackfill() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: triggerBackfill,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['backfillRuns'] }),
+  })
+}
+
+async function cancelBackfillRun(runId: string): Promise<BackfillRun> {
+  return requestAgentJson<BackfillRun>(`/agent-api/backfill/runs/${runId}/cancel`, {
+    method: 'POST',
+  })
+}
+
+export function useCancelBackfillRun() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: cancelBackfillRun,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['backfillRuns'] }),
   })
 }

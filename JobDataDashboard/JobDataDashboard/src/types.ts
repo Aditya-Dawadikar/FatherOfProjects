@@ -51,6 +51,16 @@ export type JobsQuery = {
 
 export type MatchFilter = 'all' | 'matched' | 'unmatched'
 
+export type ScoreCriterion = {
+  score: number
+  reasoning: string
+}
+
+// Keyed by criterion name (skills_match, experience_fit, location_visa_fit, compensation_fit,
+// role_scope_fit -- see JobManagerAgent/llm_providers/base.py:CRITERIA_KEYS). Only present on
+// rows scored by a rubric-based prompt (v4+); legacy (v1-v3) rows have score_breakdown: null.
+export type ScoreBreakdown = Record<string, ScoreCriterion>
+
 export type MatchedJobRecord = JobRecord & {
   match_score: number
   is_match: boolean
@@ -59,14 +69,24 @@ export type MatchedJobRecord = JobRecord & {
   prompt_version: string
   model_name: string
   evaluated_at: string
+  score_breakdown: ScoreBreakdown | null
 }
 
 export type MatchesQuery = {
   searchText: string
   matchFilter: MatchFilter
   minScore: number | null
+  promptVersion: string | null
   limit: number
   offset: number
+}
+
+export type PromptVersionSummary = {
+  prompt_version: string
+  prompt_name: string
+  model_name: string
+  row_count: number
+  latest_evaluated_at: string
 }
 
 export type PipelineFunnel = {
@@ -140,6 +160,7 @@ export type EvalRunResult = {
   recall?: number
   f1?: number
   score_in_range_rate?: number
+  criteria_in_range_rate?: number
   mean_predicted_score?: number
   total_prompt_tokens?: number
   total_completion_tokens?: number
@@ -264,5 +285,83 @@ export type GuardrailsEvalRun = {
 
 export type GuardrailsEvalTrigger = {
   eval_id: string
+  status: 'running'
+}
+
+// --- Migration control (feature flag / prompt cutover / backfill / RPM breakdown) -------------
+// JobManagerAgent's api/admin.py + api/backfill.py -- see JobManagerAgent/docs/backfill-design.md.
+
+export type RegisteredPrompt = {
+  version: string
+  schema_mode: 'legacy' | 'single' | 'batch'
+  rubric_version: number
+  is_active: boolean
+}
+
+export type PromptActiveHistoryEntry = {
+  changed_at: string
+  from_version: string | null
+  to_version: string
+  schema_mode: string
+  rubric_version: number
+  reason: string
+}
+
+export type SetActivePromptResult = {
+  prompt_name: string
+  alias: string
+  version: string
+  schema_mode: string
+  rubric_version: number
+}
+
+export type UnscoredBackfillStatus = {
+  paused: boolean
+  reason: string | null
+}
+
+export type RpmBucketUsage = {
+  bucket: string
+  model: string
+  count: number
+  cap: number
+  remaining: number
+}
+
+export type RpmBreakdown = {
+  model: string
+  window_seconds: number
+  buckets: RpmBucketUsage[]
+  total_allocated: number
+  provider_quota: number | null
+  headroom: number | null
+}
+
+export type BackfillProcessSummary = {
+  name: string
+  description: string
+}
+
+export type BackfillRunStatusValue = 'running' | 'completed' | 'failed' | 'cancelled'
+
+export type BackfillRun = {
+  run_id: string
+  process: string
+  params: Record<string, unknown>
+  status: BackfillRunStatusValue
+  candidate_count: number | null
+  processed: number
+  rescored: number
+  not_found_404: number
+  crawl_error: number
+  errored: number
+  error: string | null
+  cancel_reason: string | null
+  started_at: string
+  finished_at: string | null
+}
+
+export type BackfillRunTrigger = {
+  run_id: string
   status: 'running'
 }

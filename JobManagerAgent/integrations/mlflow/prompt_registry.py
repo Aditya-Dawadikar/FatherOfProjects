@@ -1,41 +1,338 @@
 from __future__ import annotations
 
-import logging
+import json
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
 import mlflow
 from mlflow import MlflowClient
 from mlflow.entities.model_registry.prompt_version import PromptVersion
 from mlflow.exceptions import MlflowException
+from sqlalchemy import Engine, select
+from sqlalchemy.orm import Session
 
+from utils.agent_logger import get_agent_logger
 from utils.config import PROMPT_ALIAS, PROMPT_FILE, PROMPT_NAME
 from utils.mlflow_utils import ensure_tracking_uri_configured
 
+from .models import PromptActiveHistoryRecord
 
-LOGGER = logging.getLogger(__name__)
+
+LOGGER = get_agent_logger(__name__)
+
+# A prompt file with no .meta.json sidecar (job_match_v1/v2/v3.txt) is "legacy": the model
+# decides match_score/reasoning directly, the original (pre-rubric) response shape.
+DEFAULT_SCHEMA_MODE = "legacy"
+DEFAULT_RUBRIC_VERSION = 1
 
 
-def get_active_prompt() -> PromptVersion:
-	"""Load the current 'production' version of the job-match prompt, registering a new
-	version in MLflow (and re-pointing the alias) if prompts/job_match_v1.txt changed since
-	the last registered version.
+@dataclass(frozen=True)
+class PromptActiveHistoryEntry:
+	"""One transition of the 'production' alias -- written by every path that can change it
+	(the bootstrap in get_active_prompt(), and set_active_prompt_version()), so there is exactly
+	one durable record of "how did production get to be what it is" regardless of which path
+	caused a given change."""
+
+	changed_at: str
+	from_version: str | None
+	to_version: str
+	schema_mode: str
+	rubric_version: int
+	reason: str
+
+
+def _record_history_entry(engine: Engine, entry: PromptActiveHistoryEntry) -> None:
+	"""Durable (Postgres, not Redis) for the same reason backfill run history is: this process
+	redeploys on every push, and "when did production last change, from what, to what" is exactly
+	what an operator needs to see on the dashboard right after a deploy -- see
+	docs/backfill-design.md's migration sequence. Postgres, not Redis, because this is audit
+	history that needs to survive anything short of losing the database itself, not fast
+	operational state.
+	"""
+	with Session(engine) as session:
+		session.add(
+			PromptActiveHistoryRecord(
+				changed_at=datetime.fromisoformat(entry.changed_at),
+				from_version=entry.from_version,
+				to_version=entry.to_version,
+				schema_mode=entry.schema_mode,
+				rubric_version=entry.rubric_version,
+				reason=entry.reason,
+			)
+		)
+		session.commit()
+
+
+def get_active_prompt_history(engine: Engine, limit: int = 50) -> list[PromptActiveHistoryEntry]:
+	"""Most-recent-first record of every 'production' alias change -- the durable audit trail
+	GET /admin/active-prompt/history and the dashboard's migration observability page read from.
+	"""
+	with Session(engine) as session:
+		rows = session.scalars(
+			select(PromptActiveHistoryRecord).order_by(PromptActiveHistoryRecord.changed_at.desc()).limit(limit)
+		).all()
+	return [
+		PromptActiveHistoryEntry(
+			changed_at=row.changed_at.isoformat(),
+			from_version=row.from_version,
+			to_version=row.to_version,
+			schema_mode=row.schema_mode,
+			rubric_version=row.rubric_version,
+			reason=row.reason,
+		)
+		for row in rows
+	]
+
+
+@dataclass(frozen=True)
+class LoadedPrompt:
+	"""An MLflow PromptVersion bundled with the schema metadata read off its source file's
+	.meta.json sidecar (see prompts/job_match_v4.meta.json, job_match_v5.meta.json).
+	schema_mode tells llm_providers (render_prompt/score_job/score_jobs_batch) how to render
+	the template and parse its response:
+	  - "legacy" (v1-v3, no sidecar): one job, LLM-decided match_score + reasoning.
+	  - "single" (v4): one job, LLM returns only raw per-criterion scores; match_score is
+	    computed deterministically from them (see llm_providers.base.compute_match_result).
+	  - "batch" (v5): N jobs per call, same per-criterion contract as "single", batched for
+	    backfill throughput. Never valid as the live "production"-aliased prompt.
+	"""
+
+	version: PromptVersion
+	schema_mode: str
+	rubric_version: int
+
+	@property
+	def version_id(self) -> str:
+		return str(self.version.version)
+
+
+def _load_sidecar_metadata(prompt_file: Path) -> tuple[str, int]:
+	meta_file = prompt_file.with_suffix(".meta.json")
+	if not meta_file.exists():
+		return DEFAULT_SCHEMA_MODE, DEFAULT_RUBRIC_VERSION
+	data = json.loads(meta_file.read_text(encoding="utf-8"))
+	return (
+		str(data.get("schema_mode", DEFAULT_SCHEMA_MODE)),
+		int(data.get("rubric_version", DEFAULT_RUBRIC_VERSION)),
+	)
+
+
+def _resolve_schema_mode(template: str) -> tuple[str, int]:
+	"""Matches a loaded PromptVersion's template text back to its source prompts/job_match_v*.txt
+	file -- MLflow's own version numbering doesn't correspond 1:1 with our file names, so schema
+	metadata has to be looked up by content match, not by number. Falls back to "legacy" for a
+	template that no longer matches any file on disk (e.g. a stale registered version whose file
+	was since edited) -- safer than guessing rubric-shaped parsing for a response shape we can't
+	actually confirm belongs to a rubric prompt.
+	"""
+	for path in sorted(PROMPT_FILE.parent.glob("job_match_v*.txt")):
+		if path.read_text(encoding="utf-8") == template:
+			return _load_sidecar_metadata(path)
+	return DEFAULT_SCHEMA_MODE, DEFAULT_RUBRIC_VERSION
+
+
+def get_active_prompt(engine: Engine) -> LoadedPrompt:
+	"""Load whatever prompt version is currently aliased 'production'.
+
+	Bootstraps ONLY when nothing has ever been aliased yet (a brand-new prompt name/MLflow
+	instance): registers prompts/job_match_v1.txt and aliases it, so a fresh deploy has
+	*something* production-aliased without requiring a manual POST /admin/active-prompt call
+	first. Once anything is aliased -- from this bootstrap, or from set_active_prompt_version()
+	-- this function is purely read-only: it does not compare against job_match_v1.txt's on-disk
+	content and never re-points the alias on its own.
+
+	`engine` is only actually touched on that bootstrap path (to record the history entry) --
+	required anyway rather than made optional, so every call site is explicit about where its DB
+	connection comes from instead of this function silently reaching for a hidden global one.
+
+	CORRECTNESS NOTE (this used to be a real bug): an earlier version of this function re-diffed
+	the alias's current template against job_match_v1.txt's on-disk content on *every* call, and
+	silently re-registered + re-pointed the alias whenever they didn't match. That meant an
+	explicit set_active_prompt_version() promotion to v4 got silently reverted back to v1 on the
+	very next live/backfill cycle -- as soon as anything else was aliased, v1.txt's on-disk
+	content permanently stopped matching it, so every single call re-triggered the "changed"
+	branch forever. set_active_prompt_version() (POST /admin/active-prompt) is now the only way
+	to change what's active after first bootstrap; local iteration on job_match_v1.txt content no
+	longer auto-promotes on the next cycle the way it originally did.
 	"""
 	ensure_tracking_uri_configured()
 
-	file_template = PROMPT_FILE.read_text(encoding="utf-8")
-
 	current = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@{PROMPT_ALIAS}", allow_missing=True)
-	if current is not None and current.template == file_template:
-		return current
+	if current is not None:
+		schema_mode, rubric_version = _resolve_schema_mode(current.template)
+		return LoadedPrompt(version=current, schema_mode=schema_mode, rubric_version=rubric_version)
 
-	LOGGER.info("Registering new prompt version for %s (file content changed or first run)", PROMPT_NAME)
+	LOGGER.action("prompt_bootstrap_registering", prompt_name=PROMPT_NAME, source_file=str(PROMPT_FILE))
+	file_template = PROMPT_FILE.read_text(encoding="utf-8")
 	new_version = mlflow.genai.register_prompt(
 		name=PROMPT_NAME,
 		template=file_template,
-		commit_message="Synced from prompts/job_match_v1.txt",
+		commit_message="Bootstrap from prompts/job_match_v1.txt",
 	)
 	mlflow.genai.set_prompt_alias(name=PROMPT_NAME, alias=PROMPT_ALIAS, version=new_version.version)
-	LOGGER.info("Prompt %s now at version %s (alias=%s)", PROMPT_NAME, new_version.version, PROMPT_ALIAS)
-	return new_version
+	schema_mode, rubric_version = _load_sidecar_metadata(PROMPT_FILE)
+	LOGGER.action(
+		"prompt_bootstrap_complete",
+		prompt_name=PROMPT_NAME,
+		alias=PROMPT_ALIAS,
+		version=new_version.version,
+		schema_mode=schema_mode,
+	)
+	_record_history_entry(
+		engine,
+		PromptActiveHistoryEntry(
+			changed_at=datetime.now(timezone.utc).isoformat(),
+			from_version=None,
+			to_version=str(new_version.version),
+			schema_mode=schema_mode,
+			rubric_version=rubric_version,
+			reason="bootstrap",
+		),
+	)
+	return LoadedPrompt(version=new_version, schema_mode=schema_mode, rubric_version=rubric_version)
+
+
+def build_loaded_prompt(version_obj: PromptVersion) -> LoadedPrompt:
+	"""Wraps an already-fetched PromptVersion (e.g. from a read-only alias lookup a caller does
+	itself, like evals/run_offline_eval.py's --prompt-source production with no --prompt-version
+	pin) with its resolved schema metadata, without triggering get_active_prompt()'s
+	auto-registration side effect.
+	"""
+	schema_mode, rubric_version = _resolve_schema_mode(version_obj.template)
+	return LoadedPrompt(version=version_obj, schema_mode=schema_mode, rubric_version=rubric_version)
+
+
+def load_prompt_version(version: str) -> LoadedPrompt:
+	"""Loads an explicit MLflow-registered prompt version (not necessarily the 'production'
+	alias) and resolves its schema metadata the same way get_active_prompt() does. Used by
+	POST /admin/active-prompt (to reject aliasing a schema_mode="batch" prompt live) and by
+	backfill/eval code that needs to pin a specific version rather than following 'production'.
+	"""
+	ensure_tracking_uri_configured()
+	version_obj = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}/{version}")
+	schema_mode, rubric_version = _resolve_schema_mode(version_obj.template)
+	return LoadedPrompt(version=version_obj, schema_mode=schema_mode, rubric_version=rubric_version)
+
+
+def set_active_prompt_version(engine: Engine, version: str, *, reason: str = "manual") -> LoadedPrompt:
+	"""Explicitly promotes an already-registered prompt version to the 'production' alias --
+	the intended way to cut live scoring over to a new prompt (e.g. v1 -> v4), as opposed to
+	get_active_prompt()'s implicit file-diff auto-promotion (kept only as a local-dev
+	convenience for iterating on job_match_v1.txt). Refuses to alias a schema_mode="batch"
+	prompt live: the ReAct agent's tools (tools/agent_tools.py) only ever score one job per
+	call, so a batch-shaped prompt can never be served correctly there.
+
+	This is also the feature flag: whichever version 'production' points to is what every live
+	and never-scored-jobs-backfill cycle picks up on its very next run (get_active_prompt() never
+	caches). Reverting is just calling this again with an earlier version -- nothing about the
+	rows already written under the version being switched away from is touched, purged, or
+	invalidated (see revert_active_prompt_version() for the one-click "undo the last switch" path
+	built on top of this).
+	"""
+	loaded = load_prompt_version(version)
+	if loaded.schema_mode == "batch":
+		raise ValueError(
+			f"Prompt version {version!r} has schema_mode='batch' (multi-job per call) and cannot be "
+			"set as the live 'production' prompt -- live scoring is always one job per call. Use a "
+			"schema_mode='single' or 'legacy' version instead."
+		)
+	ensure_tracking_uri_configured()
+	previous = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@{PROMPT_ALIAS}", allow_missing=True)
+	previous_version = str(previous.version) if previous is not None else None
+
+	mlflow.genai.set_prompt_alias(name=PROMPT_NAME, alias=PROMPT_ALIAS, version=loaded.version.version)
+
+	# This is the one log line that marks the exact moment of a prompt cutover -- structured (not
+	# plain text) so "when did production last change, and from/to what" is grep-able/queryable
+	# the same way every other operational event in this codebase is, rather than only visible by
+	# reading MLflow's alias history directly.
+	LOGGER.action(
+		"prompt_active_version_changed",
+		prompt_name=PROMPT_NAME,
+		alias=PROMPT_ALIAS,
+		from_version=previous_version,
+		to_version=loaded.version.version,
+		schema_mode=loaded.schema_mode,
+		rubric_version=loaded.rubric_version,
+		reason=reason,
+	)
+	_record_history_entry(
+		engine,
+		PromptActiveHistoryEntry(
+			changed_at=datetime.now(timezone.utc).isoformat(),
+			from_version=previous_version,
+			to_version=str(loaded.version.version),
+			schema_mode=loaded.schema_mode,
+			rubric_version=loaded.rubric_version,
+			reason=reason,
+		),
+	)
+	return loaded
+
+
+def revert_active_prompt_version(engine: Engine) -> LoadedPrompt:
+	"""One-click 'undo the last switch': re-promotes whatever 'production' pointed to immediately
+	before the most recent set_active_prompt_version() call, per the recorded history. This is
+	the "we can safely revert" half of the feature-flag design -- safe because nothing about
+	already-processed rows depends on which version is currently active; job_matches rows are
+	permanently tagged with the prompt_version that actually produced them (see
+	shared/job_match_data.py's composite PK), so reverting never needs to purge or reconcile any
+	data that was written while the version being reverted was active.
+
+	Raises ValueError if there's no recorded switch to undo, or if the most recent recorded
+	change was the initial bootstrap (nothing earlier to revert to).
+	"""
+	history = get_active_prompt_history(engine, limit=1)
+	if not history:
+		raise ValueError("No prompt version change history to revert -- set_active_prompt_version has never been called.")
+	last_change = history[0]
+	if last_change.from_version is None:
+		raise ValueError(
+			f"Cannot revert past the initial bootstrap version {last_change.to_version!r} -- there is no earlier version."
+		)
+	return set_active_prompt_version(engine, last_change.from_version, reason=f"revert:{last_change.to_version}")
+
+
+@dataclass(frozen=True)
+class RegisteredPromptSummary:
+	"""One registered prompt version, for GET /admin/prompts -- the feature-flag selector's
+	source of truth for "what can I set active" (as opposed to get_active_prompt_history, which
+	is "what has been active and when")."""
+
+	version: str
+	schema_mode: str
+	rubric_version: int
+	is_active: bool
+	creation_timestamp: int | None
+
+
+def list_registered_prompt_versions() -> list[RegisteredPromptSummary]:
+	ensure_tracking_uri_configured()
+	client = MlflowClient()
+	try:
+		versions = client.search_prompt_versions(PROMPT_NAME)
+	except MlflowException as error:
+		if error.error_code != "RESOURCE_DOES_NOT_EXIST":
+			raise
+		return []
+
+	active = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@{PROMPT_ALIAS}", allow_missing=True)
+	active_version = str(active.version) if active is not None else None
+
+	summaries = []
+	for version_obj in versions:
+		schema_mode, rubric_version = _resolve_schema_mode(version_obj.template)
+		summaries.append(
+			RegisteredPromptSummary(
+				version=str(version_obj.version),
+				schema_mode=schema_mode,
+				rubric_version=rubric_version,
+				is_active=(str(version_obj.version) == active_version),
+				creation_timestamp=getattr(version_obj, "creation_timestamp", None),
+			)
+		)
+	return sorted(summaries, key=lambda s: int(s.version), reverse=True)
 
 
 def register_prompt_variants() -> None:
@@ -45,9 +342,10 @@ def register_prompt_variants() -> None:
 
 	Called once at server startup (see api/app.py's lifespan) so a fresh Railway deploy has every
 	variant file in prompts/ available in the MLflow prompt registry immediately -- without this,
-	evals/run_offline_eval.py's --prompt-version would have nothing to pin against until someone
-	registered them by hand. Idempotent (safe on every restart) and never touches the 'production'
-	alias -- only get_active_prompt(), driven by job_match_v1.txt, moves that.
+	evals/run_offline_eval.py's --prompt-version and POST /admin/active-prompt would have nothing
+	to pin/alias against until someone registered them by hand. Idempotent (safe on every
+	restart) and never touches the 'production' alias -- only get_active_prompt() (implicitly) or
+	set_active_prompt_version() (explicitly) move that.
 	"""
 	ensure_tracking_uri_configured()
 	variant_files = sorted(p for p in PROMPT_FILE.parent.glob("job_match_v*.txt") if p != PROMPT_FILE)
@@ -74,4 +372,12 @@ def register_prompt_variants() -> None:
 			commit_message=f"Synced from {path.name}",
 		)
 		existing_templates.add(template)
-		LOGGER.info("Registered prompt variant %s as %s version %s", path.name, PROMPT_NAME, new_version.version)
+		schema_mode, rubric_version = _load_sidecar_metadata(path)
+		LOGGER.action(
+			"prompt_variant_registered",
+			source_file=path.name,
+			prompt_name=PROMPT_NAME,
+			version=new_version.version,
+			schema_mode=schema_mode,
+			rubric_version=rubric_version,
+		)

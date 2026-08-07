@@ -5,6 +5,7 @@ import Layout from './components/Layout'
 import EtlDataLayout from './pages/EtlDataLayout'
 import JobsPage from './pages/JobsPage'
 import MatchesPage from './pages/MatchesPage'
+import MigrationPage from './pages/MigrationPage'
 import OverviewPage from './pages/OverviewPage'
 import EvalsPage from './pages/EvalsPage'
 import AgentBehaviorTab from './pages/evals/AgentBehaviorTab'
@@ -32,6 +33,7 @@ export default function App() {
               <Route path="jobs" element={<JobsPage />} />
               <Route path="matches" element={<MatchesPage />} />
             </Route>
+            <Route path="migration" element={<MigrationPage />} />
             <Route path="evals" element={<EvalsPage />}>
               <Route element={<EvalsLayout />}>
                 <Route index element={<Navigate to="kpis" replace />} />

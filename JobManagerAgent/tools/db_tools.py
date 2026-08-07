@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from shared.job_data import JobListing
-from shared.job_match_data import JobMatch
+from shared.job_match_data import JobMatch, reprocess_candidates_stmt
 from utils.agent_logger import get_agent_logger
 
 
@@ -68,14 +68,18 @@ class JobResult:
 	prompt_name: str
 	prompt_version: str
 	model_name: str
+	score_breakdown: dict | None = None
 
 
 def record_job_result(session: Session, result: JobResult) -> bool:
 	"""Tool: idempotently persist a JobMatch row.
 
-	`job_id` is the JobMatch primary key, so a duplicate write (e.g. the same job picked up
-	by two overlapping cycles) raises IntegrityError instead of double-writing; that's treated
-	as a successful no-op -- the job is already recorded -- rather than an error.
+	`(job_id, prompt_version)` is the JobMatch primary key, so a duplicate write for the same
+	job under the same prompt version (e.g. the same job picked up by two overlapping cycles,
+	or a backfill run resumed after a partial failure) raises IntegrityError instead of
+	double-writing; that's treated as a successful no-op rather than an error. A different
+	prompt_version for the same job_id is a distinct row by design -- that's what lets a job
+	carry both its original score and a rubric-based backfill score side by side.
 	"""
 	session.add(JobMatch(**asdict(result)))
 	try:
@@ -83,5 +87,38 @@ def record_job_result(session: Session, result: JobResult) -> bool:
 		return True
 	except IntegrityError:
 		session.rollback()
-		LOGGER.action("job_result_already_recorded", job_id=result.job_id, reason="duplicate JobMatch primary key")
+		LOGGER.action(
+			"job_result_already_recorded",
+			job_id=result.job_id,
+			prompt_version=result.prompt_version,
+			reason="duplicate JobMatch primary key (job_id, prompt_version)",
+		)
 		return False
+
+
+@dataclass(frozen=True)
+class ReprocessCandidate:
+	job_id: int
+	job_url: str | None
+	job_role: str
+	company_name: str
+
+
+def get_reprocess_candidates(session: Session, *, target_prompt_version: str, limit: int) -> list[ReprocessCandidate]:
+	"""Backfill tool: fetch up to `limit` jobs that already have a job_matches row under some
+	prompt version but not yet under `target_prompt_version` -- see
+	shared/job_match_data.py:reprocess_candidates_stmt for the priority ordering (match=true
+	jobs first, then non-matches, oldest first within each group).
+	"""
+	rows = session.execute(reprocess_candidates_stmt(target_prompt_version=target_prompt_version, limit=limit)).all()
+	candidates = [
+		ReprocessCandidate(job_id=row.job_id, job_url=row.job_url, job_role=row.job_role, company_name=row.company_name)
+		for row in rows
+	]
+	LOGGER.action(
+		"reprocess_candidates_selected",
+		target_prompt_version=target_prompt_version,
+		limit=limit,
+		batch_count=len(candidates),
+	)
+	return candidates

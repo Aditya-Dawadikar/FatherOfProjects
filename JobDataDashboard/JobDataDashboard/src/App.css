@@ -961,6 +961,73 @@
   margin-bottom: 0;
 }
 
+.migration-section {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.migration-subsection {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.migration-subsection:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.migration-subsection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.migration-subsection-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.rpm-grid {
+  margin-top: 8px;
+}
+
+.rpm-bucket-card {
+  gap: 8px;
+}
+
+.rpm-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--overlay-strong);
+  overflow: hidden;
+}
+
+.rpm-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 300ms ease;
+}
+
+.rpm-bar-low {
+  background: var(--accent);
+}
+
+.rpm-bar-mid {
+  background: var(--warn);
+}
+
+.rpm-bar-high {
+  background: var(--error);
+}
+
 .pane-tabs {
   display: flex;
   gap: 8px;
@@ -1382,6 +1449,75 @@
 .row-actions-cell {
   width: 1%;
   white-space: nowrap;
+}
+
+.match-detail-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.match-detail-section h3 {
+  margin: 0 0 6px;
+}
+
+.match-detail-hint {
+  color: var(--muted);
+  font-size: 0.9em;
+  margin: 0 0 14px;
+}
+
+.match-detail-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+  margin: 0 0 14px;
+}
+
+.match-detail-field dt {
+  color: var(--muted);
+  font-size: 0.82em;
+  margin-bottom: 2px;
+}
+
+.match-detail-field dd {
+  margin: 0;
+}
+
+.match-detail-reasoning {
+  color: var(--text);
+  margin: 0 0 18px;
+  line-height: 1.5;
+}
+
+.criteria-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.criteria-row {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.criteria-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.criteria-name {
+  font-weight: 600;
+}
+
+.criteria-reasoning {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .company-cell span,

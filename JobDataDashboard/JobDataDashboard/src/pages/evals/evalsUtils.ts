@@ -12,6 +12,7 @@ export const RESULT_METRICS: Array<{ key: keyof NonNullable<EvalRun['result']>; 
   { key: 'recall', label: 'Recall', formatter: formatPercent },
   { key: 'f1', label: 'F1' },
   { key: 'score_in_range_rate', label: 'Score In-Range Rate', formatter: formatPercent },
+  { key: 'criteria_in_range_rate', label: 'Criteria In-Range Rate', formatter: formatPercent },
   { key: 'mean_predicted_score', label: 'Mean Predicted Score' },
   { key: 'evaluated_cases', label: 'Evaluated Cases' },
   { key: 'errored_cases', label: 'Errored Cases' },

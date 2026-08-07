@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from functools import lru_cache
 
-from sqlalchemy import DateTime, Integer, String, Text, create_engine
+from sqlalchemy import DateTime, Engine, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from utils.config import DEFAULT_JOB_TABLE_NAME
@@ -78,6 +79,25 @@ def normalize_database_url(database_url: str) -> str:
 
 def create_db_engine(database_url: str):
 	return create_engine(normalize_database_url(database_url), future=True)
+
+
+@lru_cache
+def get_shared_engine() -> Engine:
+	"""Cached engine for JobManagerAgent's API-layer call sites that need DB access but don't
+	already have an engine passed down to them (admin.py, agent_topology.py, mlflow_summary.py,
+	and api/backfill.py's own request-scoped engine getter) -- one connection pool per process
+	instead of each endpoint module building its own. `Base.metadata.create_all` here means any
+	model registered on `Base` by the time this first runs (job_listings, job_matches, and the
+	migration-history tables in backfill/models.py and integrations/mlflow/models.py) gets its
+	table created automatically -- no separate migration needed for a brand new table, only for
+	altering an existing one (see scripts/migrate_job_matches_v2.py for that case).
+
+	Not used by agents/react_agent.py's live/backfill cycle, which creates its own uncached engine
+	per cycle -- an existing, unrelated pattern this doesn't change.
+	"""
+	engine = create_db_engine(load_database_url())
+	Base.metadata.create_all(engine)
+	return engine
 
 
 def _clip(value: object, max_len: int) -> str | None:
