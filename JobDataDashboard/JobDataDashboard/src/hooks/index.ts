@@ -18,6 +18,7 @@ import type {
   MlflowSummary,
   PipelineFunnel,
   PromptActiveHistoryEntry,
+  RpmDistributionUpdate,
   PromptVersionSummary,
   RegisteredPrompt,
   RpmBreakdown,
@@ -631,6 +632,13 @@ async function fetchRateLimits(): Promise<RpmBreakdown> {
   return requestAgentJson<RpmBreakdown>('/agent-api/admin/rate-limits')
 }
 
+async function updateRateLimitsDistribution(payload: RpmDistributionUpdate): Promise<RpmBreakdown> {
+  return requestAgentJson<RpmBreakdown>('/agent-api/admin/rate-limits/config', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 export function useRateLimits() {
   return useQuery({
     queryKey: ['rateLimits'],
@@ -640,6 +648,14 @@ export function useRateLimits() {
     // whole point is watching x/y/z shift live during a handoff, including live traffic the
     // dashboard has no other signal for.
     refetchInterval: 4_000,
+  })
+}
+
+export function useUpdateRateLimitsDistribution() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: updateRateLimitsDistribution,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rateLimits'] }),
   })
 }
 

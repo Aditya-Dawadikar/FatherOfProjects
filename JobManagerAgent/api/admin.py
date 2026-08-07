@@ -20,7 +20,7 @@ from utils.matching_controls import (
 	resume_unscored_backfill,
 	unscored_backfill_pause_reason,
 )
-from utils.rate_limiter import RPM_BUCKETS, RedisRpmLimiter
+from utils.rate_limiter import RPM_BUCKETS, RedisRpmLimiter, load_provider_quota_override, set_rpm_distribution
 
 
 LOGGER = get_agent_logger(__name__)
@@ -237,23 +237,27 @@ class RpmBreakdownResponse(BaseModel):
 	headroom: int | None
 
 
-@router.get(
-	"/rate-limits",
-	summary="Real-time RPM usage per bucket (live/backfill/eval) + headroom",
-)
-def get_rate_limits() -> RpmBreakdownResponse:
-	"""The x+y+z+w budget model (see utils/config.py) made visible: current in-window request
-	count and cap for each independently-tracked bucket -- "live" (x, live matching cycles),
-	"backfill" (y, the rescore-under-a-new-prompt process), "eval" (z, the offline eval harness)
-	-- plus `headroom` (w), computed as PROVIDER_RPM_QUOTA minus the sum of the three caps when an
-	operator has set PROVIDER_RPM_QUOTA from the provider's own console; null/unset otherwise
-	rather than guessed. This is a read-only peek (RedisRpmLimiter.current_usage) -- polling it
-	never itself consumes budget.
-	"""
+class UpdateRpmDistributionRequest(BaseModel):
+	live_cap: int = Field(..., ge=1, description="RPM cap for the live bucket (x).")
+	backfill_cap: int = Field(..., ge=1, description="RPM cap for the backfill bucket (y).")
+	eval_cap: int = Field(..., ge=1, description="RPM cap for the eval bucket (z).")
+	provider_quota: int | None = Field(
+		default=None,
+		ge=1,
+		description=(
+			"Optional provider-side quota shown in the provider console. Used only to compute "
+			"headroom (w = quota - x - y - z). Leave null to keep it unknown."
+		),
+	)
+
+
+def _build_rate_limits_response() -> RpmBreakdownResponse:
 	limiter = RedisRpmLimiter()
 	usages = [limiter.current_usage(DEFAULT_MODEL, bucket) for bucket in RPM_BUCKETS]
 	total_allocated = sum(usage.cap for usage in usages)
-	quota = load_provider_rpm_quota()
+	quota = load_provider_quota_override(DEFAULT_MODEL)
+	if quota is None:
+		quota = load_provider_rpm_quota()
 	headroom = (quota - total_allocated) if quota is not None else None
 
 	return RpmBreakdownResponse(
@@ -267,3 +271,59 @@ def get_rate_limits() -> RpmBreakdownResponse:
 		provider_quota=quota,
 		headroom=headroom,
 	)
+
+
+@router.get(
+	"/rate-limits",
+	summary="Real-time RPM usage per bucket (live/backfill/eval) + headroom",
+)
+def get_rate_limits() -> RpmBreakdownResponse:
+	"""The x+y+z+w budget model (see utils/config.py) made visible: current in-window request
+	count and cap for each independently-tracked bucket -- "live" (x, live matching cycles),
+	"backfill" (y, the rescore-under-a-new-prompt process), "eval" (z, the offline eval harness)
+	-- plus `headroom` (w), computed as PROVIDER_RPM_QUOTA minus the sum of the three caps when an
+	operator has set PROVIDER_RPM_QUOTA from the provider's own console; null/unset otherwise
+	rather than guessed. This is a read-only peek (RedisRpmLimiter.current_usage) -- polling it
+	never itself consumes budget.
+	"""
+	return _build_rate_limits_response()
+
+
+@router.post(
+	"/rate-limits/config",
+	summary="Update live/backfill/eval RPM cap distribution and optional provider quota",
+)
+def update_rate_limits_config(payload: UpdateRpmDistributionRequest) -> RpmBreakdownResponse:
+	"""Updates the runtime RPM distribution (x/y/z) used by the Redis sliding-window limiter
+	without a redeploy. Stored in Redis so every process in the fleet sees the same values on
+	the next acquire/current_usage call.
+
+	provider_quota remains informational only: it does not enforce any limit itself, it just
+	enables headroom (w) calculation in GET /admin/rate-limits and the Migration page.
+	"""
+	total_allocated = payload.live_cap + payload.backfill_cap + payload.eval_cap
+	if payload.provider_quota is not None and total_allocated > payload.provider_quota:
+		raise HTTPException(
+			status_code=400,
+			detail=(
+				"Allocated caps exceed provider quota: "
+				f"{payload.live_cap}+{payload.backfill_cap}+{payload.eval_cap}={total_allocated} > {payload.provider_quota}"
+			),
+		)
+
+	set_rpm_distribution(
+		DEFAULT_MODEL,
+		live_cap=payload.live_cap,
+		backfill_cap=payload.backfill_cap,
+		eval_cap=payload.eval_cap,
+		provider_quota=payload.provider_quota,
+	)
+	LOGGER.action(
+		"rpm_distribution_updated",
+		model=DEFAULT_MODEL,
+		live_cap=payload.live_cap,
+		backfill_cap=payload.backfill_cap,
+		eval_cap=payload.eval_cap,
+		provider_quota=payload.provider_quota,
+	)
+	return _build_rate_limits_response()

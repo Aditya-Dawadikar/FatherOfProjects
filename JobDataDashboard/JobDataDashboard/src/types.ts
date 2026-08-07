@@ -337,6 +337,13 @@ export type RpmBreakdown = {
   headroom: number | null
 }
 
+export type RpmDistributionUpdate = {
+  live_cap: number
+  backfill_cap: number
+  eval_cap: number
+  provider_quota: number | null
+}
+
 export type BackfillProcessSummary = {
   name: string
   description: string

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FiPause, FiPlay, FiRefreshCw, FiRotateCcw, FiSlash, FiZap } from 'react-icons/fi'
 import {
   useBackfillProcesses,
@@ -12,6 +12,7 @@ import {
   useRevertActivePrompt,
   useSetActivePrompt,
   useTriggerBackfill,
+  useUpdateRateLimitsDistribution,
   useUnscoredBackfillStatus,
 } from '../hooks'
 import type { BackfillRun, BackfillRunStatusValue } from '../types'
@@ -393,7 +394,62 @@ function HandoffObservabilitySection() {
 
 function RpmBreakdownSection() {
   const rateLimitsQuery = useRateLimits()
+  const updateDistributionMutation = useUpdateRateLimitsDistribution()
   const breakdown = rateLimitsQuery.data
+  const [liveCap, setLiveCap] = useState('')
+  const [backfillCap, setBackfillCap] = useState('')
+  const [evalCap, setEvalCap] = useState('')
+  const [providerQuota, setProviderQuota] = useState('')
+  const [formError, setFormError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!breakdown) return
+    const live = breakdown.buckets.find((bucket) => bucket.bucket === 'live')
+    const backfill = breakdown.buckets.find((bucket) => bucket.bucket === 'backfill')
+    const evalBucket = breakdown.buckets.find((bucket) => bucket.bucket === 'eval')
+    setLiveCap(live ? String(live.cap) : '')
+    setBackfillCap(backfill ? String(backfill.cap) : '')
+    setEvalCap(evalBucket ? String(evalBucket.cap) : '')
+    setProviderQuota(breakdown.provider_quota !== null ? String(breakdown.provider_quota) : '')
+  }, [breakdown])
+
+  function applyDistribution() {
+    const nextLive = Number(liveCap)
+    const nextBackfill = Number(backfillCap)
+    const nextEval = Number(evalCap)
+    const quotaText = providerQuota.trim()
+    const nextProviderQuota = quotaText ? Number(quotaText) : null
+
+    if (!Number.isInteger(nextLive) || nextLive < 1) {
+      setFormError('Live cap must be an integer >= 1.')
+      return
+    }
+    if (!Number.isInteger(nextBackfill) || nextBackfill < 1) {
+      setFormError('Backfill cap must be an integer >= 1.')
+      return
+    }
+    if (!Number.isInteger(nextEval) || nextEval < 1) {
+      setFormError('Eval cap must be an integer >= 1.')
+      return
+    }
+    if (nextProviderQuota !== null && (!Number.isInteger(nextProviderQuota) || nextProviderQuota < 1)) {
+      setFormError('Provider quota must be blank or an integer >= 1.')
+      return
+    }
+    const total = nextLive + nextBackfill + nextEval
+    if (nextProviderQuota !== null && total > nextProviderQuota) {
+      setFormError(`Allocated caps (${total}) exceed provider quota (${nextProviderQuota}).`)
+      return
+    }
+
+    setFormError(null)
+    updateDistributionMutation.mutate({
+      live_cap: nextLive,
+      backfill_cap: nextBackfill,
+      eval_cap: nextEval,
+      provider_quota: nextProviderQuota,
+    })
+  }
 
   return (
     <section className="migration-section">
@@ -415,6 +471,64 @@ function RpmBreakdownSection() {
         </div>
       </div>
       {rateLimitsQuery.error && <div className="banner banner-error">{rateLimitsQuery.error.message}</div>}
+      {formError && <div className="banner banner-error">{formError}</div>}
+      {updateDistributionMutation.error && <div className="banner banner-error">{updateDistributionMutation.error.message}</div>}
+      {updateDistributionMutation.isSuccess && (
+        <div className="banner banner-info">RPM distribution updated. New caps apply immediately.</div>
+      )}
+
+      <div className="migration-subsection">
+        <div className="migration-subsection-header">
+          <h3>Edit RPM distribution</h3>
+        </div>
+        <div className="toolbar-actions">
+          <input
+            className="search-input min-score-input"
+            type="number"
+            min={1}
+            value={liveCap}
+            onChange={(event) => setLiveCap(event.target.value)}
+            placeholder="Live cap (x)"
+          />
+          <input
+            className="search-input min-score-input"
+            type="number"
+            min={1}
+            value={backfillCap}
+            onChange={(event) => setBackfillCap(event.target.value)}
+            placeholder="Backfill cap (y)"
+          />
+          <input
+            className="search-input min-score-input"
+            type="number"
+            min={1}
+            value={evalCap}
+            onChange={(event) => setEvalCap(event.target.value)}
+            placeholder="Eval cap (z)"
+          />
+          <input
+            className="search-input"
+            type="number"
+            min={1}
+            value={providerQuota}
+            onChange={(event) => setProviderQuota(event.target.value)}
+            placeholder="Provider quota (optional, for w)"
+          />
+          <button
+            type="button"
+            className="primary-button ghost-button-with-icon"
+            onClick={applyDistribution}
+            disabled={updateDistributionMutation.isPending}
+          >
+            <FiZap aria-hidden="true" className="button-icon" />
+            {updateDistributionMutation.isPending ? 'Saving...' : 'Apply RPM split'}
+          </button>
+        </div>
+        <p className="match-detail-hint">
+          Provider quota is the real total RPM limit from your model provider console. It is used only to compute
+          headroom (w = quota - x - y - z). Leaving it blank keeps headroom as unknown.
+        </p>
+      </div>
 
       {breakdown && (
         <>

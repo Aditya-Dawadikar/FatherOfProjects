@@ -35,6 +35,52 @@ class RpmUsage:
 # dashboard's RPM breakdown, so a new bucket only needs to be added here (plus a cap loader) to
 # show up there automatically.
 RPM_BUCKETS: tuple[str, ...] = ("live", "backfill", "eval")
+_RPM_CONFIG_KEY_PREFIX = "jobmanageragent:rpm_config"
+
+
+def _rpm_config_key(model: str) -> str:
+	return f"{_RPM_CONFIG_KEY_PREFIX}:{model}"
+
+
+def _override_client() -> Redis:
+	return Redis.from_url(load_env_value("REDIS_URL"), decode_responses=True)
+
+
+def _load_bucket_override(model: str, bucket: str) -> int | None:
+	field = f"{bucket}_cap"
+	value = _override_client().hget(_rpm_config_key(model), field)
+	if value is None or not value.strip():
+		return None
+	return int(value)
+
+
+def load_provider_quota_override(model: str) -> int | None:
+	value = _override_client().hget(_rpm_config_key(model), "provider_quota")
+	if value is None or not value.strip():
+		return None
+	return int(value)
+
+
+def set_rpm_distribution(
+	model: str,
+	*,
+	live_cap: int,
+	backfill_cap: int,
+	eval_cap: int,
+	provider_quota: int | None,
+) -> None:
+	fields = {
+		"live_cap": str(live_cap),
+		"backfill_cap": str(backfill_cap),
+		"eval_cap": str(eval_cap),
+	}
+	client = _override_client()
+	key = _rpm_config_key(model)
+	client.hset(key, mapping=fields)
+	if provider_quota is None:
+		client.hdel(key, "provider_quota")
+	else:
+		client.hset(key, "provider_quota", str(provider_quota))
 
 
 def _cap_env_key(model: str, *, suffix: str = "") -> str:
@@ -43,6 +89,9 @@ def _cap_env_key(model: str, *, suffix: str = "") -> str:
 
 
 def load_rpm_cap(model: str) -> int:
+	override = _load_bucket_override(model, "live")
+	if override is not None:
+		return override
 	return int(load_env_value(_cap_env_key(model), str(DEFAULT_RPM_CAP)))
 
 
@@ -52,6 +101,9 @@ def load_backfill_rpm_cap(model: str) -> int:
 	param) -- this is what lets a large rescore-under-a-new-prompt backfill run without ever
 	crowding out live scoring's share of the model's real external quota.
 	"""
+	override = _load_bucket_override(model, "backfill")
+	if override is not None:
+		return override
 	return int(load_env_value(_cap_env_key(model, suffix="BACKFILL"), str(BACKFILL_RPM_CAP)))
 
 
@@ -60,6 +112,9 @@ def load_eval_rpm_cap(model: str) -> int:
 	offline eval run (potentially scoring the full golden dataset) can't compete with real live
 	traffic for the same counter. See utils/config.py's x+y+z+w budget model.
 	"""
+	override = _load_bucket_override(model, "eval")
+	if override is not None:
+		return override
 	return int(load_env_value(_cap_env_key(model, suffix="EVAL"), str(EVAL_RPM_CAP)))
 
 
