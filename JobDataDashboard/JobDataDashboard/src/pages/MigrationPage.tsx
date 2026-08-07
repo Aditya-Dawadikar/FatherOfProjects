@@ -481,39 +481,53 @@ function RpmBreakdownSection() {
         <div className="migration-subsection-header">
           <h3>Edit RPM distribution</h3>
         </div>
+        <div className="rpm-config-grid">
+          <label className="field">
+            <span>Live cap (x)</span>
+            <input
+              className="search-input min-score-input"
+              type="number"
+              min={1}
+              value={liveCap}
+              onChange={(event) => setLiveCap(event.target.value)}
+              placeholder="Live"
+            />
+          </label>
+          <label className="field">
+            <span>Backfill cap (y)</span>
+            <input
+              className="search-input min-score-input"
+              type="number"
+              min={1}
+              value={backfillCap}
+              onChange={(event) => setBackfillCap(event.target.value)}
+              placeholder="Backfill"
+            />
+          </label>
+          <label className="field">
+            <span>Eval cap (z)</span>
+            <input
+              className="search-input min-score-input"
+              type="number"
+              min={1}
+              value={evalCap}
+              onChange={(event) => setEvalCap(event.target.value)}
+              placeholder="Eval"
+            />
+          </label>
+          <label className="field">
+            <span>Provider quota (w source)</span>
+            <input
+              className="search-input"
+              type="number"
+              min={1}
+              value={providerQuota}
+              onChange={(event) => setProviderQuota(event.target.value)}
+              placeholder="Optional"
+            />
+          </label>
+        </div>
         <div className="toolbar-actions">
-          <input
-            className="search-input min-score-input"
-            type="number"
-            min={1}
-            value={liveCap}
-            onChange={(event) => setLiveCap(event.target.value)}
-            placeholder="Live cap (x)"
-          />
-          <input
-            className="search-input min-score-input"
-            type="number"
-            min={1}
-            value={backfillCap}
-            onChange={(event) => setBackfillCap(event.target.value)}
-            placeholder="Backfill cap (y)"
-          />
-          <input
-            className="search-input min-score-input"
-            type="number"
-            min={1}
-            value={evalCap}
-            onChange={(event) => setEvalCap(event.target.value)}
-            placeholder="Eval cap (z)"
-          />
-          <input
-            className="search-input"
-            type="number"
-            min={1}
-            value={providerQuota}
-            onChange={(event) => setProviderQuota(event.target.value)}
-            placeholder="Provider quota (optional, for w)"
-          />
           <button
             type="button"
             className="primary-button ghost-button-with-icon"
