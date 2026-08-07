@@ -6,8 +6,8 @@ import { NavLink, Outlet } from 'react-router-dom'
 // both are just different views over the same scrape -> match pipeline data -- JobsPage/MatchesView
 // no longer wrap themselves, this is the thing that does it now.
 const ETL_TABS = [
-  { path: 'jobs', label: 'Jobs' },
-  { path: 'matches', label: 'Matches' },
+  { path: 'matches', label: 'Matched & Processed Data' },
+  { path: 'jobs', label: 'All Data' },
 ]
 
 export default function EtlDataLayout() {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FiPause, FiPlay, FiRefreshCw, FiRotateCcw, FiSlash, FiZap } from 'react-icons/fi'
+import { FiChevronDown, FiChevronUp, FiPause, FiPlay, FiRefreshCw, FiRotateCcw, FiSlash, FiZap } from 'react-icons/fi'
 import {
   useBackfillProcesses,
   useBackfillRuns,
@@ -39,6 +39,11 @@ function usagePercent(count: number, cap: number) {
   if (cap <= 0) return 0
   return Math.min(100, Math.round((count / cap) * 100))
 }
+
+// Error/cancel-reason text (rescore_with_prompt.py's MatchResponseError messages in particular
+// can run long, e.g. echoing a full model response) collapses past this length rather than
+// stretching the row -- see ReasonCell below.
+const REASON_COLLAPSE_THRESHOLD = 80
 
 // --- Section 1: Feature flag -- active prompt version -----------------------------------------
 
@@ -290,6 +295,30 @@ function BackfillTriggerForm() {
   )
 }
 
+function ReasonCell({ text }: { text: string | null }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  if (!text) {
+    return <td>—</td>
+  }
+
+  const isCollapsible = text.length > REASON_COLLAPSE_THRESHOLD
+
+  return (
+    <td className="reason-cell">
+      <div className={`reason-text${isExpanded ? ' is-expanded' : ''}`} title={isCollapsible && !isExpanded ? text : undefined}>
+        {text}
+      </div>
+      {isCollapsible && (
+        <button type="button" className="reason-toggle" onClick={() => setIsExpanded((value) => !value)}>
+          {isExpanded ? <FiChevronUp aria-hidden="true" className="button-icon" /> : <FiChevronDown aria-hidden="true" className="button-icon" />}
+          {isExpanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </td>
+  )
+}
+
 function BackfillRunRow({ run }: { run: BackfillRun }) {
   const cancelMutation = useCancelBackfillRun()
   const total = run.candidate_count ?? 0
@@ -311,7 +340,7 @@ function BackfillRunRow({ run }: { run: BackfillRun }) {
       <td>{run.not_found_404}</td>
       <td>{run.crawl_error}</td>
       <td>{run.errored}</td>
-      <td title={run.error ?? run.cancel_reason ?? ''}>{run.error ?? run.cancel_reason ?? '—'}</td>
+      <ReasonCell text={run.error ?? run.cancel_reason ?? null} />
       <td>{formatDateTime(run.started_at)}</td>
       <td>{formatDateTime(run.finished_at)}</td>
       <td>

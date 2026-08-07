@@ -1400,6 +1400,38 @@
   gap: 4px;
 }
 
+.reason-cell {
+  max-width: 280px;
+}
+
+.reason-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reason-text.is-expanded {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.reason-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.reason-toggle:hover {
+  text-decoration: underline;
+}
+
 .filter-select {
   width: auto;
   min-width: 150px;
