@@ -56,9 +56,27 @@ PRIMARY_MODEL_COOLDOWN_SECONDS = 600
 # pre-Gemini-3 control knob; Gemini 3+ models use thinking_level instead and largely ignore
 # thinking_budget, so thinking kept happening anyway (see incident #2: a STOP-finished response
 # still truncated mid-string). thinking_level="minimal" is the control that actually reaches
-# gemini-3.5/3.6-flash. MAX_OUTPUT_TOKENS is set generously on top of that as headroom, since
-# Gemini 3 thinking models aren't guaranteed to allow thinking all the way down to zero.
-MAX_OUTPUT_TOKENS = 8192
+# gemini-3.5/3.6-flash.
+#
+# A single flat MAX_OUTPUT_TOKENS was still the wrong shape: a single-job call (score_job -- the
+# live/ReAct/eval path) only ever needs to fit one job's ~5-criterion JSON, but a batch call
+# (score_jobs_batch -- backfill/batch-eval) fits BACKFILL_BATCH_SIZE jobs' worth in the same
+# response, on top of the same unpredictable per-call thinking-token overhead -- so a ceiling
+# sized for "one job plus thinking" left a batch response no real headroom, and a third incident
+# still truncated a 6-job batch partway through job 6 of 6 (the visible JSON for a full batch only
+# needs on the order of ~2k tokens; the rest of the old flat 8192 ceiling was thinking tokens even
+# at thinking_level="minimal"). Gemini 3 Flash supports up to ~65k output tokens (and a 1M-token
+# input window, so the input side was never the constraint here -- resume + a few job postings
+# runs a few thousand tokens at most), so there's ample room to size these independently instead
+# of sharing one number: SINGLE_JOB_MAX_OUTPUT_TOKENS keeps the original 8192 (score_job never
+# had a truncation incident at that size); BATCH_MAX_OUTPUT_TOKENS gets a bigger, separate ceiling
+# so a batch's extra thinking+JSON volume doesn't compete with the single-job path's budget.
+# score_jobs_batch (llm_providers/__init__.py) logs prompt/completion/total tokens per call so a
+# completion count near either ceiling can be correlated with truncation instead of discovered
+# after the fact; llm_providers/base.py also recovers whichever leading batch items did complete
+# when a response is truncated anyway, rather than discarding the whole batch (_parse_array_partial).
+SINGLE_JOB_MAX_OUTPUT_TOKENS = 8192
+BATCH_MAX_OUTPUT_TOKENS = 16384
 THINKING_LEVEL = "minimal"
 
 # --- Rate limiting (utils/rate_limiter.py) -----------------------------------------------------
@@ -100,11 +118,14 @@ EVAL_RPM_CAP = 1
 PROVIDER_RPM_QUOTA: int | None = None
 
 # How many jobs go into one LLM call when backfilling with a schema_mode="batch" prompt
-# (job_match_v5.txt). Bounded by MAX_OUTPUT_TOKENS above -- each job's per-criterion breakdown
-# (5 criteria, score + 1-2 sentence reasoning each) runs a few hundred output tokens, so this
-# default leaves comfortable headroom under MAX_OUTPUT_TOKENS=8192 even for verbose responses.
-# Override via BACKFILL_BATCH_SIZE if a specific model/rubric needs a different budget.
-BACKFILL_BATCH_SIZE = 6
+# (job_match_v5.txt). Bounded by BATCH_MAX_OUTPUT_TOKENS above -- each job's per-criterion
+# breakdown (5 criteria, score + 1-2 sentence reasoning each) runs a few hundred output tokens on
+# its own, but a batch's response also has to absorb the same unpredictable per-call thinking-token
+# overhead a single-job call does, so more jobs per call doesn't just add "a few hundred tokens" of
+# safety margin -- capped at 5 to keep a real, comfortable margin under BATCH_MAX_OUTPUT_TOKENS
+# rather than pushing batch size up for throughput and eating back into that margin. Override via
+# BACKFILL_BATCH_SIZE if a specific model/rubric needs a different budget.
+BACKFILL_BATCH_SIZE = 5
 
 # --- Crawler (services/crawler.py) -------------------------------------------------------------
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"

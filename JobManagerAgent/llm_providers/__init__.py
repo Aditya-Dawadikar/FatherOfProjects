@@ -7,6 +7,7 @@ from typing import Any
 from guardrails.checks import check_output
 from guardrails.errors import GuardrailBlockedError
 from guardrails.injection import scan_job_for_injection
+from utils.config import BATCH_MAX_OUTPUT_TOKENS, SINGLE_JOB_MAX_OUTPUT_TOKENS
 from utils.env_utils import load_env_value
 
 from . import gemini_provider
@@ -84,7 +85,13 @@ def build_client(provider: str | None = None) -> Any:
 
 
 def call_scoring_model(
-	client: Any, *, model: str, prompt: str, provider: str | None = None, bucket: str = "live"
+	client: Any,
+	*,
+	model: str,
+	prompt: str,
+	provider: str | None = None,
+	bucket: str = "live",
+	max_output_tokens: int = SINGLE_JOB_MAX_OUTPUT_TOKENS,
 ) -> tuple[str, TokenUsage]:
 	"""Single LLM scoring call, with retries for the two recoverable failure modes a provider
 	call can hit: a transient server-side hiccup (fast exponential backoff) and a rate limit
@@ -100,7 +107,10 @@ def call_scoring_model(
 	call_model, which is the actual enforcement point for RPM limiting (see
 	gemini_provider.py:_generate_content) -- this function does not acquire an RPM slot itself,
 	so a caller can't accidentally bypass the reserved-bucket accounting by calling this instead
-	of going through the provider.
+	of going through the provider. `max_output_tokens` is threaded the same way -- defaults to
+	the single-job budget since score_job is the majority caller; score_jobs_batch passes the
+	larger BATCH_MAX_OUTPUT_TOKENS explicitly since one batch response has to fit several jobs'
+	worth of JSON (see utils/config.py).
 
 	Token usage is only available for the call that actually succeeds -- a retried attempt that
 	raised TransientProviderError/RateLimitError never got far enough to report usage, so those
@@ -112,7 +122,9 @@ def call_scoring_model(
 	rate_limit_attempt = 0
 	while True:
 		try:
-			text, usage = module.call_model(client, model=model, prompt=prompt, bucket=bucket)
+			text, usage = module.call_model(
+				client, model=model, prompt=prompt, bucket=bucket, max_output_tokens=max_output_tokens
+			)
 			return text, usage
 		except TransientProviderError:
 			transient_attempt += 1
@@ -174,7 +186,14 @@ def score_job(
 
 	scan_job_for_injection(job_id=job_id, job=job)
 	prompt = render_prompt(prompt_version_obj, resume=resume, jobs=[(job_id or 0, job)], schema_mode=schema_mode)
-	text, usage = call_scoring_model(client, model=model, prompt=prompt, provider=provider, bucket=bucket)
+	text, usage = call_scoring_model(
+		client,
+		model=model,
+		prompt=prompt,
+		provider=provider,
+		bucket=bucket,
+		max_output_tokens=SINGLE_JOB_MAX_OUTPUT_TOKENS,
+	)
 
 	score_breakdown: dict[str, dict[str, Any]] | None = None
 	if schema_mode == "legacy":
@@ -258,8 +277,27 @@ def score_jobs_batch(
 	# gemini_provider.py:_generate_content), never the "live" one score_job() uses -- this, not a
 	# caller-side acquire() before calling this function, is what actually keeps a large backfill
 	# run from crowding out live scoring's share of the model's real quota.
-	text, usage = call_scoring_model(client, model=model, prompt=prompt, provider=provider, bucket=bucket)
-	LOGGER.info("score_jobs_batch response bucket=%s job_ids=%s response=%s", bucket, batch_job_ids, text)
+	text, usage = call_scoring_model(
+		client,
+		model=model,
+		prompt=prompt,
+		provider=provider,
+		bucket=bucket,
+		max_output_tokens=BATCH_MAX_OUTPUT_TOKENS,
+	)
+	# completion_tokens folds in thinking tokens (see TokenUsage), which is exactly what's been
+	# eating this budget unpredictably (see BATCH_MAX_OUTPUT_TOKENS's comment in utils/config.py)
+	# -- logged every call, not just on truncation, so a near-ceiling completion_tokens can be
+	# correlated against a later truncated batch instead of guessed at after the fact.
+	LOGGER.info(
+		"score_jobs_batch response bucket=%s job_ids=%s prompt_tokens=%d completion_tokens=%d total_tokens=%d response=%s",
+		bucket,
+		batch_job_ids,
+		usage.prompt_tokens,
+		usage.completion_tokens,
+		usage.total_tokens,
+		text,
+	)
 	items = parse_criteria_response(text)
 
 	# Token usage is billed once for the whole batch call; attributing the full usage to every

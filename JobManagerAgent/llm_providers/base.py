@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -147,6 +151,30 @@ def render_prompt(
 	return prompt_version.format(resume=resume, **fields)
 
 
+def _parse_array_partial(text: str, start: int) -> list[Any]:
+	"""Recovers as many complete top-level elements as possible from a JSON array that was cut
+	off mid-generation (e.g. the provider stopped partway through a batch-scoring response,
+	leaving the last item -- and the closing ']' -- missing). Parses elements one at a time with
+	`raw_decode` and stops at the first one that doesn't parse cleanly, which is almost always
+	the truncated trailing element, rather than one bad character anywhere invalidating the
+	whole array. `text[start]` must be '['.
+	"""
+	decoder = json.JSONDecoder()
+	whitespace_and_comma = " \t\n\r,"
+	idx = start + 1
+	items: list[Any] = []
+	while True:
+		while idx < len(text) and text[idx] in whitespace_and_comma:
+			idx += 1
+		if idx >= len(text) or text[idx] == "]":
+			return items
+		try:
+			value, idx = decoder.raw_decode(text, idx)
+		except json.JSONDecodeError:
+			return items
+		items.append(value)
+
+
 def _extract_json_value(text: str) -> Any:
 	"""Parses `text` as JSON, tolerating trailing content after a complete value (e.g. a stray
 	model note, a repeated echo, or thinking-mode scratch text that leaked into the visible
@@ -157,6 +185,13 @@ def _extract_json_value(text: str) -> Any:
 	folds any trailing junk into what looks like one (invalid) JSON blob -- that greedy-match
 	failure mode is what previously surfaced as opaque `json.JSONDecodeError` "Extra data"
 	messages with no indication of what was actually returned.
+
+	Separately, a batch response can be cut off mid-generation -- the array never gets its
+	closing ']' because the provider stopped before finishing the last item. That isn't "extra
+	data", it's missing data, so raw_decode alone can't recover it: there's no complete value to
+	decode starting at `start` at all. `_parse_array_partial` handles that case by salvaging
+	whichever leading items did complete, so one truncated trailing item costs only itself
+	instead of the whole batch.
 	"""
 	try:
 		return json.loads(text)
@@ -171,6 +206,16 @@ def _extract_json_value(text: str) -> Any:
 		value, _end = json.JSONDecoder().raw_decode(text, start)
 		return value
 	except json.JSONDecodeError as error:
+		if text[start] == "[":
+			items = _parse_array_partial(text, start)
+			if items:
+				LOGGER.warning(
+					"Model response array was truncated mid-generation; recovered %d complete item(s) and "
+					"discarded the incomplete tail. parse_error=%s",
+					len(items),
+					error,
+				)
+				return items
 		raise MatchResponseError(
 			f"Model response JSON could not be parsed: {error}; full response was: {text!r}"
 		) from error

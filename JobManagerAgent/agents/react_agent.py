@@ -22,8 +22,8 @@ from utils.config import (
 	DEFAULT_MODEL,
 	GUARDRAIL_TOOL_CALL_HEADROOM,
 	GUARDRAIL_TOOL_CALLS_PER_JOB,
-	MAX_OUTPUT_TOKENS,
 	RECURSION_LIMIT_HEADROOM,
+	SINGLE_JOB_MAX_OUTPUT_TOKENS,
 	STEPS_PER_JOB,
 	THINKING_LEVEL,
 	load_match_threshold,
@@ -63,7 +63,7 @@ def build_llm(model: str) -> ChatGoogleGenerativeAI:
 		model=model,
 		google_api_key=load_env_value("GEMINI_API_KEY"),
 		temperature=0,
-		max_output_tokens=MAX_OUTPUT_TOKENS,
+		max_output_tokens=SINGLE_JOB_MAX_OUTPUT_TOKENS,
 		thinking_level=THINKING_LEVEL,
 		rate_limiter=LangChainRedisRpmLimiter(model=model),
 	)
