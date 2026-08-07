@@ -2,7 +2,7 @@ import { startTransition, useDeferredValue, useState } from 'react'
 import { FiChevronLeft, FiChevronRight, FiRefreshCw, FiX } from 'react-icons/fi'
 import MatchDetailPanel from './MatchDetailPanel'
 import MatchesTable from './MatchesTable'
-import { useMatchedJobs, useMatchedJobsCount, usePromptVersions } from '../hooks'
+import { useMatchedJobs, useMatchedJobsCount, usePromptVersions, usePrompts } from '../hooks'
 import type { MatchedJobRecord, MatchFilter } from '../types'
 
 const PAGE_SIZE = 20
@@ -19,11 +19,33 @@ export default function MatchesView() {
   const minScore = minScoreText.trim() ? Number(minScoreText) : null
 
   const promptVersionsQuery = usePromptVersions()
-  const promptVersions = promptVersionsQuery.data ?? []
+  const registeredPromptsQuery = usePrompts()
+  const scoredVersions = promptVersionsQuery.data ?? []
+  const registeredPrompts = registeredPromptsQuery.data ?? []
+
+  // Union of every prompt version registered in MLflow with whatever scored-job counts
+  // JobDataServer has recorded for it. scoredVersions alone (a GROUP BY over job_matches) only
+  // lists versions that have already scored at least one job, so a version just registered via
+  // the Migrations tab wouldn't appear here until a live/backfill cycle actually used it --
+  // registeredPrompts fills in those zero-jobs-yet versions.
+  const scoredByVersion = new Map(scoredVersions.map((version) => [version.prompt_version, version]))
+  const allVersionIds = new Set([
+    ...scoredVersions.map((version) => version.prompt_version),
+    ...registeredPrompts.map((prompt) => prompt.version),
+  ])
+  const promptVersions = Array.from(allVersionIds)
+    .sort((a, b) => Number(b) - Number(a))
+    .map((version) => ({
+      prompt_version: version,
+      row_count: scoredByVersion.get(version)?.row_count ?? 0,
+    }))
+
   // No explicit selection yet -- default to the most recently evaluated prompt_version, mirroring
   // the backend's own default (JobDataServer/main.py:resolve_prompt_version) so the filter shows
-  // as "already applied" rather than looking unset.
-  const effectivePromptVersion = promptVersion ?? promptVersions[0]?.prompt_version ?? null
+  // as "already applied" rather than looking unset. Falls back to the newest registered version
+  // only if nothing has been scored at all yet.
+  const effectivePromptVersion =
+    promptVersion ?? scoredVersions[0]?.prompt_version ?? promptVersions[0]?.prompt_version ?? null
 
   const filters = { searchText: deferredSearchText, matchFilter, minScore, promptVersion: effectivePromptVersion }
   const matchesQuery = useMatchedJobs({ ...filters, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE })
@@ -95,12 +117,12 @@ export default function MatchesView() {
             className="search-input filter-select"
             value={effectivePromptVersion ?? ''}
             onChange={(event) => changePromptVersion(event.target.value)}
-            disabled={promptVersionsQuery.isLoading || promptVersions.length === 0}
+            disabled={(promptVersionsQuery.isLoading && registeredPromptsQuery.isLoading) || promptVersions.length === 0}
           >
             {promptVersions.length === 0 && <option value="">No prompt versions yet</option>}
             {promptVersions.map((version) => (
               <option key={version.prompt_version} value={version.prompt_version}>
-                v{version.prompt_version} ({version.row_count} jobs)
+                v{version.prompt_version} ({version.row_count > 0 ? `${version.row_count} jobs` : 'no jobs yet'})
               </option>
             ))}
           </select>
@@ -147,6 +169,7 @@ export default function MatchesView() {
       {matchesQuery.error && <div className="banner banner-error">{matchesQuery.error.message}</div>}
       {matchesCountQuery.error && <div className="banner banner-error">{matchesCountQuery.error.message}</div>}
       {globalMatchesCountQuery.error && <div className="banner banner-error">{globalMatchesCountQuery.error.message}</div>}
+      {registeredPromptsQuery.error && <div className="banner banner-error">{registeredPromptsQuery.error.message}</div>}
 
       <MatchesTable matches={matches} selectedJobId={selectedMatch?.job_id ?? null} onSelectMatch={selectMatch} />
 

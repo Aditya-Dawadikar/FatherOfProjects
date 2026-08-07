@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -149,19 +148,32 @@ def render_prompt(
 
 
 def _extract_json_value(text: str) -> Any:
+	"""Parses `text` as JSON, tolerating trailing content after a complete value (e.g. a stray
+	model note, a repeated echo, or thinking-mode scratch text that leaked into the visible
+	response) -- a real risk here since the response is expected to be array/object-shaped and
+	near-certain to itself contain '{'/'['/'}'/']' characters. `raw_decode` parses only the
+	first complete JSON value starting at `start` and simply ignores whatever follows, instead of
+	a greedy bracket-matching regex that spans all the way to the *last* bracket in the text and
+	folds any trailing junk into what looks like one (invalid) JSON blob -- that greedy-match
+	failure mode is what previously surfaced as opaque `json.JSONDecodeError` "Extra data"
+	messages with no indication of what was actually returned.
+	"""
 	try:
 		return json.loads(text)
 	except json.JSONDecodeError:
 		pass
 
-	match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
-	if match is None:
+	start = next((index for index, char in enumerate(text) if char in "{["), None)
+	if start is None:
 		raise MatchResponseError(f"Model response did not contain a JSON object/array: {text[:200]!r}")
 
 	try:
-		return json.loads(match.group(0))
+		value, _end = json.JSONDecoder().raw_decode(text, start)
+		return value
 	except json.JSONDecodeError as error:
-		raise MatchResponseError(f"Model response JSON could not be parsed: {error}") from error
+		raise MatchResponseError(
+			f"Model response JSON could not be parsed: {error}; full response was: {text!r}"
+		) from error
 
 
 def parse_match_response(text: str) -> dict[str, Any]:

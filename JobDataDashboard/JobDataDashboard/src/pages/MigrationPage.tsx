@@ -214,8 +214,10 @@ function UnscoredBackfillControl() {
 
 function BackfillTriggerForm() {
   const processesQuery = useBackfillProcesses()
+  const promptsQuery = usePrompts()
   const triggerMutation = useTriggerBackfill()
   const processes = processesQuery.data ?? []
+  const prompts = promptsQuery.data ?? []
   const [process, setProcess] = useState('rescore_with_prompt')
   const [promptVersion, setPromptVersion] = useState('')
   const [limitText, setLimitText] = useState('5')
@@ -242,13 +244,20 @@ function BackfillTriggerForm() {
             </option>
           ))}
         </select>
-        <input
-          className="search-input"
-          type="text"
+        <select
+          className="search-input filter-select"
           value={promptVersion}
           onChange={(event) => setPromptVersion(event.target.value)}
-          placeholder="params.prompt_version, e.g. 5"
-        />
+          disabled={promptsQuery.isLoading}
+        >
+          <option value="">Select a prompt version...</option>
+          {prompts.map((prompt) => (
+            <option key={prompt.version} value={prompt.version}>
+              v{prompt.version} · {prompt.schema_mode}
+              {prompt.is_active ? ' (currently active)' : ''}
+            </option>
+          ))}
+        </select>
         <input
           className="search-input min-score-input"
           type="number"
@@ -276,6 +285,7 @@ function BackfillTriggerForm() {
         <div className="banner banner-info">Started run {triggerMutation.data.run_id}.</div>
       )}
       {triggerMutation.error && <div className="banner banner-error">{triggerMutation.error.message}</div>}
+      {promptsQuery.error && <div className="banner banner-error">{promptsQuery.error.message}</div>}
     </div>
   )
 }

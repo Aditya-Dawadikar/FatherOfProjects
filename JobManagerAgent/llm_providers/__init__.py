@@ -248,11 +248,18 @@ def score_jobs_batch(
 		return {}
 
 	prompt = render_prompt(prompt_version_obj, resume=resume, jobs=screened_jobs, schema_mode=schema_mode)
+	batch_job_ids = [job_id for job_id, _ in screened_jobs]
+	# Logged unconditionally (not only on failure) so every job item's exact request/response is
+	# always available for debugging -- e.g. a MatchResponseError from parse_criteria_response
+	# below still has its triggering prompt/response on record even though the exception itself
+	# only carries the parser's error text.
+	LOGGER.info("score_jobs_batch request bucket=%s job_ids=%s prompt=%s", bucket, batch_job_ids, prompt)
 	# The one call this whole batch makes draws from `bucket`'s reserved RPM counter (see
 	# gemini_provider.py:_generate_content), never the "live" one score_job() uses -- this, not a
 	# caller-side acquire() before calling this function, is what actually keeps a large backfill
 	# run from crowding out live scoring's share of the model's real quota.
 	text, usage = call_scoring_model(client, model=model, prompt=prompt, provider=provider, bucket=bucket)
+	LOGGER.info("score_jobs_batch response bucket=%s job_ids=%s response=%s", bucket, batch_job_ids, text)
 	items = parse_criteria_response(text)
 
 	# Token usage is billed once for the whole batch call; attributing the full usage to every
