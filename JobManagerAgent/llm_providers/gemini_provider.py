@@ -16,9 +16,9 @@ from utils.config import (
 	SINGLE_JOB_MAX_OUTPUT_TOKENS,
 	THINKING_LEVEL,
 )
+from utils.billing_status import record_billing_exhausted
 from utils.env_utils import load_env_value
 from utils.rate_limiter import RedisRpmLimiter, load_backfill_rpm_cap
-from utils.token_budget import record_billing_exhausted, record_tokens
 
 from .base import BillingExhaustedError, MatchResponseError, RateLimitError, TokenUsage, TransientProviderError
 
@@ -161,11 +161,6 @@ def _generate_content(
 	)
 	_raise_if_truncated(response, model=model, max_output_tokens=max_output_tokens)
 	usage = _usage_from_response(response)
-	# Recorded here, not in call_scoring_model (llm_providers/__init__.py) -- this is the one
-	# place a real network call actually completed, whether the caller went on to retry a later
-	# TransientProviderError/RateLimitError or not, and it's provider-specific real spend (GET
-	# /admin/token-budget), not the provider-agnostic retry orchestration that lives up there.
-	record_tokens(usage.total_tokens)
 	return response.text or "", usage
 
 

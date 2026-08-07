@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { FiActivity, FiAlertTriangle, FiBarChart2, FiDatabase, FiLayout, FiShuffle, FiTrendingUp } from 'react-icons/fi'
-import { useTokenBudget } from '../hooks'
+import { useBillingStatus } from '../hooks'
 import ObservabilityPage from '../pages/ObservabilityPage'
 
 function tabClassName({ isActive }: { isActive: boolean }) {
@@ -16,11 +16,12 @@ export default function Layout() {
   // is a real, refreshable, linkable URL and its NavLink still activates) but renders nothing;
   // this is the thing actually on screen there.
   const isObservability = useLocation().pathname === '/observability'
-  // Polls from every tab (not just Migration, where the detailed token-budget section lives) --
-  // billing exhaustion means every subsequent live/backfill scoring call keeps failing the same
-  // way, so it needs to be visible no matter what an operator happens to have open when it hits.
-  const tokenBudgetQuery = useTokenBudget()
-  const isBillingExhausted = tokenBudgetQuery.data?.is_billing_exhausted ?? false
+  // Polls from every tab (not just Rate Limits, where the billing-exhaustion alert detail lives)
+  // -- billing exhaustion means every subsequent live/backfill scoring call keeps failing the
+  // same way, so it needs to be visible no matter what an operator happens to have open when it
+  // hits.
+  const billingStatusQuery = useBillingStatus()
+  const isBillingExhausted = billingStatusQuery.data?.is_billing_exhausted ?? false
 
   return (
     <div className="app-shell">

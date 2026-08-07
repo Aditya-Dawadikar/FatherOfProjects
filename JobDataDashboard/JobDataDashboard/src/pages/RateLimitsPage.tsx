@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { FiRefreshCw, FiRotateCcw, FiZap } from 'react-icons/fi'
-import { useRateLimits, useResetTokenBudget, useTokenBudget, useUpdateRateLimitsDistribution } from '../hooks'
+import { useBillingStatus, useRateLimits, useResetBillingStatus, useUpdateRateLimitsDistribution } from '../hooks'
 
 const BUCKET_LABEL: Record<string, string> = {
   live: 'Live (x)',
@@ -18,37 +18,30 @@ function usagePercent(count: number, cap: number) {
   return Math.min(100, Math.round((count / cap) * 100))
 }
 
-// --- Section 1: Token budget / billing-exhaustion alert -----------------------------------------
+// --- Section 1: Billing-exhaustion alert ---------------------------------------------------
 // Surfaced first on this page (and as a global banner on every tab, see Layout.tsx) -- it's the
 // "is anything actually broken right now" signal, ahead of the task-wise RPM breakdown below.
 
-function formatTokenCount(value: number) {
-  return value.toLocaleString()
-}
-
-function TokenBudgetSection() {
-  const tokenBudgetQuery = useTokenBudget()
-  const resetMutation = useResetTokenBudget()
-  const status = tokenBudgetQuery.data
-
-  const percent = status?.budget ? usagePercent(status.tokens_used, status.budget) : 0
-  const isOverBudget = status?.remaining !== null && status?.remaining !== undefined && status.remaining < 0
+function BillingExhaustionSection() {
+  const billingStatusQuery = useBillingStatus()
+  const resetMutation = useResetBillingStatus()
+  const status = billingStatusQuery.data
 
   return (
     <section className="migration-section">
       <div className="toolbar">
         <div className="toolbar-copy">
-          <p className="eyebrow">Gemini token spend</p>
-          <h2>Token budget</h2>
+          <p className="eyebrow">Gemini billing</p>
+          <h2>Billing status</h2>
         </div>
         <div className="toolbar-actions">
           <button
             type="button"
             className="ghost-button ghost-button-with-icon"
-            onClick={() => tokenBudgetQuery.refetch()}
-            disabled={tokenBudgetQuery.isFetching}
+            onClick={() => billingStatusQuery.refetch()}
+            disabled={billingStatusQuery.isFetching}
           >
-            <FiRefreshCw aria-hidden="true" className={tokenBudgetQuery.isFetching ? 'button-icon spin' : 'button-icon'} />
+            <FiRefreshCw aria-hidden="true" className={billingStatusQuery.isFetching ? 'button-icon spin' : 'button-icon'} />
             Refresh
           </button>
           <button
@@ -58,61 +51,29 @@ function TokenBudgetSection() {
             disabled={resetMutation.isPending}
           >
             <FiRotateCcw aria-hidden="true" className="button-icon" />
-            {resetMutation.isPending ? 'Resetting...' : 'Reset period'}
+            {resetMutation.isPending ? 'Resetting...' : 'Clear alert'}
           </button>
         </div>
       </div>
 
-      {tokenBudgetQuery.error && <div className="banner banner-error">{tokenBudgetQuery.error.message}</div>}
+      {billingStatusQuery.error && <div className="banner banner-error">{billingStatusQuery.error.message}</div>}
       {resetMutation.error && <div className="banner banner-error">{resetMutation.error.message}</div>}
 
-      {status?.is_billing_exhausted && (
+      {status?.is_billing_exhausted ? (
         <div className="banner banner-error">
           <strong>Billing exhausted</strong> -- Gemini rejected the last call with a prepaid-credits-depleted
           error{status.billing_exhausted_at ? ` at ${formatDateTime(status.billing_exhausted_at)}` : ''}. Every
           live and backfill scoring call will keep failing the same way until credits are topped up.
-          {status.billing_exhausted_message ? ` "${status.billing_exhausted_message}"` : ''} Click "Reset period"
-          once resolved to clear this alert.
+          {status.billing_exhausted_message ? ` "${status.billing_exhausted_message}"` : ''} Click "Clear alert"
+          once resolved.
         </div>
-      )}
-
-      {status && (
-        <div className="summary-grid rpm-grid">
-          <article className="summary-card rpm-bucket-card">
-            <span>Tokens used this period</span>
-            <strong>{formatTokenCount(status.tokens_used)}</strong>
-            {status.budget !== null && (
-              <div className="rpm-bar">
-                <div
-                  className={`rpm-bar-fill rpm-bar-${percent >= 90 ? 'high' : percent >= 60 ? 'mid' : 'low'}`}
-                  style={{ width: `${Math.min(100, percent)}%` }}
-                />
-              </div>
-            )}
-            <span className="match-detail-hint">
-              {status.period_started_at ? `Since ${formatDateTime(status.period_started_at)}` : 'No usage recorded yet'}
-            </span>
-          </article>
-          <article className="summary-card rpm-bucket-card">
-            <span>Remaining budget</span>
-            <strong className={isOverBudget ? 'token-budget-over' : undefined}>
-              {status.budget === null
-                ? 'unknown'
-                : `${formatTokenCount(status.remaining ?? 0)} tokens${isOverBudget ? ' (over budget)' : ''}`}
-            </strong>
-            <span className="match-detail-hint">
-              {status.budget !== null
-                ? `${formatTokenCount(status.budget)} token budget configured`
-                : 'Set TOKEN_BUDGET to track remaining spend'}
-            </span>
-          </article>
-        </div>
+      ) : (
+        status && <div className="banner banner-info">No billing exhaustion detected.</div>
       )}
       <p className="match-detail-hint">
-        Tracks tokens spent by live and backfill scoring calls (gemini_provider.py) against an operator-set
-        TOKEN_BUDGET -- not a live query against Google's billing API (Gemini doesn't expose one), this is our
-        own running total. The billing-exhausted alert above reflects what Gemini actually returned on the last
-        call, independent of this budget number, and clears only via "Reset period".
+        Reflects what Gemini actually returned on the last call (a 429 identified as prepaid-credits-depleted,
+        distinct from an ordinary rate limit) -- not a live query against Google's billing API, which doesn't
+        expose one. Clears only via "Clear alert".
       </p>
     </section>
   )
@@ -314,7 +275,7 @@ function RpmBreakdownSection() {
 export default function RateLimitsPage() {
   return (
     <main className="app-body app-body-single">
-      <TokenBudgetSection />
+      <BillingExhaustionSection />
       <RpmBreakdownSection />
     </main>
   )

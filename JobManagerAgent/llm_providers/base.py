@@ -60,8 +60,8 @@ class BillingExhaustedError(RuntimeError):
 	per-minute rate limit -- see gemini_provider.py's _is_billing_exhausted_message). Deliberately
 	NOT a RateLimitError subclass: call_scoring_model's retry loop only catches RateLimitError,
 	and retrying a billing exhaustion is pointless -- the quota isn't coming back in 15-60
-	seconds, only after the operator tops up credits. utils/token_budget.py records this
-	persistently (Redis) the moment it's detected, so GET /admin/token-budget can surface it on
+	seconds, only after the operator tops up credits. utils/billing_status.py records this
+	persistently (Redis) the moment it's detected, so GET /admin/billing-status can surface it on
 	the dashboard even for a caller that doesn't itself handle this exception specially."""
 
 

@@ -1404,10 +1404,6 @@
   max-width: 280px;
 }
 
-.token-budget-over {
-  color: var(--error);
-}
-
 .global-alert-banner {
   display: flex;
   align-items: center;

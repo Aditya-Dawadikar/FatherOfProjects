@@ -337,11 +337,7 @@ export type RpmBreakdown = {
   headroom: number | null
 }
 
-export type TokenBudgetStatus = {
-  tokens_used: number
-  budget: number | null
-  remaining: number | null
-  period_started_at: string | null
+export type BillingStatus = {
   is_billing_exhausted: boolean
   billing_exhausted_at: string | null
   billing_exhausted_message: string | null

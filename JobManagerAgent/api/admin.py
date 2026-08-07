@@ -20,8 +20,8 @@ from utils.matching_controls import (
 	resume_unscored_backfill,
 	unscored_backfill_pause_reason,
 )
+from utils.billing_status import BillingStatus, get_billing_status, reset_billing_status
 from utils.rate_limiter import RPM_BUCKETS, RedisRpmLimiter, load_provider_quota_override, set_rpm_distribution
-from utils.token_budget import TokenBudgetStatus, get_token_budget_status, reset_token_budget
 
 
 LOGGER = get_agent_logger(__name__)
@@ -330,22 +330,14 @@ def update_rate_limits_config(payload: UpdateRpmDistributionRequest) -> RpmBreak
 	return _build_rate_limits_response()
 
 
-class TokenBudgetResponse(BaseModel):
-	tokens_used: int
-	budget: int | None
-	remaining: int | None
-	period_started_at: str | None
+class BillingStatusResponse(BaseModel):
 	is_billing_exhausted: bool
 	billing_exhausted_at: str | None
 	billing_exhausted_message: str | None
 
 
-def _to_token_budget_response(status: TokenBudgetStatus) -> TokenBudgetResponse:
-	return TokenBudgetResponse(
-		tokens_used=status.tokens_used,
-		budget=status.budget,
-		remaining=status.remaining,
-		period_started_at=status.period_started_at,
+def _to_billing_status_response(status: BillingStatus) -> BillingStatusResponse:
+	return BillingStatusResponse(
 		is_billing_exhausted=status.is_billing_exhausted,
 		billing_exhausted_at=status.billing_exhausted_at,
 		billing_exhausted_message=status.billing_exhausted_message,
@@ -353,38 +345,28 @@ def _to_token_budget_response(status: TokenBudgetStatus) -> TokenBudgetResponse:
 
 
 @router.get(
-	"/token-budget",
-	summary="Cumulative Gemini token spend against the configured TOKEN_BUDGET, plus billing-exhaustion alert state",
+	"/billing-status",
+	summary="Whether Gemini has told us this project's prepaid credits are exhausted",
 )
-def get_token_budget() -> TokenBudgetResponse:
-	"""`tokens_used` is every gemini_provider.py call's total_tokens (prompt + completion,
-	thinking included) summed since the tracking period started -- see utils/token_budget.py for
-	why this is Redis-backed rather than Postgres, and why it only covers score_job/
-	score_jobs_batch, not the ReAct orchestrator's own decision-making calls.
-
-	`remaining` is null unless the operator has set TOKEN_BUDGET (checked explicitly, never
-	guessed, same policy as PROVIDER_RPM_QUOTA) -- it's `budget - tokens_used`, can go negative
-	(the dashboard should treat that as "over budget", not clamp it to zero and hide how far over).
-
-	`is_billing_exhausted` is true from the moment a real 429 was identified as billing
-	exhaustion (not an ordinary rate limit) until the next POST /admin/token-budget/reset -- this
-	is what a "we're out of credits" alert banner should poll, since it reflects what Gemini
-	actually told us rather than a guess derived from crossing the configured budget.
+def get_billing_status_endpoint() -> BillingStatusResponse:
+	"""`is_billing_exhausted` is true from the moment a real 429 was identified as billing
+	exhaustion (not an ordinary rate limit) until the next POST /admin/billing-status/reset --
+	this is what a "we're out of credits" alert banner should poll, since it reflects what Gemini
+	actually told us rather than a guessed/tracked spend figure.
 	"""
-	return _to_token_budget_response(get_token_budget_status())
+	return _to_billing_status_response(get_billing_status())
 
 
 @router.post(
-	"/token-budget/reset",
-	summary="Start a new token-budget tracking period (e.g. after topping up prepaid credits)",
+	"/billing-status/reset",
+	summary="Clear the billing-exhausted alert (e.g. after topping up prepaid credits)",
 )
-def reset_token_budget_endpoint() -> TokenBudgetResponse:
-	"""Zeroes tokens_used, restarts period_started_at, and clears the billing-exhausted flag --
-	an explicit operator action ("I've addressed it"), not something inferred automatically from
-	a successful call, since a successful call after exhaustion could just as easily mean a
-	different, unaffected API key was swapped in rather than the same project's credits being
-	topped up.
+def reset_billing_status_endpoint() -> BillingStatusResponse:
+	"""Clears the billing-exhausted flag -- an explicit operator action ("I've addressed it"),
+	not something inferred automatically from a successful call, since a successful call after
+	exhaustion could just as easily mean a different, unaffected API key was swapped in rather
+	than the same project's credits being topped up.
 	"""
-	reset_token_budget()
-	LOGGER.action("token_budget_reset")
-	return _to_token_budget_response(get_token_budget_status())
+	reset_billing_status()
+	LOGGER.action("billing_status_reset")
+	return _to_billing_status_response(get_billing_status())

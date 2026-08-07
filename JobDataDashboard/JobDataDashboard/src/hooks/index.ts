@@ -4,6 +4,7 @@ import type {
   BackfillProcessSummary,
   BackfillRun,
   BackfillRunTrigger,
+  BillingStatus,
   EvalRun,
   EvalSweepTrigger,
   GuardrailsEvalRun,
@@ -23,7 +24,6 @@ import type {
   RegisteredPrompt,
   RpmBreakdown,
   SetActivePromptResult,
-  TokenBudgetStatus,
   ToolEvalRun,
   ToolEvalTrigger,
   UnscoredBackfillStatus,
@@ -660,31 +660,31 @@ export function useUpdateRateLimitsDistribution() {
   })
 }
 
-async function fetchTokenBudget(): Promise<TokenBudgetStatus> {
-  return requestAgentJson<TokenBudgetStatus>('/agent-api/admin/token-budget')
+async function fetchBillingStatus(): Promise<BillingStatus> {
+  return requestAgentJson<BillingStatus>('/agent-api/admin/billing-status')
 }
 
-async function resetTokenBudget(): Promise<TokenBudgetStatus> {
-  return requestAgentJson<TokenBudgetStatus>('/agent-api/admin/token-budget/reset', { method: 'POST' })
+async function resetBillingStatus(): Promise<BillingStatus> {
+  return requestAgentJson<BillingStatus>('/agent-api/admin/billing-status/reset', { method: 'POST' })
 }
 
-export function useTokenBudget() {
+export function useBillingStatus() {
   return useQuery({
-    queryKey: ['tokenBudget'],
-    queryFn: fetchTokenBudget,
+    queryKey: ['billingStatus'],
+    queryFn: fetchBillingStatus,
     staleTime: 10_000,
-    // Polls on every page, not just Migration (see Layout.tsx's global alert banner) -- billing
+    // Polls on every page, not just Rate Limits (see Layout.tsx's global alert banner) -- billing
     // exhaustion needs to surface no matter which tab is open, not just to someone who happens
     // to be looking at the RPM breakdown when it happens.
     refetchInterval: 15_000,
   })
 }
 
-export function useResetTokenBudget() {
+export function useResetBillingStatus() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: resetTokenBudget,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tokenBudget'] }),
+    mutationFn: resetBillingStatus,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['billingStatus'] }),
   })
 }
 
