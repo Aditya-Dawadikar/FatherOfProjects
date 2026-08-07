@@ -54,6 +54,17 @@ class RateLimitError(RuntimeError):
 		self.retry_after = retry_after
 
 
+class BillingExhaustedError(RuntimeError):
+	"""Provider-agnostic signal for a 429 that means "this API key/project is out of prepaid
+	credits" (Gemini's RESOURCE_EXHAUSTED-with-a-billing-message, as opposed to an ordinary
+	per-minute rate limit -- see gemini_provider.py's _is_billing_exhausted_message). Deliberately
+	NOT a RateLimitError subclass: call_scoring_model's retry loop only catches RateLimitError,
+	and retrying a billing exhaustion is pointless -- the quota isn't coming back in 15-60
+	seconds, only after the operator tops up credits. utils/token_budget.py records this
+	persistently (Redis) the moment it's detected, so GET /admin/token-budget can surface it on
+	the dashboard even for a caller that doesn't itself handle this exception specially."""
+
+
 class TransientProviderError(RuntimeError):
 	"""Provider-agnostic signal for a retryable server-side hiccup (5xx / overloaded / timed
 	out / connection dropped) as opposed to RateLimitError (a quota that won't clear by

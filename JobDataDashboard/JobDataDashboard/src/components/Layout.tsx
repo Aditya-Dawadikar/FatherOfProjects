@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { FiActivity, FiBarChart2, FiDatabase, FiLayout, FiShuffle } from 'react-icons/fi'
+import { FiActivity, FiAlertTriangle, FiBarChart2, FiDatabase, FiLayout, FiShuffle, FiTrendingUp } from 'react-icons/fi'
+import { useTokenBudget } from '../hooks'
 import ObservabilityPage from '../pages/ObservabilityPage'
 
 function tabClassName({ isActive }: { isActive: boolean }) {
@@ -15,9 +16,21 @@ export default function Layout() {
   // is a real, refreshable, linkable URL and its NavLink still activates) but renders nothing;
   // this is the thing actually on screen there.
   const isObservability = useLocation().pathname === '/observability'
+  // Polls from every tab (not just Migration, where the detailed token-budget section lives) --
+  // billing exhaustion means every subsequent live/backfill scoring call keeps failing the same
+  // way, so it needs to be visible no matter what an operator happens to have open when it hits.
+  const tokenBudgetQuery = useTokenBudget()
+  const isBillingExhausted = tokenBudgetQuery.data?.is_billing_exhausted ?? false
 
   return (
     <div className="app-shell">
+      {isBillingExhausted && (
+        <NavLink to="/rate-limits" className="global-alert-banner">
+          <FiAlertTriangle aria-hidden="true" className="button-icon" />
+          Gemini billing exhausted -- live and backfill scoring calls are failing. Go to Rate
+          Limits for details.
+        </NavLink>
+      )}
       <div className="top-nav">
         <nav className="view-tabs">
           <NavLink to="/" end className={tabClassName}>
@@ -39,6 +52,10 @@ export default function Layout() {
           <NavLink to="/migration" className={tabClassName}>
             <FiShuffle aria-hidden="true" className="button-icon" />
             Migration
+          </NavLink>
+          <NavLink to="/rate-limits" className={tabClassName}>
+            <FiTrendingUp aria-hidden="true" className="button-icon" />
+            Rate Limits
           </NavLink>
         </nav>
       </div>

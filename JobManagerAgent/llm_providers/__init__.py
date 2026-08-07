@@ -12,6 +12,7 @@ from utils.env_utils import load_env_value
 
 from . import gemini_provider
 from .base import (
+	BillingExhaustedError,
 	CRITERIA_KEYS,
 	JobScore,
 	MatchResponseError,
@@ -26,6 +27,7 @@ from .base import (
 
 
 __all__ = [
+	"BillingExhaustedError",
 	"CRITERIA_KEYS",
 	"GuardrailBlockedError",
 	"JobScore",

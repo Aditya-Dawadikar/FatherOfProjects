@@ -23,6 +23,7 @@ import type {
   RegisteredPrompt,
   RpmBreakdown,
   SetActivePromptResult,
+  TokenBudgetStatus,
   ToolEvalRun,
   ToolEvalTrigger,
   UnscoredBackfillStatus,
@@ -656,6 +657,34 @@ export function useUpdateRateLimitsDistribution() {
   return useMutation({
     mutationFn: updateRateLimitsDistribution,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rateLimits'] }),
+  })
+}
+
+async function fetchTokenBudget(): Promise<TokenBudgetStatus> {
+  return requestAgentJson<TokenBudgetStatus>('/agent-api/admin/token-budget')
+}
+
+async function resetTokenBudget(): Promise<TokenBudgetStatus> {
+  return requestAgentJson<TokenBudgetStatus>('/agent-api/admin/token-budget/reset', { method: 'POST' })
+}
+
+export function useTokenBudget() {
+  return useQuery({
+    queryKey: ['tokenBudget'],
+    queryFn: fetchTokenBudget,
+    staleTime: 10_000,
+    // Polls on every page, not just Migration (see Layout.tsx's global alert banner) -- billing
+    // exhaustion needs to surface no matter which tab is open, not just to someone who happens
+    // to be looking at the RPM breakdown when it happens.
+    refetchInterval: 15_000,
+  })
+}
+
+export function useResetTokenBudget() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: resetTokenBudget,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tokenBudget'] }),
   })
 }
 

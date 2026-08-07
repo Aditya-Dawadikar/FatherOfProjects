@@ -1404,6 +1404,27 @@
   max-width: 280px;
 }
 
+.token-budget-over {
+  color: var(--error);
+}
+
+.global-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--error-dim);
+  color: var(--error);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.global-alert-banner:hover {
+  text-decoration: underline;
+}
+
 .reason-text {
   overflow: hidden;
   text-overflow: ellipsis;

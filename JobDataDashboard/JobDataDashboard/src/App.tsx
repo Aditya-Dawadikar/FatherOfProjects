@@ -7,6 +7,7 @@ import JobsPage from './pages/JobsPage'
 import MatchesPage from './pages/MatchesPage'
 import MigrationPage from './pages/MigrationPage'
 import OverviewPage from './pages/OverviewPage'
+import RateLimitsPage from './pages/RateLimitsPage'
 import EvalsPage from './pages/EvalsPage'
 import AgentBehaviorTab from './pages/evals/AgentBehaviorTab'
 import GuardrailsTab from './pages/evals/GuardrailsTab'
@@ -34,6 +35,7 @@ export default function App() {
               <Route path="matches" element={<MatchesPage />} />
             </Route>
             <Route path="migration" element={<MigrationPage />} />
+            <Route path="rate-limits" element={<RateLimitsPage />} />
             <Route path="evals" element={<EvalsPage />}>
               <Route element={<EvalsLayout />}>
                 <Route index element={<Navigate to="kpis" replace />} />

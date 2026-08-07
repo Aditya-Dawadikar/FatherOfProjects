@@ -18,8 +18,9 @@ from utils.config import (
 )
 from utils.env_utils import load_env_value
 from utils.rate_limiter import RedisRpmLimiter, load_backfill_rpm_cap
+from utils.token_budget import record_billing_exhausted, record_tokens
 
-from .base import MatchResponseError, RateLimitError, TokenUsage, TransientProviderError
+from .base import BillingExhaustedError, MatchResponseError, RateLimitError, TokenUsage, TransientProviderError
 
 
 _RPM_LIMITER: RedisRpmLimiter | None = None
@@ -98,6 +99,19 @@ def _set_primary_cooldown(error: Exception) -> None:
 		return
 
 
+# Substrings of the *message* Gemini sends back on a 429, distinguishing "this project's prepaid
+# credits are gone" (won't clear on its own, ever, until an operator tops up billing) from an
+# ordinary per-minute rate limit (clears in seconds, already handled by RateLimitError's retry
+# loop in call_scoring_model). Both report the same HTTP code and `status: RESOURCE_EXHAUSTED`, so
+# the message text is the only signal available to tell them apart.
+_BILLING_EXHAUSTION_SIGNALS = ("prepayment credit", "credits are depleted", "manage your project and billing")
+
+
+def _is_billing_exhausted_message(message: str) -> bool:
+	lowered = message.lower()
+	return any(signal in lowered for signal in _BILLING_EXHAUSTION_SIGNALS)
+
+
 def _usage_from_response(response: genai_types.GenerateContentResponse) -> TokenUsage:
 	usage = response.usage_metadata
 	prompt_tokens = getattr(usage, "prompt_token_count", None) or 0
@@ -146,7 +160,13 @@ def _generate_content(
 		),
 	)
 	_raise_if_truncated(response, model=model, max_output_tokens=max_output_tokens)
-	return response.text or "", _usage_from_response(response)
+	usage = _usage_from_response(response)
+	# Recorded here, not in call_scoring_model (llm_providers/__init__.py) -- this is the one
+	# place a real network call actually completed, whether the caller went on to retry a later
+	# TransientProviderError/RateLimitError or not, and it's provider-specific real spend (GET
+	# /admin/token-budget), not the provider-agnostic retry orchestration that lives up there.
+	record_tokens(usage.total_tokens)
+	return response.text or "", usage
 
 
 def _raise_if_truncated(response: genai_types.GenerateContentResponse, *, model: str, max_output_tokens: int) -> None:
@@ -180,6 +200,11 @@ def _call_fallback_model(
 		)
 	except genai_errors.ClientError as fallback_error:
 		if fallback_error.code == 429:
+			# Same project/API key as the primary model, so a billing exhaustion here means the
+			# same thing it would have on the primary -- no third model to fall back to.
+			if _is_billing_exhausted_message(str(fallback_error)):
+				record_billing_exhausted(str(fallback_error))
+				raise BillingExhaustedError(str(fallback_error)) from fallback_error
 			raise RateLimitError(str(fallback_error)) from fallback_error
 		raise
 	except genai_errors.ServerError as fallback_error:
@@ -200,6 +225,14 @@ def call_model(
 	try:
 		return _generate_content(client, model=model, prompt=prompt, bucket=bucket, max_output_tokens=max_output_tokens)
 	except genai_errors.ClientError as error:
+		# Checked before the fallback attempt below, not after: prepaid credits are exhausted at
+		# the project level, so trying FALLBACK_MODEL next would just spend another call failing
+		# the exact same way (and, if it self-triggered a cooldown, mask the real cause behind an
+		# unrelated "primary model in cooldown" state on the next call).
+		if error.code == 429 and _is_billing_exhausted_message(str(error)):
+			record_billing_exhausted(str(error))
+			raise BillingExhaustedError(str(error)) from error
+
 		if _should_try_fallback(model=model):
 			_set_primary_cooldown(error)
 			return _call_fallback_model(client, prompt=prompt, bucket=bucket, max_output_tokens=max_output_tokens)

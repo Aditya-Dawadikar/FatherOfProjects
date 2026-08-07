@@ -117,6 +117,16 @@ EVAL_RPM_CAP = 1
 # until an operator sets PROVIDER_RPM_QUOTA from what they actually see in the console.
 PROVIDER_RPM_QUOTA: int | None = None
 
+# A separate, complementary budget from PROVIDER_RPM_QUOTA above: that one paces requests per
+# minute against a quota that resets every window; TOKEN_BUDGET is the cumulative token spend
+# an operator's prepaid credit balance covers before Gemini starts returning 429
+# RESOURCE_EXHAUSTED ("prepayment credits are depleted") instead of a response -- see
+# utils/token_budget.py (loader, Redis-backed running total, billing-exhaustion alert flag) and
+# GET/POST /admin/token-budget (the dashboard's Migration page reads and resets this). Same
+# "checked explicitly, never guessed" policy as PROVIDER_RPM_QUOTA -- set TOKEN_BUDGET from
+# however many tokens the actual current credit balance covers at the model's real per-token
+# price, not a round number.
+
 # How many jobs go into one LLM call when backfilling with a schema_mode="batch" prompt
 # (job_match_v5.txt). Bounded by BATCH_MAX_OUTPUT_TOKENS above -- each job's per-criterion
 # breakdown (5 criteria, score + 1-2 sentence reasoning each) runs a few hundred output tokens on
