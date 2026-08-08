@@ -296,6 +296,7 @@ export type RegisteredPrompt = {
   schema_mode: 'legacy' | 'single' | 'batch'
   rubric_version: number
   is_active: boolean
+  creation_timestamp: number | null
 }
 
 export type PromptActiveHistoryEntry = {

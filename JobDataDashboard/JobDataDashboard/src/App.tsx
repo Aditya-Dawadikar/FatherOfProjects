@@ -6,6 +6,10 @@ import EtlDataLayout from './pages/EtlDataLayout'
 import JobsPage from './pages/JobsPage'
 import MatchesPage from './pages/MatchesPage'
 import MigrationPage from './pages/MigrationPage'
+import MigrationLayout from './pages/migration/MigrationLayout'
+import PromptVersionTab from './pages/migration/PromptVersionTab'
+import BackfillHandoffTab from './pages/migration/BackfillHandoffTab'
+import PromptCatalogTab from './pages/migration/PromptCatalogTab'
 import OverviewPage from './pages/OverviewPage'
 import RateLimitsPage from './pages/RateLimitsPage'
 import EvalsPage from './pages/EvalsPage'
@@ -34,7 +38,14 @@ export default function App() {
               <Route path="jobs" element={<JobsPage />} />
               <Route path="matches" element={<MatchesPage />} />
             </Route>
-            <Route path="migration" element={<MigrationPage />} />
+            <Route path="migration" element={<MigrationPage />}>
+              <Route element={<MigrationLayout />}>
+                <Route index element={<Navigate to="prompt-version" replace />} />
+                <Route path="prompt-version" element={<PromptVersionTab />} />
+                <Route path="backfill-handoff" element={<BackfillHandoffTab />} />
+                <Route path="prompt-catalog" element={<PromptCatalogTab />} />
+              </Route>
+            </Route>
             <Route path="rate-limits" element={<RateLimitsPage />} />
             <Route path="evals" element={<EvalsPage />}>
               <Route element={<EvalsLayout />}>

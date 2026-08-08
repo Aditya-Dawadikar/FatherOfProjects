@@ -1089,6 +1089,12 @@
   border-bottom: 1px solid var(--line);
 }
 
+.migration-tabs-bar {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
 .overview-tab-panel {
   display: block;
 }

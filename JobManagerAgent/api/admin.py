@@ -143,15 +143,20 @@ class RegisteredPromptResponse(BaseModel):
 	schema_mode: str
 	rubric_version: int
 	is_active: bool
+	creation_timestamp: int | None
 
 
 @router.get("/prompts", summary="List every registered prompt version -- the feature-flag selector's source list")
 def list_prompts() -> list[RegisteredPromptResponse]:
 	"""Every prompt version ever registered (nothing is ever deleted -- see
 	docs/backfill-design.md), newest first, with `is_active` marking whichever one 'production'
-	currently points to. This is what the dashboard's feature-flag dropdown is built from --
-	batch-mode versions (schema_mode="batch", e.g. job_match_v5.txt) are included for visibility
-	but POST /admin/active-prompt rejects setting one active.
+	currently points to. This is what the dashboard's feature-flag dropdown -- and the Prompt
+	Catalog tab's version table -- are built from. batch-mode versions (schema_mode="batch", e.g.
+	job_match_v5.txt) are included for visibility but POST /admin/active-prompt rejects setting
+	one active.
+
+	`creation_timestamp` is MLflow's own epoch-milliseconds registration time for the version
+	(when it was first registered, not when it was last active).
 	"""
 	return [
 		RegisteredPromptResponse(
@@ -159,6 +164,7 @@ def list_prompts() -> list[RegisteredPromptResponse]:
 			schema_mode=summary.schema_mode,
 			rubric_version=summary.rubric_version,
 			is_active=summary.is_active,
+			creation_timestamp=summary.creation_timestamp,
 		)
 		for summary in list_registered_prompt_versions()
 	]
