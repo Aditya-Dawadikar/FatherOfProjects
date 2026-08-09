@@ -158,6 +158,7 @@ def build_agent_tools(
 						reasoning=f"not_found_404 job_url={job_url}; {error}",
 						prompt_name=prompt_name,
 						prompt_version=prompt_version,
+						rubric_version=prompt_version_obj.rubric_version,
 						model_name=model_name,
 					),
 				)
@@ -247,6 +248,7 @@ def build_agent_tools(
 					reasoning=score.reasoning,
 					prompt_name=prompt_name,
 					prompt_version=prompt_version,
+					rubric_version=prompt_version_obj.rubric_version,
 					model_name=model_name,
 					score_breakdown=score.score_breakdown,
 				),

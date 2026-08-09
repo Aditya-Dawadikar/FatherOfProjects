@@ -45,3 +45,9 @@ class JobMatch(Base):
 	# See JobManagerAgent/llm_providers/base.py:compute_match_result for how match_score is
 	# deterministically derived from this rather than being LLM-decided.
 	score_breakdown: Mapped[dict | None] = mapped_column(JSON)
+	# Scoring logic identity, independent of prompt_version/schema_mode -- e.g. v4 (live,
+	# schema_mode="single") and v5 (backfill-only, schema_mode="batch") share rubric_version since
+	# batching is just a throughput knob. See JobManagerAgent's mirror of this file and
+	# integrations/mlflow/prompt_registry.py's LoadedPrompt.rubric_version for where this is
+	# resolved and written. Nullable for rows written before this column existed.
+	rubric_version: Mapped[int | None] = mapped_column(Integer, nullable=True)

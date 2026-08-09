@@ -67,6 +67,10 @@ class JobResult:
 	reasoning: str
 	prompt_name: str
 	prompt_version: str
+	# The scoring logic identity behind prompt_version (see shared/job_match_data.py's
+	# JobMatch.rubric_version) -- required, not defaulted, so every write site has to consciously
+	# thread it through from its LoadedPrompt rather than silently persisting NULL going forward.
+	rubric_version: int
 	model_name: str
 	score_breakdown: dict | None = None
 

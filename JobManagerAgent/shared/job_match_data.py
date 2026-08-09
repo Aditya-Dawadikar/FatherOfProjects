@@ -39,6 +39,16 @@ class JobMatch(Base):
 	# results, whose match_score/reasoning were decided by the LLM directly rather than
 	# aggregated deterministically from criteria -- see llm_providers/base.py:compute_match_result.
 	score_breakdown: Mapped[dict | None] = mapped_column(JSON)
+	# The scoring logic identity, independent of prompt_version/schema_mode -- see
+	# integrations/mlflow/prompt_registry.py's LoadedPrompt.rubric_version, resolved off each
+	# prompts/job_match_v*.meta.json sidecar. v4 (schema_mode="single", live) and v5
+	# (schema_mode="batch", backfill-only) are different prompt_version strings but the same
+	# rubric_version, since batching is a throughput knob, not a scoring change -- this is what
+	# lets JobDataServer's /matches/funnel group them into one population instead of the alluvial
+	# chart going empty just because the live prompt's own exact prompt_version has no rows yet.
+	# Nullable because rows written before this column existed have it backfilled by
+	# scripts/migrations/0002_add_rubric_version_to_job_matches.py rather than at insert time.
+	rubric_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 def unevaluated_job_ids_stmt(limit: int) -> Select:

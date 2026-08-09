@@ -59,6 +59,7 @@ class AgentTopologyResponse(BaseModel):
 class _PromptVersionStub:
 	version = "ui-inspector"
 	template = ""
+	rubric_version = None
 
 
 def _load_scoring_prompt() -> tuple[str, str]:

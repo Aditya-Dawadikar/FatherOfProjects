@@ -12,7 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, false, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 
@@ -275,6 +275,52 @@ def resolve_prompt_version(session: Session, prompt_version: str | None) -> str 
 	if prompt_version:
 		return prompt_version
 	return session.scalar(select(JobMatch.prompt_version).order_by(JobMatch.evaluated_at.desc()).limit(1))
+
+
+def resolve_rubric_version(session: Session, rubric_version: int | None) -> int | None:
+	"""Same defaulting rule as resolve_prompt_version, but keyed on rubric_version (the scoring
+	logic identity behind a prompt_version -- see shared/job_match_data.py) instead of the raw
+	prompt_version string. This is what lets /matches/funnel treat job_match_v4 (schema_mode
+	"single", live) and job_match_v5 (schema_mode "batch", backfill-only) as one population when
+	they share a rubric_version, instead of the alluvial chart going empty just because the live
+	prompt's own exact prompt_version has no rows yet. Returns None only if job_matches has no
+	non-null rubric_version anywhere (nothing scored, or nothing backfilled with the column yet).
+	"""
+	if rubric_version is not None:
+		return rubric_version
+	return session.scalar(
+		select(JobMatch.rubric_version)
+		.where(JobMatch.rubric_version.is_not(None))
+		.order_by(JobMatch.evaluated_at.desc())
+		.limit(1)
+	)
+
+
+def funnel_matches_subquery(session: Session, *, prompt_version: str | None, rubric_version: int | None):
+	"""The row set /matches/funnel counts over.
+
+	An explicit prompt_version is an exact match -- (job_id, prompt_version) is JobMatch's primary
+	key, so at most one row per job already, no dedup needed. Otherwise this groups by
+	rubric_version (given, or defaulted via resolve_rubric_version): several prompt_versions can
+	share one rubric_version, and the same job can carry a row under more than one of them (e.g.
+	scored live under v4, later re-scored by a v5 backfill run) -- DISTINCT ON (job_id), ordered
+	newest evaluated_at first, keeps exactly the most recent row per job so a job is never
+	double-counted in the funnel.
+	"""
+	if prompt_version:
+		return select(JobMatch).where(JobMatch.prompt_version == prompt_version).subquery()
+
+	resolved_rubric_version = resolve_rubric_version(session, rubric_version)
+	if resolved_rubric_version is None:
+		return select(JobMatch).where(false()).subquery()
+
+	return (
+		select(JobMatch)
+		.where(JobMatch.rubric_version == resolved_rubric_version)
+		.order_by(JobMatch.job_id, JobMatch.evaluated_at.desc())
+		.distinct(JobMatch.job_id)
+		.subquery()
+	)
 
 
 def get_job_or_404(session: Session, job_id: int, company_name: str | None) -> JobListing:
@@ -599,24 +645,34 @@ def get_prompt_versions(session: SessionDependency) -> list[PromptVersionSummary
 @app.get("/matches/funnel", response_model=PipelineFunnelResponse)
 def get_pipeline_funnel(
 	session: SessionDependency,
-	prompt_version: str | None = Query(default=None, description="Defaults to the most recently evaluated prompt_version."),
+	prompt_version: str | None = Query(
+		default=None,
+		description="Filter to this exact job_matches.prompt_version. Mutually exclusive with "
+		"rubric_version -- omit both to default to the most recently evaluated rubric_version.",
+	),
+	rubric_version: int | None = Query(
+		default=None,
+		description="Filter to every prompt_version that shares this rubric_version (e.g. job_match_v4 "
+		"'single'/live and job_match_v5 'batch'/backfill-only share one rubric_version -- batching is a "
+		"throughput knob, not a scoring change). Defaults to the most recently evaluated rubric_version "
+		"when neither filter is given.",
+	),
 ) -> PipelineFunnelResponse:
 	"""Counts for the scrape -> agent-processed -> good/moderate/bad/failed funnel the dashboard's
-	alluvial chart renders. total_processed is job_matches rows under one prompt_version (given or
-	defaulted to the most recent -- see resolve_prompt_version; a job can now have a row per
-	prompt_version, so counting the whole table unfiltered would double-count jobs backfilled
-	under a second prompt). total_scraped - total_processed is how many job_listings rows
-	JobManagerAgent hasn't reached yet under that prompt_version. good/moderate/bad/failed always
-	sum to total_processed -- failed (404'd postings) is carved out of the score bands rather than
-	counted as a genuine bad match."""
-	resolved_prompt_version = resolve_prompt_version(session, prompt_version)
-	not_found = JobMatch.reasoning.like(f"{_NOT_FOUND_REASON_PREFIX}%")
-	version_filter = (JobMatch.prompt_version == resolved_prompt_version) if resolved_prompt_version else None
+	alluvial chart renders. total_processed is job_matches rows grouped by rubric_version (given or
+	defaulted to the most recent -- see funnel_matches_subquery/resolve_rubric_version), not raw
+	prompt_version: a live prompt (schema_mode "single") and its backfill-only counterpart
+	(schema_mode "batch") are different prompt_version strings but the same scoring logic, so
+	grouping by the exact prompt_version alone made the chart go empty the moment backfill volume
+	under the batch version outpaced the live version's own row count. total_scraped -
+	total_processed is how many job_listings rows JobManagerAgent hasn't reached yet under that
+	rubric_version. good/moderate/bad/failed always sum to total_processed -- failed (404'd
+	postings) is carved out of the score bands rather than counted as a genuine bad match."""
+	matches = funnel_matches_subquery(session, prompt_version=prompt_version, rubric_version=rubric_version)
+	not_found = matches.c.reasoning.like(f"{_NOT_FOUND_REASON_PREFIX}%")
 
 	def _count(*conditions):
-		statement = select(func.count()).select_from(JobMatch)
-		if version_filter is not None:
-			statement = statement.where(version_filter)
+		statement = select(func.count()).select_from(matches)
 		for condition in conditions:
 			statement = statement.where(condition)
 		return session.scalar(statement) or 0
@@ -624,11 +680,11 @@ def get_pipeline_funnel(
 	total_scraped = session.scalar(select(func.count()).select_from(JobListing)) or 0
 	total_processed = _count()
 	failed_matches = _count(not_found)
-	good_matches = _count(JobMatch.match_score >= _GOOD_MATCH_MIN_SCORE, ~not_found)
+	good_matches = _count(matches.c.match_score >= _GOOD_MATCH_MIN_SCORE, ~not_found)
 	moderate_matches = _count(
-		JobMatch.match_score >= _MODERATE_MATCH_MIN_SCORE, JobMatch.match_score < _GOOD_MATCH_MIN_SCORE, ~not_found
+		matches.c.match_score >= _MODERATE_MATCH_MIN_SCORE, matches.c.match_score < _GOOD_MATCH_MIN_SCORE, ~not_found
 	)
-	bad_matches = _count(JobMatch.match_score < _MODERATE_MATCH_MIN_SCORE, ~not_found)
+	bad_matches = _count(matches.c.match_score < _MODERATE_MATCH_MIN_SCORE, ~not_found)
 	return PipelineFunnelResponse(
 		total_scraped=int(total_scraped),
 		total_processed=int(total_processed),

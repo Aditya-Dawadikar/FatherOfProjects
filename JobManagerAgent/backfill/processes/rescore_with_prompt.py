@@ -82,6 +82,7 @@ def _run_one_batch(
 					reasoning=f"not_found_404 job_url={candidate.job_url}; {error}",
 					prompt_name=PROMPT_NAME,
 					prompt_version=prompt_version,
+					rubric_version=loaded_prompt.rubric_version,
 					model_name=context.model,
 				),
 			)
@@ -131,6 +132,7 @@ def _run_one_batch(
 				reasoning=score.reasoning,
 				prompt_name=PROMPT_NAME,
 				prompt_version=prompt_version,
+				rubric_version=loaded_prompt.rubric_version,
 				model_name=context.model,
 				score_breakdown=score.score_breakdown,
 			),
