@@ -4,8 +4,10 @@ import { useEvals, useGuardrailsEvals, useToolEvals } from '../../hooks'
 import { EvalRunRow, GuardrailsEvalRunRow, SweepGroupRow, ToolEvalRunRow } from './evalsComponents'
 import {
   distinctExperimentNames,
+  distinctPromptVersions,
   groupRunsForDisplay,
   matchesHistoryFilters,
+  matchesPromptVersion,
   type HistoryFilters,
 } from './evalsUtils'
 
@@ -24,10 +26,17 @@ export default function RunHistoryTab() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [experimentFilter, setExperimentFilter] = useState('')
-  const hasActiveFilters = Boolean(dateFrom || dateTo || experimentFilter)
+  const [promptVersionFilter, setPromptVersionFilter] = useState('')
+  const hasActiveFilters = Boolean(dateFrom || dateTo || experimentFilter || promptVersionFilter)
   const historyFilters: HistoryFilters = { dateFrom, dateTo, experimentName: experimentFilter }
   const experimentNames = distinctExperimentNames(runs, toolRuns, guardrailsRuns)
-  const filteredRuns = runs.filter((run) => matchesHistoryFilters(run, historyFilters))
+  // Prompt-version filtering only applies to matching runs (EvalRun) -- tool-selection and
+  // guardrails runs have no prompt_version concept, so they're left out of this dropdown's
+  // options and unaffected by it, same as they already are for the rest of these filters.
+  const promptVersions = distinctPromptVersions(runs)
+  const filteredRuns = runs.filter(
+    (run) => matchesHistoryFilters(run, historyFilters) && matchesPromptVersion(run, promptVersionFilter),
+  )
   const filteredToolRuns = toolRuns.filter((run) => matchesHistoryFilters(run, historyFilters))
   const filteredGuardrailsRuns = guardrailsRuns.filter((run) => matchesHistoryFilters(run, historyFilters))
   const filteredRunCount = filteredRuns.length + filteredToolRuns.length + filteredGuardrailsRuns.length
@@ -36,6 +45,7 @@ export default function RunHistoryTab() {
     setDateFrom('')
     setDateTo('')
     setExperimentFilter('')
+    setPromptVersionFilter('')
   }
 
   return (
@@ -62,6 +72,19 @@ export default function RunHistoryTab() {
             {experimentNames.map((name) => (
               <option key={name} value={name}>
                 {name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="search-input filter-select"
+            value={promptVersionFilter}
+            onChange={(event) => setPromptVersionFilter(event.target.value)}
+            aria-label="Filter by prompt version"
+          >
+            <option value="">All prompt versions</option>
+            {promptVersions.map((version) => (
+              <option key={version} value={version}>
+                v{version}
               </option>
             ))}
           </select>

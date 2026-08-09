@@ -252,6 +252,19 @@ export function matchesHistoryFilters(
   return true
 }
 
+export function matchesPromptVersion(run: EvalRun, promptVersion: string): boolean {
+  if (!promptVersion) return true
+  return run.prompt_version === promptVersion
+}
+
+export function distinctPromptVersions(runs: EvalRun[]): string[] {
+  const versions = new Set<string>()
+  for (const run of runs) {
+    if (run.prompt_version) versions.add(run.prompt_version)
+  }
+  return [...versions].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+}
+
 export function distinctExperimentNames(
   runs: EvalRun[],
   toolRuns: ToolEvalRun[],

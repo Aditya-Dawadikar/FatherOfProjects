@@ -7,6 +7,8 @@ import type {
   BillingStatus,
   EvalRun,
   EvalSweepTrigger,
+  EvalTrigger,
+  EvalTriggerRequest,
   GuardrailsEvalRun,
   GuardrailsEvalTrigger,
   HealthResponse,
@@ -404,6 +406,13 @@ async function triggerEvalSweep(): Promise<EvalSweepTrigger[]> {
   })
 }
 
+async function triggerEval(request: EvalTriggerRequest): Promise<EvalTrigger> {
+  return requestAgentJson<EvalTrigger>('/agent-api/evals', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+}
+
 export function useEvals() {
   return useQuery({
     queryKey: ['evals'],
@@ -422,6 +431,12 @@ export function useEvals() {
 export function useTriggerEvalSweep() {
   return useMutation({
     mutationFn: triggerEvalSweep,
+  })
+}
+
+export function useTriggerEval() {
+  return useMutation({
+    mutationFn: triggerEval,
   })
 }
 

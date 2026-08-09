@@ -199,6 +199,24 @@ export type EvalSweepTrigger = {
   sweep_id: string | null
 }
 
+// POST /evals request body -- only the fields the Prompt Version Comparison trigger form
+// actually exposes; every other EvalTriggerRequest field (dataset/provider/model/threshold/...)
+// is left to its server-side default. prompt_version is only honored by the backend when
+// prompt_source is 'production' (the default here) -- see api/eval_runs.py's EvalTriggerRequest.
+export type EvalTriggerRequest = {
+  prompt_source?: 'production' | 'local'
+  prompt_version?: number | null
+}
+
+// Same response shape as EvalSweepTrigger's per-item type, but for a single plain POST /evals
+// trigger rather than one-per-registered-version -- sweep_id is always null here.
+export type EvalTrigger = {
+  eval_id: string
+  status: 'running'
+  prompt_version: number | null
+  sweep_id: string | null
+}
+
 export type ToolEvalRunResult = {
   total_cases?: number
   evaluated_cases?: number
