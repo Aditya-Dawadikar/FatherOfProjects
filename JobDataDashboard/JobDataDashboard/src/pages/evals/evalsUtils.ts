@@ -136,29 +136,21 @@ export function formatToolMetric(run: ToolEvalRun, key: keyof NonNullable<ToolEv
   return metric.formatter ? metric.formatter(rawValue) : rawValue
 }
 
-export function latestSweepGroup(runs: EvalRun[]): { sweepId: string; runs: EvalRun[]; latestStartedAt: string } | null {
-  const sweepGroups = new Map<string, EvalRun[]>()
+// One row per prompt_version, taking each version's most-recently-started run -- regardless of
+// whether it came from a sweep (POST /evals/sweep, sweep_id set) or a standalone single-version
+// trigger (POST /evals with prompt_version, sweep_id null). A version comparison table that only
+// ever showed the latest sweep's group would go blank/stale the moment someone triggers just one
+// version's run without re-sweeping everything.
+export function latestRunPerPromptVersion(runs: EvalRun[]): EvalRun[] {
+  const byVersion = new Map<string, EvalRun>()
   for (const run of runs) {
-    if (!run.sweep_id) continue
-    const group = sweepGroups.get(run.sweep_id)
-    if (group) {
-      group.push(run)
-    } else {
-      sweepGroups.set(run.sweep_id, [run])
+    if (!run.prompt_version) continue
+    const existing = byVersion.get(run.prompt_version)
+    if (!existing || (run.started_at ?? '') > (existing.started_at ?? '')) {
+      byVersion.set(run.prompt_version, run)
     }
   }
-
-  let latest: { sweepId: string; runs: EvalRun[]; latestStartedAt: string } | null = null
-  for (const [sweepId, groupRuns] of sweepGroups) {
-    const latestStartedAt = groupRuns.reduce(
-      (acc, run) => (run.started_at && run.started_at > acc ? run.started_at : acc),
-      '',
-    )
-    if (!latest || latestStartedAt > latest.latestStartedAt) {
-      latest = { sweepId, runs: groupRuns, latestStartedAt }
-    }
-  }
-  return latest
+  return [...byVersion.values()]
 }
 
 export function formatGuardrailsMetric(run: GuardrailsEvalRun, key: keyof NonNullable<GuardrailsEvalRun['result']>) {

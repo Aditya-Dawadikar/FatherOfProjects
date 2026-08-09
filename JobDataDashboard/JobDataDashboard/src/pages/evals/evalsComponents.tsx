@@ -12,7 +12,7 @@ import {
   formatMetric,
   formatToolMetric,
   latestGuardrailsRun,
-  latestSweepGroup,
+  latestRunPerPromptVersion,
   latestToolRun,
 } from './evalsUtils'
 
@@ -342,26 +342,31 @@ export function SweepGroupRow({ sweepId, runs }: { sweepId: string; runs: EvalRu
 }
 
 export function PromptComparisonTable({ runs }: { runs: EvalRun[] }) {
-  const latest = latestSweepGroup(runs)
+  const versions = latestRunPerPromptVersion(runs).sort((a, b) =>
+    (a.prompt_version ?? '').localeCompare(b.prompt_version ?? '', undefined, { numeric: true }),
+  )
 
-  if (!latest) {
+  if (versions.length === 0) {
     return (
       <div className="empty-state">
-        <p>Trigger an offline eval sweep to compare every registered prompt version's full metrics here.</p>
+        <p>Trigger an eval run -- for one prompt version, or a full sweep -- to compare metrics here.</p>
       </div>
     )
   }
 
-  const versions = [...latest.runs].sort((a, b) =>
-    (a.prompt_version ?? '').localeCompare(b.prompt_version ?? '', undefined, { numeric: true }),
-  )
   const runningCount = versions.filter((run) => run.status === 'running').length
+  const latestStartedAt = versions.reduce<string | null>(
+    (latest, run) => (run.started_at && (!latest || run.started_at > latest) ? run.started_at : latest),
+    null,
+  )
 
   return (
     <>
       <div className="pane-meta">
-        <span className="eval-run-meta">sweep {latest.sweepId}</span>
-        <span className="eval-run-meta">{formatDateTime(latest.latestStartedAt)}</span>
+        <span className="eval-run-meta">
+          {versions.length} prompt version{versions.length === 1 ? '' : 's'} · latest result per version
+        </span>
+        <span className="eval-run-meta">{formatDateTime(latestStartedAt)}</span>
         {runningCount > 0 && <span className="eval-run-meta">{runningCount} still running</span>}
       </div>
       <div className="table-wrap">
@@ -380,7 +385,10 @@ export function PromptComparisonTable({ runs }: { runs: EvalRun[] }) {
           <tbody>
             {versions.map((run) => (
               <tr key={run.eval_id}>
-                <td>v{run.prompt_version ?? '—'}</td>
+                <td>
+                  v{run.prompt_version ?? '—'}
+                  {run.sweep_id && <span className="eval-run-meta"> · sweep</span>}
+                </td>
                 <td>
                   <span className={`status-pill status-pill-${run.status}`}>{STATUS_LABEL[run.status]}</span>
                 </td>
