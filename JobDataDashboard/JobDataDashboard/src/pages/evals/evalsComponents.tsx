@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { FiExternalLink } from 'react-icons/fi'
 import type { EvalRun, GuardrailsEvalRun, ToolEvalRun } from '../../types'
 import {
@@ -37,11 +38,65 @@ export function MlflowLink({ href, label, onClick }: { href: string | null; labe
   )
 }
 
-export function KpiCard({ label, value, description }: { label: string; value: string | number; description?: string }) {
+// Descriptions past this length get truncated (at a word boundary) behind a "Read more" toggle,
+// so a handful of long metric definitions don't blow out every card in the grid to match them.
+const DEFINITION_TRUNCATE_LENGTH = 100
+
+function MetricDefinition({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const isLong = text.length > DEFINITION_TRUNCATE_LENGTH
+
+  if (!isLong) {
+    return <p className="kpi-card-definition">{text}</p>
+  }
+
+  const truncated = text.slice(0, DEFINITION_TRUNCATE_LENGTH).replace(/\s+\S*$/, '')
+
   return (
-    <article className="summary-card" title={description}>
-      <span>{label}</span>
-      <strong>{typeof value === 'number' ? value.toFixed(2) : value}</strong>
+    <p className="kpi-card-definition">
+      {expanded ? text : `${truncated}…`}{' '}
+      <button type="button" className="kpi-card-readmore" onClick={() => setExpanded((value) => !value)}>
+        {expanded ? 'Show less' : 'Read more'}
+      </button>
+    </p>
+  )
+}
+
+export function KpiCard({
+  category,
+  label,
+  value,
+  description,
+  meta,
+}: {
+  category: string
+  label: string
+  value: string | number
+  description: string
+  meta?: string
+}) {
+  return (
+    <article className="kpi-card">
+      <span className="kpi-card-category">{category}</span>
+      <div className="kpi-card-body">
+        <div className="kpi-card-info">
+          <h3>{label}</h3>
+          <MetricDefinition text={description} />
+        </div>
+        <div className="kpi-card-value">
+          <strong>{typeof value === 'number' ? value.toFixed(2) : value}</strong>
+        </div>
+      </div>
+      {meta && <span className="kpi-card-meta">{meta}</span>}
+    </article>
+  )
+}
+
+export function EmptyKpiCard({ category, message }: { category: string; message: string }) {
+  return (
+    <article className="kpi-card kpi-card-empty">
+      <span className="kpi-card-category">{category}</span>
+      <p className="kpi-card-empty-message">{message}</p>
     </article>
   )
 }

@@ -1,5 +1,5 @@
 import { useEvals, useGuardrailsEvals, useToolEvals } from '../../hooks'
-import { KpiCard } from './evalsComponents'
+import { EmptyKpiCard, KpiCard } from './evalsComponents'
 import {
   BEHAVIOR_KPI_METRICS,
   GUARDRAILS_KPI_METRICS,
@@ -26,89 +26,82 @@ export default function KpisTab() {
   const latestBehaviorRun = latestCompletedRun(toolRuns)
   const latestGuardrailsRun = latestCompletedRun(guardrailsRuns)
 
+  const promptMeta = latestPromptRun
+    ? `${latestPromptRun.run_name ?? latestPromptRun.eval_id} · prompt v${latestPromptRun.prompt_version ?? '—'} · ${formatDateTime(latestPromptRun.started_at)}`
+    : undefined
+  const behaviorMeta = latestBehaviorRun
+    ? `${latestBehaviorRun.run_name ?? latestBehaviorRun.eval_id} · ${formatDateTime(latestBehaviorRun.started_at)}`
+    : undefined
+  const guardrailsMeta = latestGuardrailsRun
+    ? `${latestGuardrailsRun.run_name ?? latestGuardrailsRun.eval_id} · ${formatDateTime(latestGuardrailsRun.started_at)}`
+    : undefined
+
   return (
     <div className="kpi-tab">
-      <section className="kpi-section">
-        <div className="kpi-section-header">
-          <h3>Prompt Matching Quality</h3>
-          {latestPromptRun && (
-            <span className="eval-run-meta">
-              {latestPromptRun.run_name ?? latestPromptRun.eval_id} · prompt v{latestPromptRun.prompt_version ?? '—'} ·{' '}
-              {formatDateTime(latestPromptRun.started_at)}
-            </span>
-          )}
-        </div>
+      <div className="kpi-grid">
         {latestPromptRun ? (
-          <div className="summary-grid">
-            {PROMPT_KPI_METRICS.map((key) => (
+          PROMPT_KPI_METRICS.map((key) => {
+            const metric = RESULT_METRICS.find((entry) => entry.key === key)
+            return (
               <KpiCard
-                key={key}
-                label={RESULT_METRICS.find((metric) => metric.key === key)?.label ?? key}
+                key={`prompt-${key}`}
+                category="Prompt Matching Quality"
+                label={metric?.label ?? key}
+                description={metric?.description ?? ''}
                 value={formatMetric(latestPromptRun, key)}
-                description={RESULT_METRICS.find((metric) => metric.key === key)?.description}
+                meta={promptMeta}
               />
-            ))}
-          </div>
+            )
+          })
         ) : (
-          <div className="empty-state">
-            <p>No completed offline eval run yet -- trigger one from Prompt Version Comparison.</p>
-          </div>
+          <EmptyKpiCard
+            category="Prompt Matching Quality"
+            message="No completed offline eval run yet -- trigger one from Prompt Version Comparison."
+          />
         )}
-      </section>
 
-      <section className="kpi-section">
-        <div className="kpi-section-header">
-          <h3>Agent Behavior</h3>
-          {latestBehaviorRun && (
-            <span className="eval-run-meta">
-              {latestBehaviorRun.run_name ?? latestBehaviorRun.eval_id} · {formatDateTime(latestBehaviorRun.started_at)}
-            </span>
-          )}
-        </div>
         {latestBehaviorRun ? (
-          <div className="summary-grid">
-            {BEHAVIOR_KPI_METRICS.map((key) => (
+          BEHAVIOR_KPI_METRICS.map((key) => {
+            const metric = TOOL_RESULT_METRICS.find((entry) => entry.key === key)
+            return (
               <KpiCard
-                key={key}
-                label={TOOL_RESULT_METRICS.find((metric) => metric.key === key)?.label ?? key}
+                key={`behavior-${key}`}
+                category="Agent Behavior"
+                label={metric?.label ?? key}
+                description={metric?.description ?? ''}
                 value={formatToolMetric(latestBehaviorRun, key)}
-                description={TOOL_RESULT_METRICS.find((metric) => metric.key === key)?.description}
+                meta={behaviorMeta}
               />
-            ))}
-          </div>
+            )
+          })
         ) : (
-          <div className="empty-state">
-            <p>No completed tool-selection eval run yet -- trigger one from Agent Behavior.</p>
-          </div>
+          <EmptyKpiCard
+            category="Agent Behavior"
+            message="No completed tool-selection eval run yet -- trigger one from Agent Behavior."
+          />
         )}
-      </section>
 
-      <section className="kpi-section">
-        <div className="kpi-section-header">
-          <h3>Guardrails</h3>
-          {latestGuardrailsRun && (
-            <span className="eval-run-meta">
-              {latestGuardrailsRun.run_name ?? latestGuardrailsRun.eval_id} · {formatDateTime(latestGuardrailsRun.started_at)}
-            </span>
-          )}
-        </div>
         {latestGuardrailsRun ? (
-          <div className="summary-grid">
-            {GUARDRAILS_KPI_METRICS.map((key) => (
+          GUARDRAILS_KPI_METRICS.map((key) => {
+            const metric = GUARDRAILS_RESULT_METRICS.find((entry) => entry.key === key)
+            return (
               <KpiCard
-                key={key}
-                label={GUARDRAILS_RESULT_METRICS.find((metric) => metric.key === key)?.label ?? key}
+                key={`guardrails-${key}`}
+                category="Guardrails"
+                label={metric?.label ?? key}
+                description={metric?.description ?? ''}
                 value={formatGuardrailsMetric(latestGuardrailsRun, key)}
-                description={GUARDRAILS_RESULT_METRICS.find((metric) => metric.key === key)?.description}
+                meta={guardrailsMeta}
               />
-            ))}
-          </div>
+            )
+          })
         ) : (
-          <div className="empty-state">
-            <p>No completed guardrails eval run yet -- trigger one from Guardrails.</p>
-          </div>
+          <EmptyKpiCard
+            category="Guardrails"
+            message="No completed guardrails eval run yet -- trigger one from Guardrails."
+          />
         )}
-      </section>
+      </div>
     </div>
   )
 }
