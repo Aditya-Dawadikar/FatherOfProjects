@@ -37,12 +37,37 @@ export function MlflowLink({ href, label, onClick }: { href: string | null; labe
   )
 }
 
-export function KpiCard({ label, value }: { label: string; value: string | number }) {
+export function KpiCard({ label, value, description }: { label: string; value: string | number; description?: string }) {
   return (
-    <article className="summary-card">
+    <article className="summary-card" title={description}>
       <span>{label}</span>
       <strong>{typeof value === 'number' ? value.toFixed(2) : value}</strong>
     </article>
+  )
+}
+
+// Explains what each KPI/metric on this tab means, in plain language, so numbers on their own
+// don't require tribal knowledge to interpret. Collapsed by default to keep the results the focus;
+// each result table's column headers also carry the same description as a hover title.
+export function MetricGlossary({
+  title = 'What these metrics mean',
+  metrics,
+}: {
+  title?: string
+  metrics: Array<{ key: string; label: string; description: string }>
+}) {
+  return (
+    <details className="metric-glossary">
+      <summary className="metric-glossary-summary">{title}</summary>
+      <dl className="metric-glossary-list">
+        {metrics.map((metric) => (
+          <div className="metric-glossary-item" key={metric.key}>
+            <dt>{metric.label}</dt>
+            <dd>{metric.description}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   )
 }
 
@@ -116,7 +141,7 @@ export function EvalRunRow({ run }: { run: EvalRun }) {
             {RESULT_METRICS.filter((metric) => run.result?.[metric.key] !== undefined).map((metric) => {
               const rawValue = run.result?.[metric.key] as number
               return (
-                <article className="summary-card" key={metric.key}>
+                <article className="summary-card" key={metric.key} title={metric.description}>
                   <span>{metric.label}</span>
                   <strong>{metric.formatter ? metric.formatter(rawValue) : rawValue}</strong>
                 </article>
@@ -194,7 +219,7 @@ export function ToolEvalRunRow({ run }: { run: ToolEvalRun }) {
             {TOOL_RESULT_METRICS.filter((metric) => run.result?.[metric.key] !== undefined).map((metric) => {
               const rawValue = run.result?.[metric.key] as number
               return (
-                <article className="summary-card" key={metric.key}>
+                <article className="summary-card" key={metric.key} title={metric.description}>
                   <span>{metric.label}</span>
                   <strong>{metric.formatter ? metric.formatter(rawValue) : rawValue}</strong>
                 </article>
@@ -264,7 +289,7 @@ export function GuardrailsEvalRunRow({ run }: { run: GuardrailsEvalRun }) {
             {GUARDRAILS_RESULT_METRICS.filter((metric) => run.result?.[metric.key] !== undefined).map((metric) => {
               const rawValue = run.result?.[metric.key] as number
               return (
-                <article className="summary-card" key={metric.key}>
+                <article className="summary-card" key={metric.key} title={metric.description}>
                   <span>{metric.label}</span>
                   <strong>{metric.formatter ? metric.formatter(rawValue) : rawValue}</strong>
                 </article>
@@ -302,7 +327,9 @@ export function SweepGroupRow({ sweepId, runs }: { sweepId: string; runs: EvalRu
                 <th>Prompt Version</th>
                 <th>Status</th>
                 {SWEEP_COMPARE_COLUMNS.map((column) => (
-                  <th key={column.key}>{column.label}</th>
+                  <th key={column.key} title={RESULT_METRICS.find((metric) => metric.key === column.key)?.description}>
+                    {column.label}
+                  </th>
                 ))}
                 <th>Duration</th>
                 <th>MLflow</th>
@@ -376,7 +403,9 @@ export function PromptComparisonTable({ runs }: { runs: EvalRun[] }) {
               <th>Prompt Version</th>
               <th>Status</th>
               {RESULT_METRICS.map((metric) => (
-                <th key={metric.key}>{metric.label}</th>
+                <th key={metric.key} title={metric.description}>
+                  {metric.label}
+                </th>
               ))}
               <th>Duration</th>
               <th>MLflow</th>
@@ -441,7 +470,9 @@ export function AgentBehaviorTable({ toolRuns }: { toolRuns: ToolEvalRun[] }) {
               <th>Run</th>
               <th>Status</th>
               {TOOL_RESULT_METRICS.map((metric) => (
-                <th key={metric.key}>{metric.label}</th>
+                <th key={metric.key} title={metric.description}>
+                  {metric.label}
+                </th>
               ))}
               <th>Duration</th>
               <th>MLflow</th>
@@ -494,7 +525,9 @@ export function GuardrailsTable({ guardrailsRuns }: { guardrailsRuns: Guardrails
               <th>Run</th>
               <th>Status</th>
               {GUARDRAILS_RESULT_METRICS.map((metric) => (
-                <th key={metric.key}>{metric.label}</th>
+                <th key={metric.key} title={metric.description}>
+                  {metric.label}
+                </th>
               ))}
               <th>Duration</th>
               <th>MLflow</th>

@@ -1,5 +1,5 @@
 import { useEvals, useGuardrailsEvals, useToolEvals } from '../../hooks'
-import { KpiCard } from './evalsComponents'
+import { KpiCard, MetricGlossary } from './evalsComponents'
 import {
   BEHAVIOR_KPI_METRICS,
   GUARDRAILS_KPI_METRICS,
@@ -45,6 +45,7 @@ export default function KpisTab() {
                 key={key}
                 label={RESULT_METRICS.find((metric) => metric.key === key)?.label ?? key}
                 value={formatMetric(latestPromptRun, key)}
+                description={RESULT_METRICS.find((metric) => metric.key === key)?.description}
               />
             ))}
           </div>
@@ -53,6 +54,10 @@ export default function KpisTab() {
             <p>No completed offline eval run yet -- trigger one from Prompt Version Comparison.</p>
           </div>
         )}
+        <MetricGlossary
+          title="What these metrics mean"
+          metrics={RESULT_METRICS.filter((metric) => PROMPT_KPI_METRICS.includes(metric.key))}
+        />
       </section>
 
       <section className="kpi-section">
@@ -71,6 +76,7 @@ export default function KpisTab() {
                 key={key}
                 label={TOOL_RESULT_METRICS.find((metric) => metric.key === key)?.label ?? key}
                 value={formatToolMetric(latestBehaviorRun, key)}
+                description={TOOL_RESULT_METRICS.find((metric) => metric.key === key)?.description}
               />
             ))}
           </div>
@@ -79,6 +85,10 @@ export default function KpisTab() {
             <p>No completed tool-selection eval run yet -- trigger one from Agent Behavior.</p>
           </div>
         )}
+        <MetricGlossary
+          title="What these metrics mean"
+          metrics={TOOL_RESULT_METRICS.filter((metric) => BEHAVIOR_KPI_METRICS.includes(metric.key))}
+        />
       </section>
 
       <section className="kpi-section">
@@ -97,6 +107,7 @@ export default function KpisTab() {
                 key={key}
                 label={GUARDRAILS_RESULT_METRICS.find((metric) => metric.key === key)?.label ?? key}
                 value={formatGuardrailsMetric(latestGuardrailsRun, key)}
+                description={GUARDRAILS_RESULT_METRICS.find((metric) => metric.key === key)?.description}
               />
             ))}
           </div>
@@ -105,6 +116,10 @@ export default function KpisTab() {
             <p>No completed guardrails eval run yet -- trigger one from Guardrails.</p>
           </div>
         )}
+        <MetricGlossary
+          title="What these metrics mean"
+          metrics={GUARDRAILS_RESULT_METRICS.filter((metric) => GUARDRAILS_KPI_METRICS.includes(metric.key))}
+        />
       </section>
     </div>
   )

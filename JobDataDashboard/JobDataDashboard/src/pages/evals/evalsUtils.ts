@@ -6,58 +6,220 @@ export const STATUS_LABEL: Record<EvalRunStatus, string> = {
   failed: 'Failed',
 }
 
-export const RESULT_METRICS: Array<{ key: keyof NonNullable<EvalRun['result']>; label: string; formatter?: (value: number) => string }> = [
-  { key: 'accuracy', label: 'Accuracy', formatter: formatPercent },
-  { key: 'precision', label: 'Precision', formatter: formatPercent },
-  { key: 'recall', label: 'Recall', formatter: formatPercent },
-  { key: 'f1', label: 'F1' },
-  { key: 'score_in_range_rate', label: 'Score In-Range Rate', formatter: formatPercent },
-  { key: 'criteria_in_range_rate', label: 'Criteria In-Range Rate', formatter: formatPercent },
-  { key: 'mean_predicted_score', label: 'Mean Predicted Score' },
-  { key: 'evaluated_cases', label: 'Evaluated Cases' },
-  { key: 'errored_cases', label: 'Errored Cases' },
-  { key: 'total_tokens', label: 'Total Tokens' },
-  { key: 'mean_tokens_per_case', label: 'Mean Tokens / Case' },
+export const RESULT_METRICS: Array<{
+  key: keyof NonNullable<EvalRun['result']>
+  label: string
+  description: string
+  formatter?: (value: number) => string
+}> = [
+  {
+    key: 'accuracy',
+    label: 'Accuracy',
+    description: "Share of evaluated cases where the model's match decision agreed with the golden label.",
+    formatter: formatPercent,
+  },
+  {
+    key: 'precision',
+    label: 'Precision',
+    description: 'Of the cases the model flagged as a match, the share that were correct matches per the golden dataset.',
+    formatter: formatPercent,
+  },
+  {
+    key: 'recall',
+    label: 'Recall',
+    description: 'Of the true matches in the golden dataset, the share the model correctly identified.',
+    formatter: formatPercent,
+  },
+  { key: 'f1', label: 'F1', description: 'Harmonic mean of precision and recall — a single score balancing both.' },
+  {
+    key: 'score_in_range_rate',
+    label: 'Score In-Range Rate',
+    description: "Share of cases where the model's predicted score fell within the golden dataset's accepted tolerance range.",
+    formatter: formatPercent,
+  },
+  {
+    key: 'criteria_in_range_rate',
+    label: 'Criteria In-Range Rate',
+    description: 'Share of cases where every rubric-criterion sub-score fell within its accepted tolerance range.',
+    formatter: formatPercent,
+  },
+  {
+    key: 'mean_predicted_score',
+    label: 'Mean Predicted Score',
+    description: "Average of the model's predicted match/fit scores across evaluated cases.",
+  },
+  {
+    key: 'evaluated_cases',
+    label: 'Evaluated Cases',
+    description: 'Number of dataset cases that were actually scored in this run.',
+  },
+  {
+    key: 'errored_cases',
+    label: 'Errored Cases',
+    description: 'Number of cases that failed to produce a scorable result (e.g. an LLM or tool error).',
+  },
+  { key: 'total_tokens', label: 'Total Tokens', description: 'Total LLM tokens consumed across the entire run.' },
+  {
+    key: 'mean_tokens_per_case',
+    label: 'Mean Tokens / Case',
+    description: 'Average LLM tokens consumed per evaluated case.',
+  },
 ]
 
 export const TOOL_RESULT_METRICS: Array<{
   key: keyof NonNullable<ToolEvalRun['result']>
   label: string
+  description: string
   formatter?: (value: number) => string
 }> = [
-  { key: 'tool_selection_accuracy', label: 'Tool Selection Accuracy', formatter: formatPercent },
-  { key: 'tool_error_rate', label: 'Tool Error Rate', formatter: formatPercent },
-  { key: 'call_volume_efficiency', label: 'Call Volume Efficiency', formatter: formatPercent },
-  { key: 'plan_adherence', label: 'Plan Adherence', formatter: formatPercent },
-  { key: 'consistency_score', label: 'Consistency Score', formatter: formatPercent },
-  { key: 'success_rate', label: 'Success Rate', formatter: formatPercent },
-  { key: 'cost_per_successful_run', label: 'Cost / Successful Run', formatter: formatUsd },
-  { key: 'mean_cost_per_run', label: 'Mean Cost / Run', formatter: formatUsd },
-  { key: 'evaluated_cases', label: 'Evaluated Cases' },
-  { key: 'errored_cases', label: 'Errored Cases' },
-  { key: 'incomplete_trials', label: 'Incomplete Trials' },
-  { key: 'total_actual_calls', label: 'Total Tool Calls' },
-  { key: 'total_guardrail_errors', label: 'Guardrail Violations' },
-  { key: 'mean_calls_per_trial', label: 'Mean Calls / Trial' },
-  { key: 'total_cost_usd', label: 'Total Cost', formatter: formatUsd },
+  {
+    key: 'tool_selection_accuracy',
+    label: 'Tool Selection Accuracy',
+    description: 'Share of trials where the agent called the expected tool(s) for the scenario.',
+    formatter: formatPercent,
+  },
+  {
+    key: 'tool_error_rate',
+    label: 'Tool Error Rate',
+    description: 'Share of tool calls that returned an error or otherwise failed to execute.',
+    formatter: formatPercent,
+  },
+  {
+    key: 'call_volume_efficiency',
+    label: 'Call Volume Efficiency',
+    description: 'How close the number of tool calls the agent made was to the expected/minimal number for the scenario — higher means fewer wasted calls.',
+    formatter: formatPercent,
+  },
+  {
+    key: 'plan_adherence',
+    label: 'Plan Adherence',
+    description: "Share of trials where the agent's sequence of actions followed the scenario's expected plan or workflow.",
+    formatter: formatPercent,
+  },
+  {
+    key: 'consistency_score',
+    label: 'Consistency Score',
+    description: 'How consistent the agent behaved across repeated trials of the same scenario.',
+    formatter: formatPercent,
+  },
+  {
+    key: 'success_rate',
+    label: 'Success Rate',
+    description: "Share of trials that reached the scenario's expected end state or outcome.",
+    formatter: formatPercent,
+  },
+  {
+    key: 'cost_per_successful_run',
+    label: 'Cost / Successful Run',
+    description: 'Average LLM cost (USD) per trial that succeeded.',
+    formatter: formatUsd,
+  },
+  {
+    key: 'mean_cost_per_run',
+    label: 'Mean Cost / Run',
+    description: 'Average LLM cost (USD) across all trials, successful or not.',
+    formatter: formatUsd,
+  },
+  {
+    key: 'evaluated_cases',
+    label: 'Evaluated Cases',
+    description: 'Number of dataset cases actually run in this eval.',
+  },
+  {
+    key: 'errored_cases',
+    label: 'Errored Cases',
+    description: 'Number of cases that failed to complete due to an error.',
+  },
+  {
+    key: 'incomplete_trials',
+    label: 'Incomplete Trials',
+    description: "Number of trials that didn't finish — for example, they timed out or were cut off.",
+  },
+  {
+    key: 'total_actual_calls',
+    label: 'Total Tool Calls',
+    description: 'Total number of tool calls made across all trials in the run.',
+  },
+  {
+    key: 'total_guardrail_errors',
+    label: 'Guardrail Violations',
+    description: 'Total number of guardrail violations triggered across all trials.',
+  },
+  {
+    key: 'mean_calls_per_trial',
+    label: 'Mean Calls / Trial',
+    description: 'Average number of tool calls made per trial.',
+  },
+  {
+    key: 'total_cost_usd',
+    label: 'Total Cost',
+    description: 'Total LLM cost (USD) for the entire run.',
+    formatter: formatUsd,
+  },
 ]
 
 export const GUARDRAILS_RESULT_METRICS: Array<{
   key: keyof NonNullable<GuardrailsEvalRun['result']>
   label: string
+  description: string
   formatter?: (value: number) => string
 }> = [
-  { key: 'accuracy', label: 'Accuracy', formatter: formatPercent },
-  { key: 'precision', label: 'Precision', formatter: formatPercent },
-  { key: 'recall', label: 'Recall', formatter: formatPercent },
-  { key: 'f1', label: 'F1', formatter: formatPercent },
-  { key: 'guardrail_id_accuracy', label: 'Guardrail ID Accuracy', formatter: formatPercent },
-  { key: 'true_positive', label: 'True Positive' },
-  { key: 'false_positive', label: 'False Positive' },
-  { key: 'false_negative', label: 'False Negative' },
-  { key: 'true_negative', label: 'True Negative' },
-  { key: 'evaluated_cases', label: 'Evaluated Cases' },
-  { key: 'total_cases', label: 'Total Cases' },
+  {
+    key: 'accuracy',
+    label: 'Accuracy',
+    description: "Share of cases where the guardrail's pass/flag decision matched the golden label.",
+    formatter: formatPercent,
+  },
+  {
+    key: 'precision',
+    label: 'Precision',
+    description: 'Of the cases the guardrail flagged as violations, the share that were true violations.',
+    formatter: formatPercent,
+  },
+  {
+    key: 'recall',
+    label: 'Recall',
+    description: 'Of the true violations in the golden dataset, the share the guardrail correctly flagged.',
+    formatter: formatPercent,
+  },
+  {
+    key: 'f1',
+    label: 'F1',
+    description: 'Harmonic mean of precision and recall for guardrail flagging.',
+    formatter: formatPercent,
+  },
+  {
+    key: 'guardrail_id_accuracy',
+    label: 'Guardrail ID Accuracy',
+    description: 'Of the correctly flagged cases, the share where the guardrail also identified the correct violation type/ID, not just that a violation occurred.',
+    formatter: formatPercent,
+  },
+  { key: 'true_positive', label: 'True Positive', description: 'Count of cases correctly flagged as violations.' },
+  {
+    key: 'false_positive',
+    label: 'False Positive',
+    description: 'Count of cases incorrectly flagged as violations (false alarms).',
+  },
+  {
+    key: 'false_negative',
+    label: 'False Negative',
+    description: 'Count of true violations the guardrail missed.',
+  },
+  {
+    key: 'true_negative',
+    label: 'True Negative',
+    description: 'Count of cases correctly passed through as non-violations.',
+  },
+  {
+    key: 'evaluated_cases',
+    label: 'Evaluated Cases',
+    description: 'Number of dataset cases actually scored in this run.',
+  },
+  {
+    key: 'total_cases',
+    label: 'Total Cases',
+    description: 'Total number of cases in the dataset targeted by this run.',
+  },
 ]
 
 // A small, curated subset of RESULT_METRICS/TOOL_RESULT_METRICS/GUARDRAILS_RESULT_METRICS -- the
