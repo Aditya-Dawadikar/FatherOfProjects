@@ -1,7 +1,6 @@
 import { FiRefreshCw, FiZap } from 'react-icons/fi'
 import { useGuardrailsEvals, useTriggerGuardrailsEval } from '../../hooks'
-import { GuardrailsTable, MetricGlossary } from './evalsComponents'
-import { GUARDRAILS_RESULT_METRICS } from './evalsUtils'
+import { GuardrailsTable } from './evalsComponents'
 
 export default function GuardrailsTab() {
   const guardrailsEvalsQuery = useGuardrailsEvals()
@@ -50,8 +49,6 @@ export default function GuardrailsTab() {
       )}
       {guardrailsEvalMutation.error && <div className="banner banner-error">{guardrailsEvalMutation.error.message}</div>}
       {guardrailsEvalsQuery.error && <div className="banner banner-error">{guardrailsEvalsQuery.error.message}</div>}
-
-      <MetricGlossary title="What these metrics mean" metrics={GUARDRAILS_RESULT_METRICS} />
 
       <GuardrailsTable guardrailsRuns={guardrailsRuns} />
     </>

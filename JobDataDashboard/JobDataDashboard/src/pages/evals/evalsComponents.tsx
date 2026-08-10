@@ -46,31 +46,6 @@ export function KpiCard({ label, value, description }: { label: string; value: s
   )
 }
 
-// Explains what each KPI/metric on this tab means, in plain language, so numbers on their own
-// don't require tribal knowledge to interpret. Collapsed by default to keep the results the focus;
-// each result table's column headers also carry the same description as a hover title.
-export function MetricGlossary({
-  title = 'What these metrics mean',
-  metrics,
-}: {
-  title?: string
-  metrics: Array<{ key: string; label: string; description: string }>
-}) {
-  return (
-    <details className="metric-glossary">
-      <summary className="metric-glossary-summary">{title}</summary>
-      <dl className="metric-glossary-list">
-        {metrics.map((metric) => (
-          <div className="metric-glossary-item" key={metric.key}>
-            <dt>{metric.label}</dt>
-            <dd>{metric.description}</dd>
-          </div>
-        ))}
-      </dl>
-    </details>
-  )
-}
-
 export function EvalRunRow({ run }: { run: EvalRun }) {
   const duration = formatDuration(run.started_at, run.finished_at)
 

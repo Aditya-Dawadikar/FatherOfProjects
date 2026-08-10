@@ -1,7 +1,6 @@
 import { FiRefreshCw, FiZap } from 'react-icons/fi'
 import { useToolEvals, useTriggerToolEval } from '../../hooks'
-import { AgentBehaviorTable, MetricGlossary } from './evalsComponents'
-import { TOOL_RESULT_METRICS } from './evalsUtils'
+import { AgentBehaviorTable } from './evalsComponents'
 
 export default function AgentBehaviorTab() {
   const toolEvalsQuery = useToolEvals()
@@ -50,8 +49,6 @@ export default function AgentBehaviorTab() {
       )}
       {toolEvalMutation.error && <div className="banner banner-error">{toolEvalMutation.error.message}</div>}
       {toolEvalsQuery.error && <div className="banner banner-error">{toolEvalsQuery.error.message}</div>}
-
-      <MetricGlossary title="What these metrics mean" metrics={TOOL_RESULT_METRICS} />
 
       <AgentBehaviorTable toolRuns={toolRuns} />
     </>

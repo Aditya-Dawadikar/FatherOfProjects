@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { FiPlay, FiRefreshCw, FiZap } from 'react-icons/fi'
 import { useEvals, usePrompts, useTriggerEval, useTriggerEvalSweep } from '../../hooks'
-import { MetricGlossary, PromptComparisonTable } from './evalsComponents'
-import { RESULT_METRICS } from './evalsUtils'
+import { PromptComparisonTable } from './evalsComponents'
 
 export default function PromptComparisonTab() {
   const evalsQuery = useEvals()
@@ -106,8 +105,6 @@ export default function PromptComparisonTab() {
       {sweepMutation.error && <div className="banner banner-error">{sweepMutation.error.message}</div>}
       {evalsQuery.error && <div className="banner banner-error">{evalsQuery.error.message}</div>}
       {promptsQuery.error && <div className="banner banner-error">{promptsQuery.error.message}</div>}
-
-      <MetricGlossary title="What these metrics mean" metrics={RESULT_METRICS} />
 
       <PromptComparisonTable runs={runs} />
     </>
