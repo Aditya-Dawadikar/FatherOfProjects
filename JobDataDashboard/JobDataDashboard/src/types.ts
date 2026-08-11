@@ -313,6 +313,8 @@ export type RegisteredPrompt = {
   version: string
   schema_mode: 'legacy' | 'single' | 'batch'
   rubric_version: number
+  status: 'live' | 'decommissioned'
+  template: string
   is_active: boolean
   creation_timestamp: number | null
 }

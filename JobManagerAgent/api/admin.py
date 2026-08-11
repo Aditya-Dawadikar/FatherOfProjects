@@ -142,6 +142,8 @@ class RegisteredPromptResponse(BaseModel):
 	version: str
 	schema_mode: str
 	rubric_version: int
+	status: str
+	template: str
 	is_active: bool
 	creation_timestamp: int | None
 
@@ -150,10 +152,17 @@ class RegisteredPromptResponse(BaseModel):
 def list_prompts() -> list[RegisteredPromptResponse]:
 	"""Every prompt version ever registered (nothing is ever deleted -- see
 	docs/backfill-design.md), newest first, with `is_active` marking whichever one 'production'
-	currently points to. This is what the dashboard's feature-flag dropdown -- and the Prompt
-	Catalog tab's version table -- are built from. batch-mode versions (schema_mode="batch", e.g.
-	job_match_v5.txt) are included for visibility but POST /admin/active-prompt rejects setting
-	one active.
+	currently points to. This is what the dashboard's feature-flag dropdown, the Prompt Catalog
+	tab's version table, and the Agent Evals "Prompt Versions" tab are all built from. batch-mode
+	versions (schema_mode="batch", e.g. job_match_v5.txt) are included for visibility but
+	POST /admin/active-prompt rejects setting one active.
+
+	`status` ("live" or "decommissioned") comes from prompts/version_status.json -- it's what
+	gates POST /evals/sweep eligibility (a version also needs schema_mode="single" to actually be
+	swept, see list_sweep_eligible_versions()), and is independent of `is_active`: a version can
+	be "live" without being the one 'production' currently points to.
+
+	`template` is the version's full prompt text, as registered in MLflow.
 
 	`creation_timestamp` is MLflow's own epoch-milliseconds registration time for the version
 	(when it was first registered, not when it was last active).
@@ -163,6 +172,8 @@ def list_prompts() -> list[RegisteredPromptResponse]:
 			version=summary.version,
 			schema_mode=summary.schema_mode,
 			rubric_version=summary.rubric_version,
+			status=summary.status,
+			template=summary.template,
 			is_active=summary.is_active,
 			creation_timestamp=summary.creation_timestamp,
 		)

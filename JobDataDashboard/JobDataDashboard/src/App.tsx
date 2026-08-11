@@ -17,6 +17,7 @@ import AgentBehaviorTab from './pages/evals/AgentBehaviorTab'
 import GuardrailsTab from './pages/evals/GuardrailsTab'
 import KpisTab from './pages/evals/KpisTab'
 import PromptComparisonTab from './pages/evals/PromptComparisonTab'
+import PromptVersionsTab from './pages/evals/PromptVersionsTab'
 import RunHistoryTab from './pages/evals/RunHistoryTab'
 import EvalsLayout from './pages/evals/EvalsLayout'
 
@@ -52,6 +53,7 @@ export default function App() {
                 <Route index element={<Navigate to="kpis" replace />} />
                 <Route path="kpis" element={<KpisTab />} />
                 <Route path="prompt" element={<PromptComparisonTab />} />
+                <Route path="prompt-versions" element={<PromptVersionsTab />} />
                 <Route path="behavior" element={<AgentBehaviorTab />} />
                 <Route path="guardrails" element={<GuardrailsTab />} />
                 <Route path="history" element={<RunHistoryTab />} />

@@ -8,14 +8,12 @@ from typing import Any, Literal
 
 import mlflow
 from fastapi import APIRouter, HTTPException
-from mlflow import MlflowClient
-from mlflow.exceptions import MlflowException
 from pydantic import BaseModel, Field
 
 from evals.run_guardrails_eval import run_guardrails_eval
 from evals.run_offline_eval import run_offline_eval
 from evals.run_tool_selection_eval import run_tool_selection_eval
-from integrations.mlflow import PROMPT_NAME
+from integrations.mlflow import PROMPT_NAME, list_sweep_eligible_versions
 from utils.agent_logger import get_agent_logger, new_id
 from utils.config import PROJECT_ROOT
 from utils.mlflow_utils import build_mlflow_run_url, build_mlflow_trace_url, ensure_tracking_uri_configured
@@ -165,10 +163,11 @@ class EvalTriggerRequest(BaseModel):
 
 class EvalSweepRequest(BaseModel):
 	"""Same knobs as EvalTriggerRequest minus prompt_source/prompt_version/run_name -- a sweep
-	always scores every version registered for PROMPT_NAME in MLflow (see
-	integrations/mlflow/prompt_registry.py's register_prompt_variants(), which registers
-	prompts/job_match_v2.txt, job_match_v3.txt, etc. at server startup), so those are set per-run
-	internally rather than accepted here."""
+	always scores every *sweep-eligible* version registered for PROMPT_NAME in MLflow (status
+	"live" in prompts/version_status.json AND schema_mode="single", see
+	integrations/mlflow/prompt_registry.py's list_sweep_eligible_versions()), so those are set
+	per-run internally rather than accepted here. Decommissioned versions and schema_mode="batch"
+	versions are never included, no matter how many are registered."""
 
 	dataset: str = Field(
 		default="evals/golden_dataset.jsonl",
@@ -751,32 +750,34 @@ def trigger_eval(payload: EvalTriggerRequest) -> EvalTriggerResponse:
 	return _trigger_background_run(dataset_path, payload)
 
 
-@router.post("/sweep", status_code=202, summary="Trigger one offline eval run per registered prompt version")
+@router.post("/sweep", status_code=202, summary="Trigger one offline eval run per sweep-eligible prompt version")
 def trigger_eval_sweep(payload: EvalSweepRequest) -> list[EvalTriggerResponse]:
-	"""Looks up every version registered for PROMPT_NAME in the MLflow prompt registry --
-	the 'production' alias's history plus whatever integrations/mlflow/prompt_registry.py's
-	register_prompt_variants() registered from prompts/job_match_v2.txt, job_match_v3.txt, etc. at
-	server startup -- and triggers one independent run_offline_eval() background run per version
-	against the same dataset. Each gets its own eval_id/MLflow run pinned to that prompt_version
-	(same mechanism as POST /evals with prompt_version set), so GET /evals lets you compare
-	accuracy and token cost across every prompt variant in one place instead of calling POST
-	/evals once per version by hand. Returns immediately with one entry per version triggered;
-	poll GET /evals/{eval_id} for each.
+	"""Looks up every *sweep-eligible* version registered for PROMPT_NAME --
+	list_sweep_eligible_versions() filters the full MLflow registry down to status="live" (per
+	prompts/version_status.json) AND schema_mode="single", so decommissioned versions (e.g.
+	v1-v3) and schema_mode="batch" versions (e.g. v5, which scores multiple jobs per call and
+	isn't compatible with this one-run-per-version loop) are never swept, no matter how many
+	versions are registered in MLflow overall -- and triggers one independent run_offline_eval()
+	background run per eligible version against the same dataset. Each gets its own eval_id/MLflow
+	run pinned to that prompt_version (same mechanism as POST /evals with prompt_version set), so
+	GET /evals lets you compare accuracy and token cost across every live prompt variant in one
+	place instead of calling POST /evals once per version by hand. Returns immediately with one
+	entry per version triggered; poll GET /evals/{eval_id} for each.
 	"""
 	dataset_path = _resolve_dataset_path(payload.dataset)
 	if not dataset_path.exists():
 		raise HTTPException(status_code=400, detail=f"Dataset not found: {dataset_path}")
 
 	ensure_tracking_uri_configured()
-	client = MlflowClient()
-	try:
-		versions = client.search_prompt_versions(PROMPT_NAME)
-	except MlflowException as error:
-		if error.error_code != "RESOURCE_DOES_NOT_EXIST":
-			raise
-		versions = []
+	versions = list_sweep_eligible_versions()
 	if not versions:
-		raise HTTPException(status_code=404, detail=f"No versions registered for prompt {PROMPT_NAME!r}")
+		raise HTTPException(
+			status_code=404,
+			detail=(
+				f"No sweep-eligible versions for prompt {PROMPT_NAME!r} -- a version must be "
+				"status='live' (prompts/version_status.json) and schema_mode='single' to be swept."
+			),
+		)
 
 	# Shared by every run this sweep triggers -- tagged onto each MLflow run (see
 	# run_offline_eval.py) so GET /evals can group them back together for side-by-side comparison
@@ -784,11 +785,11 @@ def trigger_eval_sweep(payload: EvalSweepRequest) -> list[EvalTriggerResponse]:
 	sweep_id = new_id()
 
 	responses = []
-	for version in sorted(versions, key=lambda v: v.version):
+	for summary in sorted(versions, key=lambda s: int(s.version)):
 		per_version_payload = EvalTriggerRequest(
 			dataset=payload.dataset,
 			prompt_source="production",
-			prompt_version=version.version,
+			prompt_version=int(summary.version),
 			provider=payload.provider,
 			model=payload.model,
 			threshold=payload.threshold,

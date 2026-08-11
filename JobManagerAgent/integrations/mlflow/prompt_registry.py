@@ -26,6 +26,12 @@ LOGGER = get_agent_logger(__name__)
 DEFAULT_SCHEMA_MODE = "legacy"
 DEFAULT_RUBRIC_VERSION = 1
 
+# A prompt file with no entry in version_status.json defaults to "decommissioned" -- adding a new
+# job_match_v*.txt without also marking it "live" there doesn't silently make it eligible for new
+# sweep studies (see list_sweep_eligible_versions()).
+DEFAULT_PROMPT_STATUS = "decommissioned"
+_VERSION_STATUS_FILE = PROMPT_FILE.parent / "version_status.json"
+
 
 @dataclass(frozen=True)
 class PromptActiveHistoryEntry:
@@ -130,6 +136,32 @@ def _resolve_schema_mode(template: str) -> tuple[str, int]:
 		if path.read_text(encoding="utf-8") == template:
 			return _load_sidecar_metadata(path)
 	return DEFAULT_SCHEMA_MODE, DEFAULT_RUBRIC_VERSION
+
+
+def _load_version_status() -> dict[str, str]:
+	"""Reads prompts/version_status.json -- a hand-edited file mapping a prompt file's stem (e.g.
+	"job_match_v4") to "live" or "decommissioned". This is the single source of truth for which
+	versions may still be used in new sweep studies (list_sweep_eligible_versions()): retiring a
+	version or promoting a new one is just editing this file and redeploying, no code change or
+	migration required. Read fresh on every call rather than cached, same as the .meta.json
+	sidecar loader below -- this is an infrequently-called admin/reporting path, not a hot one.
+	"""
+	if not _VERSION_STATUS_FILE.exists():
+		return {}
+	return json.loads(_VERSION_STATUS_FILE.read_text(encoding="utf-8"))
+
+
+def _resolve_prompt_status(template: str) -> str:
+	"""Same content-match lookup as _resolve_schema_mode, against version_status.json instead of
+	a .meta.json sidecar. A template that doesn't match any file on disk falls back to
+	"decommissioned" for the same reason _resolve_schema_mode falls back to "legacy": safer to
+	exclude an unrecognized version from sweep eligibility than to guess it's still current.
+	"""
+	status_map = _load_version_status()
+	for path in sorted(PROMPT_FILE.parent.glob("job_match_v*.txt")):
+		if path.read_text(encoding="utf-8") == template:
+			return status_map.get(path.stem, DEFAULT_PROMPT_STATUS)
+	return DEFAULT_PROMPT_STATUS
 
 
 def get_active_prompt(engine: Engine) -> LoadedPrompt:
@@ -298,11 +330,22 @@ def revert_active_prompt_version(engine: Engine) -> LoadedPrompt:
 class RegisteredPromptSummary:
 	"""One registered prompt version, for GET /admin/prompts -- the feature-flag selector's
 	source of truth for "what can I set active" (as opposed to get_active_prompt_history, which
-	is "what has been active and when")."""
+	is "what has been active and when"), and the Prompt Versions tab's source of truth for "what
+	exists at all, live or decommissioned, and what does it actually say".
+
+	`status` ("live" or "decommissioned") comes from prompts/version_status.json, not MLflow --
+	MLflow never deletes a registered version, so "decommissioned" here means "no longer eligible
+	for new sweep studies", not "removed". `is_active` is a separate concept: whether this is the
+	one 'production' alias currently points to. A version can be status="live" without being
+	is_active (e.g. job_match_v5.txt's schema_mode="batch" is live but can never be the
+	'production' alias -- see set_active_prompt_version()).
+	"""
 
 	version: str
 	schema_mode: str
 	rubric_version: int
+	status: str
+	template: str
 	is_active: bool
 	creation_timestamp: int | None
 
@@ -328,11 +371,35 @@ def list_registered_prompt_versions() -> list[RegisteredPromptSummary]:
 				version=str(version_obj.version),
 				schema_mode=schema_mode,
 				rubric_version=rubric_version,
+				status=_resolve_prompt_status(version_obj.template),
+				template=version_obj.template,
 				is_active=(str(version_obj.version) == active_version),
 				creation_timestamp=getattr(version_obj, "creation_timestamp", None),
 			)
 		)
 	return sorted(summaries, key=lambda s: int(s.version), reverse=True)
+
+
+def list_sweep_eligible_versions() -> list[RegisteredPromptSummary]:
+	"""Versions POST /evals/sweep is allowed to run against: status="live" (see
+	prompts/version_status.json) AND schema_mode="single". schema_mode="batch" is excluded
+	regardless of status -- it scores multiple jobs per call and isn't compatible with
+	run_offline_eval()'s one-run-per-version sweep loop, the same reason it can never be the
+	'production' alias (set_active_prompt_version()). schema_mode="legacy" versions are excluded
+	in practice today only because version_status.json marks v1-v3 "decommissioned" -- a future
+	live legacy-mode version would still need schema_mode="single" to be swept, since the sweep
+	loop always pins prompt_source="production" with a specific version the same way a manual
+	single-version trigger does.
+
+	This is the whole "configurable and flexible" mechanism: marking a version "live" in
+	version_status.json is necessary but not sufficient for sweep eligibility; it also needs
+	schema_mode="single". Today that's v4 only -- v5 is live but schema_mode="batch".
+	"""
+	return [
+		summary
+		for summary in list_registered_prompt_versions()
+		if summary.status == "live" and summary.schema_mode == "single"
+	]
 
 
 def register_prompt_variants() -> None:
