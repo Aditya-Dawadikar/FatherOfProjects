@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import threading
 from datetime import datetime, timezone
@@ -612,6 +613,96 @@ def _resolve_dataset_path(raw: str) -> Path:
 	if not resolved.is_relative_to(_EVALS_DIR):
 		raise HTTPException(status_code=400, detail="dataset must resolve to a path under evals/")
 	return resolved
+
+
+class EvalDatasetSummary(BaseModel):
+	name: str
+	path: str
+	kind: Literal["prompt_matching", "guardrails", "tool_selection", "unknown"]
+	case_count: int
+	size_bytes: int
+	modified_at: str
+
+
+class EvalDatasetCase(BaseModel):
+	line_number: int
+	id: str | None
+	data: dict[str, Any]
+
+
+class EvalDatasetDetail(BaseModel):
+	name: str
+	path: str
+	kind: Literal["prompt_matching", "guardrails", "tool_selection", "unknown"]
+	cases: list[EvalDatasetCase]
+	parse_errors: list[str]
+
+
+def _infer_dataset_kind(name: str) -> Literal["prompt_matching", "guardrails", "tool_selection", "unknown"]:
+	if "guardrails" in name:
+		return "guardrails"
+	if "tool_selection" in name:
+		return "tool_selection"
+	if "golden_dataset" in name:
+		return "prompt_matching"
+	return "unknown"
+
+
+def _dataset_summary(file_path: Path) -> EvalDatasetSummary:
+	stat = file_path.stat()
+	with file_path.open("r", encoding="utf-8") as handle:
+		case_count = sum(1 for line in handle if line.strip())
+	return EvalDatasetSummary(
+		name=file_path.name,
+		path=f"evals/{file_path.name}",
+		kind=_infer_dataset_kind(file_path.name),
+		case_count=case_count,
+		size_bytes=stat.st_size,
+		modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+	)
+
+
+@router.get("/datasets", summary="List eval golden datasets")
+def list_datasets() -> list[EvalDatasetSummary]:
+	"""Lists every *.jsonl file directly under evals/ (golden datasets for the three eval
+	families, plus their .example.jsonl counterparts) -- these are flat files on disk, not
+	MLflow- or DB-backed, so this just globs and stats them rather than querying anything."""
+	files = sorted(_EVALS_DIR.glob("*.jsonl"))
+	return [_dataset_summary(f) for f in files]
+
+
+@router.get("/datasets/{name}", summary="Get an eval dataset's parsed cases")
+def get_dataset(name: str) -> EvalDatasetDetail:
+	"""Returns every case in one dataset file, parsed line-by-line with plain json.loads rather
+	than the stricter per-eval-family dataclass loaders (evals/dataset.py, evals/
+	guardrail_eval_dataset.py, evals/tool_eval_dataset.py) -- those enforce shape invariants
+	needed to actually *run* an eval, but a browse/display endpoint should surface a malformed
+	line via parse_errors instead of 400ing the whole dataset over one bad row."""
+	dataset_path = _resolve_dataset_path(f"evals/{name}")
+	if not dataset_path.exists() or dataset_path.suffix != ".jsonl":
+		raise HTTPException(status_code=404, detail=f"No dataset named {name!r}")
+
+	cases: list[EvalDatasetCase] = []
+	parse_errors: list[str] = []
+	with dataset_path.open("r", encoding="utf-8") as handle:
+		for line_number, line in enumerate(handle, start=1):
+			if not line.strip():
+				continue
+			try:
+				raw = json.loads(line)
+			except json.JSONDecodeError as exc:
+				parse_errors.append(f"line {line_number}: {exc}")
+				continue
+			case_id = raw.get("id") if isinstance(raw, dict) else None
+			cases.append(EvalDatasetCase(line_number=line_number, id=case_id, data=raw))
+
+	return EvalDatasetDetail(
+		name=dataset_path.name,
+		path=f"evals/{dataset_path.name}",
+		kind=_infer_dataset_kind(dataset_path.name),
+		cases=cases,
+		parse_errors=parse_errors,
+	)
 
 
 def _run_eval_in_background(

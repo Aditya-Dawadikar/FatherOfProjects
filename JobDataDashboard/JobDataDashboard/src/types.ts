@@ -306,6 +306,31 @@ export type GuardrailsEvalTrigger = {
   status: 'running'
 }
 
+export type EvalDatasetKind = 'prompt_matching' | 'guardrails' | 'tool_selection' | 'unknown'
+
+export type EvalDatasetSummary = {
+  name: string
+  path: string
+  kind: EvalDatasetKind
+  case_count: number
+  size_bytes: number
+  modified_at: string
+}
+
+export type EvalDatasetCase = {
+  line_number: number
+  id: string | null
+  data: Record<string, unknown>
+}
+
+export type EvalDatasetDetail = {
+  name: string
+  path: string
+  kind: EvalDatasetKind
+  cases: EvalDatasetCase[]
+  parse_errors: string[]
+}
+
 // --- Migration control (feature flag / prompt cutover / backfill / RPM breakdown) -------------
 // JobManagerAgent's api/admin.py + api/backfill.py -- see JobManagerAgent/docs/backfill-design.md.
 

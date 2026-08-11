@@ -14,6 +14,7 @@ import OverviewPage from './pages/OverviewPage'
 import RateLimitsPage from './pages/RateLimitsPage'
 import EvalsPage from './pages/EvalsPage'
 import AgentBehaviorTab from './pages/evals/AgentBehaviorTab'
+import DatasetsTab from './pages/evals/DatasetsTab'
 import GuardrailsTab from './pages/evals/GuardrailsTab'
 import KpisTab from './pages/evals/KpisTab'
 import PromptComparisonTab from './pages/evals/PromptComparisonTab'
@@ -54,6 +55,7 @@ export default function App() {
                 <Route path="kpis" element={<KpisTab />} />
                 <Route path="prompt" element={<PromptComparisonTab />} />
                 <Route path="prompt-versions" element={<PromptVersionsTab />} />
+                <Route path="datasets" element={<DatasetsTab />} />
                 <Route path="behavior" element={<AgentBehaviorTab />} />
                 <Route path="guardrails" element={<GuardrailsTab />} />
                 <Route path="history" element={<RunHistoryTab />} />

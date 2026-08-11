@@ -1424,6 +1424,137 @@
   overflow: auto;
 }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-strong);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 20px;
+  z-index: 100;
+  overflow-y: auto;
+}
+
+.modal-panel {
+  width: 100%;
+  max-width: 720px;
+  max-height: calc(100vh - 96px);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 24px 48px rgba(20, 26, 31, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-header-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.modal-header-copy h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  overflow-wrap: break-word;
+}
+
+.modal-close-button {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.modal-close-button:hover {
+  background: var(--overlay-strong);
+  color: var(--text);
+}
+
+.modal-body {
+  padding: 18px 20px;
+  overflow-y: auto;
+}
+
+.json-node {
+  border-left: 1px solid var(--line);
+}
+
+.json-node summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.json-node summary::-webkit-details-marker {
+  display: none;
+}
+
+.json-children {
+  display: flex;
+  flex-direction: column;
+}
+
+.json-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 0.85rem;
+}
+
+.json-key {
+  color: var(--muted);
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+}
+
+.json-type-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.json-value {
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  word-break: break-word;
+}
+
+.json-value-string {
+  color: var(--accent-strong);
+}
+
+.json-value-number,
+.json-value-boolean {
+  color: var(--warn-strong);
+}
+
+.json-value-null,
+.json-value-empty {
+  color: var(--muted);
+}
+
 .sweep-group {
   border-color: var(--accent);
 }

@@ -10,6 +10,7 @@ const EVALS_TABS = [
   { path: 'kpis', label: 'KPIs' },
   { path: 'prompt', label: 'Prompt Version Comparison' },
   { path: 'prompt-versions', label: 'Prompt Versions' },
+  { path: 'datasets', label: 'Datasets' },
   { path: 'behavior', label: 'Agent Behavior' },
   { path: 'guardrails', label: 'Guardrails' },
   { path: 'history', label: 'Run History' },

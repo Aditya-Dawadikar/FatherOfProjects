@@ -5,6 +5,8 @@ import type {
   BackfillRun,
   BackfillRunTrigger,
   BillingStatus,
+  EvalDatasetDetail,
+  EvalDatasetSummary,
   EvalRun,
   EvalSweepTrigger,
   EvalTrigger,
@@ -510,6 +512,33 @@ export function useGuardrailsEvals() {
 export function useTriggerGuardrailsEval() {
   return useMutation({
     mutationFn: triggerGuardrailsEval,
+  })
+}
+
+async function fetchEvalDatasets(): Promise<EvalDatasetSummary[]> {
+  return requestAgentJson<EvalDatasetSummary[]>('/agent-api/evals/datasets')
+}
+
+async function fetchEvalDatasetDetail(name: string): Promise<EvalDatasetDetail> {
+  return requestAgentJson<EvalDatasetDetail>(`/agent-api/evals/datasets/${encodeURIComponent(name)}`)
+}
+
+export function useEvalDatasets() {
+  return useQuery({
+    queryKey: ['evalDatasets'],
+    queryFn: fetchEvalDatasets,
+    staleTime: 15_000,
+  })
+}
+
+// name is null while no dataset is selected (modal closed) -- `enabled` skips the fetch until
+// one is actually opened, since a dataset's cases are only needed inside the detail modal.
+export function useEvalDatasetDetail(name: string | null) {
+  return useQuery({
+    queryKey: ['evalDatasetDetail', name],
+    queryFn: () => fetchEvalDatasetDetail(name as string),
+    enabled: name !== null,
+    staleTime: 15_000,
   })
 }
 
