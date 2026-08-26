@@ -61,6 +61,39 @@ RECENCY_WINDOW_HOURS = int(os.getenv("SCRAPE_RECENCY_HOURS", "6"))
 RETENTION_MAX_AGE_DAYS = int(os.getenv("SCRAPE_RETENTION_DAYS", "7"))
 RETENTION_SOURCES = ("ashby", "greenhouse", "lever")
 
+# Relevance filter: a job's title must contain at least one of these (case-insensitive substring
+# match) to be written at all -- with 15,000+ companies in slugs/*.json, the recency window alone
+# still lets through every Sales/Recruiting/Legal/Finance posting any of them made in the window,
+# none of which JobManagerAgent's resume-matching prompt can ever score as a match. This is the
+# same idea as YC's own scrape being pre-scoped to role=eng&role_type=be&role_type=fs via
+# TARGET_URL (see scraper.py) -- Greenhouse/Ashby/Lever have no equivalent server-side role filter,
+# so it's applied here instead. Override with your own comma-separated list if your resume targets
+# something other than software engineering roles.
+_DEFAULT_TITLE_KEYWORDS = (
+	"engineer,engineering,developer,programmer,software,swe,sde,full stack,fullstack,full-stack,"
+	"backend,back-end,frontend,front-end,devops,site reliability,sre,infrastructure,platform,"
+	"machine learning,ml engineer,ai engineer,data engineer,data scientist"
+)
+TITLE_KEYWORDS = tuple(
+	keyword.strip().lower()
+	for keyword in os.getenv("SCRAPE_TITLE_KEYWORDS", _DEFAULT_TITLE_KEYWORDS).split(",")
+	if keyword.strip()
+)
+
+# Hard ceiling on how many jobs from ONE source get written in a SINGLE run, applied after the
+# recency + keyword filters above -- a backstop against a burst (or a filter being less effective
+# than expected on a given day) still flooding job_listings in one shot. Jobs are sorted
+# newest-first before truncating, so a capped run still keeps the most relevant recent postings
+# rather than an arbitrary slice.
+MAX_JOBS_PER_SOURCE_PER_RUN = int(os.getenv("SCRAPE_MAX_JOBS_PER_SOURCE", "25"))
+
+
+def _title_is_relevant(title: str | None) -> bool:
+	if not title:
+		return False
+	lowered = title.lower()
+	return any(keyword in lowered for keyword in TITLE_KEYWORDS)
+
 
 def load_board_slugs(source: str, env_var: str, default: str) -> list[str]:
 	"""Explicit env var wins (comma-separated, for pointing at a handful of companies while
@@ -145,6 +178,9 @@ def fetch_greenhouse_jobs(slug: str) -> list[dict[str, Any]]:
 		updated_at = _parse_iso(job.get("updated_at"))
 		if updated_at is None or updated_at < cutoff:
 			continue
+		title = job.get("title", "")
+		if not _title_is_relevant(title):
+			continue
 		normalized.append(
 			{
 				"source": "greenhouse",
@@ -155,13 +191,14 @@ def fetch_greenhouse_jobs(slug: str) -> list[dict[str, Any]]:
 				"company_one_liner": None,
 				"company_logo_url": None,
 				"company_last_active_at": None,
-				"job_role": job.get("title", ""),
+				"job_role": title,
 				"job_url": f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{job_id}?content=true",
 				"application_link": job.get("absolute_url"),
 				"location": (job.get("location") or {}).get("name"),
 				"job_type": None,
 				"role_type": None,
 				"salary_range": None,
+				"_sort_ts": updated_at.timestamp(),
 			}
 		)
 	return normalized
@@ -196,6 +233,9 @@ def fetch_ashby_jobs(slug: str) -> list[dict[str, Any]]:
 		published_at = _parse_iso(job.get("publishedAt"))
 		if published_at is None or published_at < cutoff:
 			continue
+		title = unescape((job.get("title") or "").strip())
+		if not _title_is_relevant(title):
+			continue
 		normalized.append(
 			{
 				"source": "ashby",
@@ -206,12 +246,13 @@ def fetch_ashby_jobs(slug: str) -> list[dict[str, Any]]:
 				"company_one_liner": None,
 				"company_logo_url": None,
 				"company_last_active_at": None,
-				"job_role": unescape((job.get("title") or "").strip()),
+				"job_role": title,
 				"job_url": url,
 				"application_link": job.get("jobUrl") or job.get("applyUrl"),
 				"location": job.get("location"),
 				"job_type": job.get("employmentType"),
 				"role_type": job.get("department"),
+				"_sort_ts": published_at.timestamp(),
 				"salary_range": None,
 			}
 		)
@@ -250,6 +291,9 @@ def fetch_lever_jobs(slug: str) -> list[dict[str, Any]]:
 		created_at = _parse_epoch_millis(job.get("createdAt"))
 		if created_at is None or created_at < cutoff:
 			continue
+		title = job.get("text", "")
+		if not _title_is_relevant(title):
+			continue
 		categories = job.get("categories") or {}
 		normalized.append(
 			{
@@ -261,11 +305,12 @@ def fetch_lever_jobs(slug: str) -> list[dict[str, Any]]:
 				"company_one_liner": None,
 				"company_logo_url": None,
 				"company_last_active_at": None,
-				"job_role": job.get("text", ""),
+				"job_role": title,
 				"job_url": url,
 				"application_link": job.get("applyUrl") or job.get("hostedUrl"),
 				"location": categories.get("location"),
 				"job_type": categories.get("commitment"),
+				"_sort_ts": created_at.timestamp(),
 				"role_type": categories.get("team"),
 				"salary_range": None,
 			}
@@ -284,9 +329,15 @@ def run_scrape_stage_for_source(source: str) -> dict[str, Any]:
 	"""Mirrors scraper.py's run_scrape_stage shape ({"jobs": [...], "job_count": n, ...}) for one
 	non-YC source -- scrapes every board slug configured for it (env var override, else
 	slugs/*.json, else a single-company default -- see load_board_slugs) concurrently, keeping
-	only postings from within the last RECENCY_WINDOW_HOURS. Per-slug failures (dead board,
-	network error) are logged and skipped rather than failing the whole source, same spirit as the
-	reference aggregator's dead-slug handling.
+	only postings from within the last RECENCY_WINDOW_HOURS whose title matches TITLE_KEYWORDS.
+	Per-slug failures (dead board, network error) are logged and skipped rather than failing the
+	whole source, same spirit as the reference aggregator's dead-slug handling.
+
+	Even after both filters, the result is capped at MAX_JOBS_PER_SOURCE_PER_RUN -- a hard backstop
+	against a single run flooding job_listings (e.g. an unusually active posting day across
+	thousands of companies) regardless of how effective the filters are that day. Jobs are sorted
+	newest-first (by each fetcher's own `_sort_ts`, stripped before returning) before truncating, so
+	a capped run keeps the most relevant recent postings rather than an arbitrary slice.
 	"""
 	fetch_fn, env_var, default = _FETCHERS[source]
 	slugs = load_board_slugs(source, env_var, default)
@@ -305,6 +356,17 @@ def run_scrape_stage_for_source(source: str) -> dict[str, Any]:
 			if slug_jobs:
 				jobs.extend(slug_jobs)
 			if i % 200 == 0 or i == len(slugs):
-				LOGGER.info("%s: checked %s/%s boards, %s recent jobs so far", source, i, len(slugs), len(jobs))
+				LOGGER.info("%s: checked %s/%s boards, %s matching jobs so far", source, i, len(slugs), len(jobs))
+
+	matched_count = len(jobs)
+	jobs.sort(key=lambda job: job.get("_sort_ts") or 0, reverse=True)
+	if matched_count > MAX_JOBS_PER_SOURCE_PER_RUN:
+		LOGGER.warning(
+			"%s: %s jobs matched recency+keyword filters, capping to %s newest for this run",
+			source, matched_count, MAX_JOBS_PER_SOURCE_PER_RUN,
+		)
+	jobs = jobs[:MAX_JOBS_PER_SOURCE_PER_RUN]
+	for job in jobs:
+		job.pop("_sort_ts", None)
 
 	return {"source": source, "boards": slugs, "job_count": len(jobs), "jobs": jobs}
