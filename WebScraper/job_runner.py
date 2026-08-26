@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from dataWriter import run_write_from_scrape_result
+from ats_scraper import run_scrape_stage_for_source
+from dataWriter import run_write_stage
 from scraper import run_scrape_stage
 from stream_events import RedisStreamPublisher
 
@@ -13,6 +14,18 @@ logging.basicConfig(
 	format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 LOGGER = logging.getLogger(__name__)
+
+# Every source this pipeline scrapes per run, in order. YC keeps its own dedicated scrape_stage
+# (single TARGET_URL, HTML scrape); the other three are API-based and share ats_scraper.py's
+# generic per-source runner (each reads its own comma-separated board-slugs env var -- see
+# ats_scraper.py's _FETCHERS). Adding a fifth source is just adding one more entry here plus a
+# fetch_<source>_jobs function in ats_scraper.py -- no other pipeline change needed.
+_SOURCES: tuple[tuple[str, Any], ...] = (
+	("ycombinator", run_scrape_stage),
+	("greenhouse", lambda: run_scrape_stage_for_source("greenhouse")),
+	("ashby", lambda: run_scrape_stage_for_source("ashby")),
+	("lever", lambda: run_scrape_stage_for_source("lever")),
+)
 
 
 def emit_pipeline_event(
@@ -27,41 +40,41 @@ def emit_pipeline_event(
 def run_pipeline_job(publisher: RedisStreamPublisher) -> None:
 	emit_pipeline_event(publisher, "pipeline_started", stage="pipeline")
 
-	LOGGER.info("Starting scrape stage")
-	emit_pipeline_event(publisher, "stage_started", stage="scrape")
-	scrape_result = run_scrape_stage()
-	LOGGER.info("Scrape completed with %s jobs", scrape_result["job_count"])
-	emit_pipeline_event(
-		publisher,
-		"stage_completed",
-		stage="scrape",
-		target_url=scrape_result["url"],
-		html_length=scrape_result["html_length"],
-		job_count=scrape_result["job_count"],
-	)
+	total_scraped = 0
+	total_written = 0
+	for source_name, scrape_fn in _SOURCES:
+		LOGGER.info("Starting scrape stage: %s", source_name)
+		emit_pipeline_event(publisher, "stage_started", stage=f"scrape:{source_name}")
+		scrape_result = scrape_fn()
+		job_count = scrape_result["job_count"]
+		LOGGER.info("%s scrape completed with %s jobs", source_name, job_count)
+		emit_pipeline_event(
+			publisher,
+			"stage_completed",
+			stage=f"scrape:{source_name}",
+			job_count=job_count,
+		)
 
-	LOGGER.info("Starting write stage")
-	emit_pipeline_event(
-		publisher,
-		"stage_started",
-		stage="write",
-		job_count=scrape_result["job_count"],
-	)
-	written_count = run_write_from_scrape_result(scrape_result)
-	LOGGER.info("Write completed with %s upserts", written_count)
-	emit_pipeline_event(
-		publisher,
-		"stage_completed",
-		stage="write",
-		job_count=scrape_result["job_count"],
-		written_count=written_count,
-	)
+		LOGGER.info("Starting write stage: %s", source_name)
+		emit_pipeline_event(publisher, "stage_started", stage=f"write:{source_name}", job_count=job_count)
+		written_count = run_write_stage(scrape_result["jobs"])
+		LOGGER.info("%s write completed with %s upserts", source_name, written_count)
+		emit_pipeline_event(
+			publisher,
+			"stage_completed",
+			stage=f"write:{source_name}",
+			job_count=job_count,
+			written_count=written_count,
+		)
+		total_scraped += job_count
+		total_written += written_count
+
 	emit_pipeline_event(
 		publisher,
 		"pipeline_completed",
 		stage="pipeline",
-		job_count=scrape_result["job_count"],
-		written_count=written_count,
+		job_count=total_scraped,
+		written_count=total_written,
 	)
 
 

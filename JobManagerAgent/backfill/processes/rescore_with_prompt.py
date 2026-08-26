@@ -14,7 +14,7 @@ from typing import Any
 
 from integrations.mlflow import load_prompt_version
 from llm_providers import score_jobs_batch
-from services import CrawlError, NotFoundCrawlError, fetch_job_detail
+from services import CrawlError, NotFoundCrawlError, fetch_job_detail_for_source
 from tools.db_tools import JobResult, ReprocessCandidate, get_reprocess_candidates, record_job_result
 from utils.agent_logger import get_agent_logger
 from utils.config import PROMPT_NAME
@@ -67,7 +67,7 @@ def _run_one_batch(
 			crawl_error += 1
 			continue
 		try:
-			detail = fetch_job_detail(candidate.job_url)
+			detail = fetch_job_detail_for_source(candidate.source, candidate.job_url, candidate.source_job_id)
 		except NotFoundCrawlError as error:
 			# Mirrors tools/agent_tools.py's crawl_job NotFoundCrawlError handling: the posting is
 			# gone, so it's recorded as an explicit non-match under the target prompt_version rather
@@ -76,7 +76,7 @@ def _run_one_batch(
 			record_job_result(
 				session,
 				JobResult(
-					job_id=candidate.job_id,
+					job_listing_id=candidate.job_id,
 					match_score=0,
 					is_match=False,
 					reasoning=f"not_found_404 job_url={candidate.job_url}; {error}",
@@ -126,7 +126,7 @@ def _run_one_batch(
 		written = record_job_result(
 			session,
 			JobResult(
-				job_id=job_id,
+				job_listing_id=job_id,
 				match_score=score.match_score,
 				is_match=score.is_match,
 				reasoning=score.reasoning,

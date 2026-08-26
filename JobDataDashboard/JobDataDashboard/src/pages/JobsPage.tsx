@@ -41,9 +41,9 @@ export default function JobsPage() {
   const createMutation = useMutation({
     mutationFn: createJob,
     onSuccess: async (createdJob) => {
-      setFeedback(`Created job ${createdJob.job_id}`)
+      setFeedback(`Created job ${createdJob.id}`)
       startTransition(() => {
-        setSelectedJobId(createdJob.job_id)
+        setSelectedJobId(createdJob.id)
         setEditorMode('edit')
       })
       setDraft(toDraft(createdJob))
@@ -57,7 +57,7 @@ export default function JobsPage() {
   const updateMutation = useMutation({
     mutationFn: updateJob,
     onSuccess: async (updatedJob) => {
-      setFeedback(`Updated job ${updatedJob.job_id}`)
+      setFeedback(`Updated job ${updatedJob.id}`)
       setDraft(toDraft(updatedJob))
       await Promise.all([
         reactQueryClient.invalidateQueries({ queryKey: JOBS_QUERY_KEY }),
@@ -88,7 +88,7 @@ export default function JobsPage() {
 
   function selectJob(job: JobRecord) {
     startTransition(() => {
-      setSelectedJobId(job.job_id)
+      setSelectedJobId(job.id)
       setEditorMode('edit')
       setIsFormDrawerOpen(true)
     })
@@ -123,8 +123,8 @@ export default function JobsPage() {
 
   function submitDraft() {
     setFeedback('')
-    if (!draft.job_id.trim() || !draft.company_name.trim() || !draft.job_role.trim()) {
-      setFeedback('Job ID, company, and role are required.')
+    if (!draft.source.trim() || !draft.source_job_id.trim() || !draft.company_name.trim() || !draft.job_role.trim()) {
+      setFeedback('Source, source job ID, company, and role are required.')
       return
     }
 
@@ -147,7 +147,7 @@ export default function JobsPage() {
 
   function removeJob(job: JobRecord) {
     setFeedback('')
-    deleteMutation.mutate(job.job_id)
+    deleteMutation.mutate(job.id)
   }
 
   function changeSearchText(value: string) {

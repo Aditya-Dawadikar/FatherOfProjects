@@ -171,7 +171,7 @@ export default function MatchesView() {
       {globalMatchesCountQuery.error && <div className="banner banner-error">{globalMatchesCountQuery.error.message}</div>}
       {registeredPromptsQuery.error && <div className="banner banner-error">{registeredPromptsQuery.error.message}</div>}
 
-      <MatchesTable matches={matches} selectedJobId={selectedMatch?.job_id ?? null} onSelectMatch={selectMatch} />
+      <MatchesTable matches={matches} selectedJobId={selectedMatch?.id ?? null} onSelectMatch={selectMatch} />
 
       <div className="pagination-bar">
         <div className="pagination-copy">

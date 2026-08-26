@@ -1728,6 +1728,18 @@
   color: var(--muted);
 }
 
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  text-transform: capitalize;
+  background: var(--overlay-strong);
+  color: var(--muted);
+}
+
 .reasoning-cell {
   max-width: 320px;
   overflow: hidden;

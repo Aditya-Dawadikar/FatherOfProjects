@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from guardrails.errors import GuardrailBlockedError
 from llm_providers import JobScore, MatchResponseError, RateLimitError, TransientProviderError, score_job
-from services import CrawlError, NotFoundCrawlError, fetch_job_detail
+from services import CrawlError, NotFoundCrawlError, fetch_job_detail_for_source
 
 from .db_tools import JobResult, Order
 from .db_tools import get_jobs_to_process as db_get_jobs_to_process
@@ -61,10 +61,11 @@ def build_agent_tools(
 		"crawl_failed_job_ids": [],
 		"evaluate_failed_job_ids": [],
 	}
-	# job_id -> job_url, populated by get_jobs_to_process and consulted by crawl_job -- keeps
-	# job_url out of the LLM's hands entirely (it only ever deals in job_id), so there's no way
-	# for a mistyped/hallucinated URL to reach the crawler.
-	job_urls: dict[int, str | None] = {}
+	# job_id -> (source, source_job_id, job_url), populated by get_jobs_to_process and consulted
+	# by crawl_job -- keeps job_url/source out of the LLM's hands entirely (it only ever deals in
+	# job_id), so there's no way for a mistyped/hallucinated URL to reach the crawler, and lets
+	# crawl_job dispatch to the right per-source fetcher (services/crawler.py).
+	job_urls: dict[int, tuple[str, str, str | None]] = {}
 	# job_id -> crawled detail, populated by crawl_job and consulted by evaluate_match -- the LLM
 	# never has to echo the posting text back through tool arguments to get it scored.
 	job_details: dict[int, dict[str, Any]] = {}
@@ -107,7 +108,7 @@ def build_agent_tools(
 
 		jobs: list[dict[str, Any]] = []
 		for candidate in candidates:
-			job_urls[candidate.job_id] = candidate.job_url
+			job_urls[candidate.job_id] = (candidate.source, candidate.source_job_id, candidate.job_url)
 			jobs.append(
 				{
 					"job_id": candidate.job_id,
@@ -133,7 +134,7 @@ def build_agent_tools(
 		)
 
 	def _crawl_job_impl(job_id: int) -> dict[str, Any]:
-		job_url = job_urls.get(job_id)
+		entry = job_urls.get(job_id)
 		if job_id not in job_urls:
 			raise GuardrailBlockedError(
 				guardrail="unknown_job_id",
@@ -141,18 +142,19 @@ def build_agent_tools(
 				job_id=job_id,
 				reason=f"unknown job_id={job_id}; call get_jobs_to_process first",
 			)
+		source, source_job_id, job_url = entry
 		if not job_url:
 			stats["crawl_failed_job_ids"].append(job_id)
 			return {"error": f"job_id={job_id} has no URL on file; skip it"}
 
 		try:
-			detail = fetch_job_detail(job_url)
+			detail = fetch_job_detail_for_source(source, job_url, source_job_id)
 		except NotFoundCrawlError as error:
 			with Session(engine) as session:
 				db_record_job_result(
 					session,
 					JobResult(
-						job_id=job_id,
+						job_listing_id=job_id,
 						match_score=0,
 						is_match=False,
 						reasoning=f"not_found_404 job_url={job_url}; {error}",
@@ -242,7 +244,7 @@ def build_agent_tools(
 			written = db_record_job_result(
 				session,
 				JobResult(
-					job_id=job_id,
+					job_listing_id=job_id,
 					match_score=score.match_score,
 					is_match=score.is_match,
 					reasoning=score.reasoning,

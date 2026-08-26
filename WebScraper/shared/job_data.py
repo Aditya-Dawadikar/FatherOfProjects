@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Identity, Integer, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import BigInteger, DateTime, Identity, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -34,25 +34,18 @@ class Base(DeclarativeBase):
 
 class JobListing(Base):
 	__tablename__ = load_job_table_name()
-	__table_args__ = (
-		UniqueConstraint("id", name="uq_job_listings_id"),
-		UniqueConstraint("source", "source_job_id", name="uq_job_listings_source_source_job_id"),
-	)
+	__table_args__ = (UniqueConstraint("source", "source_job_id", name="uq_job_listings_source_source_job_id"),)
 
-	job_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-	# Surrogate key that will become the real primary key once every service reads/writes it
-	# instead of job_id -- see JobManagerAgent/scripts/migrations/0003_add_source_and_surrogate_key_to_job_listings.py.
-	# Ashby/Lever ids are UUID strings and Greenhouse ids can exceed job_id's 32-bit range, in a
-	# separate id space from YC's, so job_id can no longer be a safe global key once those sources
-	# exist. Server-generated (Postgres IDENTITY) -- never set this from application code.
-	id: Mapped[int] = mapped_column(BigInteger, Identity(always=False), nullable=False)
-	# The source's native job id, as text (job_id cast to text for pre-existing YC rows -- see the
-	# same migration's backfill). Nullable until every writer has been redeployed to always set it
-	# alongside job_id; a later contract migration tightens this to NOT NULL once job_id is dropped.
-	source_job_id: Mapped[str | None] = mapped_column(Text)
-	# Which platform this job came from (e.g. "ycombinator", "ashby", "greenhouse", "lever").
-	# Same nullability note as source_job_id.
-	source: Mapped[str | None] = mapped_column(Text)
+	# Surrogate primary key -- see JobManagerAgent/scripts/migrations/0003_add_source_and_surrogate_key_to_job_listings.py
+	# and 0005_drop_job_id_from_job_listings.py. Replaces the old job_id INTEGER PK: Ashby/Lever ids
+	# are UUID strings and Greenhouse ids come from a separate id space than YC's, so no single
+	# source's native id can safely be the global key once multiple sources exist. Server-generated
+	# (Postgres IDENTITY) -- never set this from application code.
+	id: Mapped[int] = mapped_column(BigInteger, Identity(always=False), primary_key=True)
+	# The source's native job id, as text (Ashby/Lever UUIDs, Greenhouse/YC numeric ids as strings).
+	source_job_id: Mapped[str] = mapped_column(Text, nullable=False)
+	# Which platform this job came from: "ycombinator", "ashby", "greenhouse", or "lever".
+	source: Mapped[str] = mapped_column(Text, nullable=False)
 	company_name: Mapped[str] = mapped_column(String(255), nullable=False)
 	company_batch: Mapped[str | None] = mapped_column(String(50))
 	company_url: Mapped[str | None] = mapped_column(Text)

@@ -19,7 +19,15 @@ Order = Literal["newest", "oldest"]
 
 @dataclass(frozen=True)
 class JobCandidate:
+	# job_id is job_listings.id (the surrogate key) -- named job_id, not id, so it lines up with
+	# the "job_id" parameter name the ReAct agent's tools (tools/agent_tools.py) and prompts
+	# already use; the LLM only ever treats it as an opaque handle, so nothing about its tool
+	# contract changes even though the underlying value moved from YC's native integer id to this
+	# source-agnostic surrogate key. source/source_job_id ride along so crawl_job can dispatch to
+	# the right per-source fetcher (services/crawler.py).
 	job_id: int
+	source: str
+	source_job_id: str
 	job_url: str | None
 	job_role: str
 	company_name: str
@@ -35,18 +43,26 @@ def get_jobs_to_process(session: Session, *, limit: int, order: Order) -> list[J
 	what makes running this from either mode safe to repeat.
 	"""
 	order_column = JobListing.updated_at.desc() if order == "newest" else JobListing.updated_at.asc()
-	# Idempotency check: a job_id already present in job_matches has already been evaluated (by
-	# this cycle or an earlier one) and is silently excluded here rather than re-evaluated -- the
-	# log line below is what makes that exclusion visible instead of invisible.
-	not_yet_evaluated = JobListing.job_id.notin_(select(JobMatch.job_id))
+	# Idempotency check: a job already present in job_matches (by job_listing_id) has already been
+	# evaluated (by this cycle or an earlier one) and is silently excluded here rather than
+	# re-evaluated -- the log line below is what makes that exclusion visible instead of invisible.
+	not_yet_evaluated = JobListing.id.notin_(select(JobMatch.job_listing_id))
 	stmt = (
-		select(JobListing.job_id, JobListing.job_url, JobListing.job_role, JobListing.company_name)
+		select(
+			JobListing.id, JobListing.source, JobListing.source_job_id, JobListing.job_url,
+			JobListing.job_role, JobListing.company_name,
+		)
 		.where(not_yet_evaluated)
 		.order_by(order_column)
 		.limit(limit)
 	)
 	rows = session.execute(stmt).all()
-	candidates = [JobCandidate(job_id=row[0], job_url=row[1], job_role=row[2], company_name=row[3]) for row in rows]
+	candidates = [
+		JobCandidate(
+			job_id=row[0], source=row[1], source_job_id=row[2], job_url=row[3], job_role=row[4], company_name=row[5]
+		)
+		for row in rows
+	]
 
 	total_unevaluated_backlog = session.scalar(select(func.count()).select_from(JobListing).where(not_yet_evaluated)) or 0
 	LOGGER.action(
@@ -61,7 +77,9 @@ def get_jobs_to_process(session: Session, *, limit: int, order: Order) -> list[J
 
 @dataclass(frozen=True)
 class JobResult:
-	job_id: int
+	# job_listings.id (see JobCandidate.job_id above) -- named job_listing_id here, matching
+	# JobMatch's own column, since this dataclass maps 1:1 onto JobMatch via **asdict(result).
+	job_listing_id: int
 	match_score: int
 	is_match: bool
 	reasoning: str
@@ -78,22 +96,14 @@ class JobResult:
 def record_job_result(session: Session, result: JobResult) -> bool:
 	"""Tool: idempotently persist a JobMatch row.
 
-	`(job_id, prompt_version)` is the JobMatch primary key, so a duplicate write for the same
-	job under the same prompt version (e.g. the same job picked up by two overlapping cycles,
-	or a backfill run resumed after a partial failure) raises IntegrityError instead of
+	`(job_listing_id, prompt_version)` is the JobMatch primary key, so a duplicate write for the
+	same job under the same prompt version (e.g. the same job picked up by two overlapping
+	cycles, or a backfill run resumed after a partial failure) raises IntegrityError instead of
 	double-writing; that's treated as a successful no-op rather than an error. A different
-	prompt_version for the same job_id is a distinct row by design -- that's what lets a job
-	carry both its original score and a rubric-based backfill score side by side.
-
-	Also dual-writes job_listing_id (the job_listings.id this job_id resolves to) alongside the
-	legacy job_id column -- see shared/job_data.py's surrogate `id` column and
-	scripts/migrations/0003_add_source_and_surrogate_key_to_job_listings.py for why job_id alone
-	can't stay job_matches' join key once Ashby/Greenhouse/Lever jobs exist. Left NULL (rather than
-	failing the write) if no matching JobListing.id is found, since job_id itself is still the
-	authoritative identifier until the contract migration drops it.
+	prompt_version for the same job is a distinct row by design -- that's what lets a job carry
+	both its original score and a rubric-based backfill score side by side.
 	"""
-	job_listing_id = session.scalar(select(JobListing.id).where(JobListing.job_id == result.job_id))
-	session.add(JobMatch(job_listing_id=job_listing_id, **asdict(result)))
+	session.add(JobMatch(**asdict(result)))
 	try:
 		session.commit()
 		return True
@@ -101,9 +111,9 @@ def record_job_result(session: Session, result: JobResult) -> bool:
 		session.rollback()
 		LOGGER.action(
 			"job_result_already_recorded",
-			job_id=result.job_id,
+			job_listing_id=result.job_listing_id,
 			prompt_version=result.prompt_version,
-			reason="duplicate JobMatch primary key (job_id, prompt_version)",
+			reason="duplicate JobMatch primary key (job_listing_id, prompt_version)",
 		)
 		return False
 
@@ -111,6 +121,8 @@ def record_job_result(session: Session, result: JobResult) -> bool:
 @dataclass(frozen=True)
 class ReprocessCandidate:
 	job_id: int
+	source: str
+	source_job_id: str
 	job_url: str | None
 	job_role: str
 	company_name: str
@@ -124,7 +136,14 @@ def get_reprocess_candidates(session: Session, *, target_prompt_version: str, li
 	"""
 	rows = session.execute(reprocess_candidates_stmt(target_prompt_version=target_prompt_version, limit=limit)).all()
 	candidates = [
-		ReprocessCandidate(job_id=row.job_id, job_url=row.job_url, job_role=row.job_role, company_name=row.company_name)
+		ReprocessCandidate(
+			job_id=row.id,
+			source=row.source,
+			source_job_id=row.source_job_id,
+			job_url=row.job_url,
+			job_role=row.job_role,
+			company_name=row.company_name,
+		)
 		for row in rows
 	]
 	LOGGER.action(

@@ -10,7 +10,6 @@ from scraper import load_env_value
 
 from shared.job_data import (  # noqa: E402
 	Base,
-	DEFAULT_JOB_SOURCE,
 	JobListing,
 	apply_job_delta,
 	create_db_engine,
@@ -22,40 +21,45 @@ LOGGER = logging.getLogger(__name__)
 
 
 def upsert_jobs(database_url: str, jobs: list[dict[str, object]]) -> int:
+	"""Upserts jobs from any source, keyed on (source, source_job_id) -- job_listings' actual
+	uniqueness key (see shared/job_data.py) now that YC is no longer the only source and a bare
+	numeric/string id can't be assumed globally unique across Ashby/Greenhouse/Lever/YC. Every job
+	dict must carry its own "source" and "source_job_id" (each source's fetcher sets these --
+	scraper.py for YC, ashby_scraper.py/greenhouse_scraper.py/lever_scraper.py for the others).
+	"""
 	engine = create_db_engine(database_url)
 	Base.metadata.create_all(engine)
-	job_records: list[tuple[int, dict[str, str | None]]] = []
+	job_records: list[tuple[str, str, dict[str, str | None]]] = []
 	for job in jobs:
-		job_id = job.get("job_id")
-		if job_id is None:
+		source = job.get("source")
+		source_job_id = job.get("source_job_id")
+		if not source or not source_job_id:
+			LOGGER.warning("Skipping job with missing source/source_job_id: %s", job)
 			continue
-		job_records.append((int(job_id), normalize_job_payload(job)))
+		job_records.append((str(source), str(source_job_id), normalize_job_payload(job)))
 
 	with Session(engine) as session:
-		existing_job_ids = [job_id for job_id, _ in job_records]
-		existing_listings = {
-			listing.job_id: listing
-			for listing in session.scalars(
-				select(JobListing).where(JobListing.job_id.in_(existing_job_ids))
-			)
-		}
+		existing_listings: dict[tuple[str, str], JobListing] = {}
+		if job_records:
+			sources = {source for source, _, _ in job_records}
+			candidates = session.scalars(select(JobListing).where(JobListing.source.in_(sources)))
+			existing_listings = {(listing.source, listing.source_job_id): listing for listing in candidates}
 		delta_count = 0
 
-		for job_id, payload in job_records:
-			existing_listing = existing_listings.get(job_id)
+		for source, source_job_id, payload in job_records:
+			key = (source, source_job_id)
+			existing_listing = existing_listings.get(key)
 			if existing_listing is None:
-				LOGGER.info("Inserting job_id=%s payload=%s", job_id, payload)
-				session.add(
-					JobListing(job_id=job_id, source_job_id=str(job_id), source=DEFAULT_JOB_SOURCE, **payload)
-				)
+				LOGGER.info("Inserting source=%s source_job_id=%s payload=%s", source, source_job_id, payload)
+				session.add(JobListing(source=source, source_job_id=source_job_id, **payload))
 				delta_count += 1
 				continue
 
 			if apply_job_delta(existing_listing, payload):
-				LOGGER.info("Updating job_id=%s payload=%s", job_id, payload)
+				LOGGER.info("Updating source=%s source_job_id=%s payload=%s", source, source_job_id, payload)
 				delta_count += 1
 			else:
-				LOGGER.info("Skipping job_id=%s: already up to date, no fields changed", job_id)
+				LOGGER.info("Skipping source=%s source_job_id=%s: already up to date, no fields changed", source, source_job_id)
 
 		session.commit()
 

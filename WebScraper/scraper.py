@@ -68,13 +68,14 @@ def parse_job(job: dict[str, Any]) -> dict[str, Any]:
 	company_url = urljoin(BASE_URL, f"/companies/{company_slug}") if company_slug else ""
 
 	return {
+		"source": "ycombinator",
+		"source_job_id": str(job_id) if job_id is not None else None,
 		"company_name": job.get("companyName", ""),
 		"company_batch": job.get("companyBatch", ""),
 		"company_url": company_url,
 		"company_one_liner": job.get("companyOneLiner", ""),
 		"company_logo_url": job.get("companyLogoUrl", ""),
 		"company_last_active_at": job.get("companyLastActiveAt", ""),
-		"job_id": job_id,
 		"job_role": job.get("title", ""),
 		"job_url": job_url,
 		"application_link": job.get("applyUrl", ""),

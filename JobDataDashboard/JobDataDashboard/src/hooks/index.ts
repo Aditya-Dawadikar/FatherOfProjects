@@ -196,7 +196,8 @@ function toNullable(value: string) {
 
 function toCreatePayload(draft: JobDraft) {
   return {
-    job_id: Number(draft.job_id),
+    source: draft.source.trim(),
+    source_job_id: draft.source_job_id.trim(),
     company_name: draft.company_name.trim(),
     company_batch: toNullable(draft.company_batch),
     company_url: toNullable(draft.company_url),
@@ -215,14 +216,17 @@ function toCreatePayload(draft: JobDraft) {
 
 function toPatchPayload(draft: JobDraft) {
   const createPayload = toCreatePayload(draft)
-  const { job_id, ...patchPayload } = createPayload
-  void job_id
+  const { source, source_job_id, ...patchPayload } = createPayload
+  void source
+  void source_job_id
   return patchPayload
 }
 
 export function createEmptyDraft(): JobDraft {
   return {
-    job_id: '',
+    id: null,
+    source: '',
+    source_job_id: '',
     company_name: '',
     company_batch: '',
     company_url: '',
@@ -241,7 +245,9 @@ export function createEmptyDraft(): JobDraft {
 
 export function toDraft(record: JobRecord): JobDraft {
   return {
-    job_id: String(record.job_id),
+    id: record.id,
+    source: record.source,
+    source_job_id: record.source_job_id,
     company_name: record.company_name,
     company_batch: record.company_batch ?? '',
     company_url: record.company_url ?? '',
@@ -266,7 +272,10 @@ export async function createJob(draft: JobDraft): Promise<JobRecord> {
 }
 
 export async function updateJob(draft: JobDraft): Promise<JobRecord> {
-  return requestJson<JobRecord>(`/api/jobs/${draft.job_id}`, {
+  if (draft.id === null) {
+    throw new Error('Cannot update a job with no id -- select an existing record first')
+  }
+  return requestJson<JobRecord>(`/api/jobs/${draft.id}`, {
     method: 'PATCH',
     body: JSON.stringify(toPatchPayload(draft)),
   })

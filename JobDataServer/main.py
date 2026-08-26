@@ -26,7 +26,6 @@ if str(SERVICE_ROOT) not in sys.path:
 
 from shared.job_data import (  # noqa: E402
 	Base,
-	DEFAULT_JOB_SOURCE,
 	JOB_FIELD_NAMES,
 	JobListing,
 	apply_job_delta,
@@ -98,7 +97,8 @@ class JobBase(BaseModel):
 
 
 class JobCreate(JobBase):
-	job_id: int
+	source: str
+	source_job_id: str
 
 
 class JobPatch(BaseModel):
@@ -120,14 +120,16 @@ class JobPatch(BaseModel):
 
 
 class JobRead(JobBase):
-	job_id: int
+	id: int
+	source: str
+	source_job_id: str
 	updated_at: datetime
 
 	model_config = ConfigDict(from_attributes=True)
 
 
 class JobMatchRead(BaseModel):
-	job_id: int
+	job_listing_id: int
 	match_score: int
 	is_match: bool
 	reasoning: str | None = None
@@ -170,7 +172,9 @@ class PipelineFunnelResponse(BaseModel):
 
 def serialize_job_listing(listing: JobListing) -> dict[str, object]:
 	payload: dict[str, object] = {
-		"job_id": listing.job_id,
+		"id": listing.id,
+		"source": listing.source,
+		"source_job_id": listing.source_job_id,
 		"updated_at": listing.updated_at.isoformat() if listing.updated_at else None,
 	}
 	for field_name in JOB_FIELD_NAMES:
@@ -265,7 +269,7 @@ def with_match_filters(
 
 
 def resolve_prompt_version(session: Session, prompt_version: str | None) -> str | None:
-	"""job_matches can now hold multiple rows per job_id (one per prompt_version a job's been
+	"""job_matches can now hold multiple rows per job_listing_id (one per prompt_version a job's been
 	scored under -- see shared/job_match_data.py). Every endpoint that filters/joins on JobMatch
 	needs an explicit prompt_version to avoid returning one duplicate row per version for the
 	same job; when the caller doesn't pass one, default to whichever prompt_version has the most
@@ -300,12 +304,12 @@ def resolve_rubric_version(session: Session, rubric_version: int | None) -> int 
 def funnel_matches_subquery(session: Session, *, prompt_version: str | None, rubric_version: int | None):
 	"""The row set /matches/funnel counts over.
 
-	An explicit prompt_version is an exact match -- (job_id, prompt_version) is JobMatch's primary
-	key, so at most one row per job already, no dedup needed. Otherwise this groups by
+	An explicit prompt_version is an exact match -- (job_listing_id, prompt_version) is JobMatch's
+	primary key, so at most one row per job already, no dedup needed. Otherwise this groups by
 	rubric_version (given, or defaulted via resolve_rubric_version): several prompt_versions can
 	share one rubric_version, and the same job can carry a row under more than one of them (e.g.
-	scored live under v4, later re-scored by a v5 backfill run) -- DISTINCT ON (job_id), ordered
-	newest evaluated_at first, keeps exactly the most recent row per job so a job is never
+	scored live under v4, later re-scored by a v5 backfill run) -- DISTINCT ON (job_listing_id),
+	ordered newest evaluated_at first, keeps exactly the most recent row per job so a job is never
 	double-counted in the funnel.
 	"""
 	if prompt_version:
@@ -318,19 +322,19 @@ def funnel_matches_subquery(session: Session, *, prompt_version: str | None, rub
 	return (
 		select(JobMatch)
 		.where(JobMatch.rubric_version == resolved_rubric_version)
-		.order_by(JobMatch.job_id, JobMatch.evaluated_at.desc())
-		.distinct(JobMatch.job_id)
+		.order_by(JobMatch.job_listing_id, JobMatch.evaluated_at.desc())
+		.distinct(JobMatch.job_listing_id)
 		.subquery()
 	)
 
 
-def get_job_or_404(session: Session, job_id: int, company_name: str | None) -> JobListing:
-	statement = select(JobListing).where(JobListing.job_id == job_id)
+def get_job_or_404(session: Session, id: int, company_name: str | None) -> JobListing:
+	statement = select(JobListing).where(JobListing.id == id)
 	listing = session.scalar(with_company_filter(statement, company_name))
 	if listing is None:
-		detail = f"Job {job_id} was not found"
+		detail = f"Job {id} was not found"
 		if company_name:
-			detail = f"Job {job_id} for company '{company_name}' was not found"
+			detail = f"Job {id} for company '{company_name}' was not found"
 		raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
 
 	return listing
@@ -351,13 +355,16 @@ def healthcheck() -> dict[str, str]:
 def get_jobs(
 	session: SessionDependency,
 	company_name: str | None = Query(default=None),
-	job_id: int | None = Query(default=None),
+	id: int | None = Query(default=None),
+	source: str | None = Query(default=None),
 	limit: int = Query(default=100, ge=1, le=500),
 	offset: int = Query(default=0, ge=0),
 ) -> list[JobListing]:
-	statement = select(JobListing).order_by(JobListing.updated_at.desc(), JobListing.job_id.desc())
-	if job_id is not None:
-		statement = statement.where(JobListing.job_id == job_id)
+	statement = select(JobListing).order_by(JobListing.updated_at.desc(), JobListing.id.desc())
+	if id is not None:
+		statement = statement.where(JobListing.id == id)
+	if source is not None:
+		statement = statement.where(JobListing.source == source)
 	statement = with_company_filter(statement, company_name)
 	statement = statement.offset(offset).limit(limit)
 	return list(session.scalars(statement))
@@ -367,22 +374,25 @@ def get_jobs(
 def search_jobs(
 	session: SessionDependency,
 	company_name: str | None = Query(default=None),
-	job_id: int | None = Query(default=None),
+	id: int | None = Query(default=None),
+	source: str | None = Query(default=None),
 	job_role: str | None = Query(default=None),
 	location: str | None = Query(default=None),
 	query: str | None = Query(default=None),
 	limit: int = Query(default=100, ge=1, le=500),
 	offset: int = Query(default=0, ge=0),
 ) -> list[JobListing]:
-	if not any((company_name, job_id is not None, job_role, location, query)):
+	if not any((company_name, id is not None, source, job_role, location, query)):
 		raise HTTPException(
 			status_code=status.HTTP_400_BAD_REQUEST,
 			detail="Provide at least one search filter",
 		)
 
-	statement = select(JobListing).order_by(JobListing.updated_at.desc(), JobListing.job_id.desc())
-	if job_id is not None:
-		statement = statement.where(JobListing.job_id == job_id)
+	statement = select(JobListing).order_by(JobListing.updated_at.desc(), JobListing.id.desc())
+	if id is not None:
+		statement = statement.where(JobListing.id == id)
+	if source is not None:
+		statement = statement.where(JobListing.source == source)
 	statement = with_company_filter(statement, company_name)
 	statement = with_search_filters(
 		statement,
@@ -399,14 +409,17 @@ def search_jobs(
 def count_jobs(
 	session: SessionDependency,
 	company_name: str | None = Query(default=None),
-	job_id: int | None = Query(default=None),
+	id: int | None = Query(default=None),
+	source: str | None = Query(default=None),
 	job_role: str | None = Query(default=None),
 	location: str | None = Query(default=None),
 	query: str | None = Query(default=None),
 ) -> dict[str, int]:
 	statement = select(func.count()).select_from(JobListing)
-	if job_id is not None:
-		statement = statement.where(JobListing.job_id == job_id)
+	if id is not None:
+		statement = statement.where(JobListing.id == id)
+	if source is not None:
+		statement = statement.where(JobListing.source == source)
 	statement = with_company_filter(statement, company_name)
 	statement = with_search_filters(
 		statement,
@@ -422,7 +435,7 @@ def count_jobs(
 def get_matched_jobs(
 	session: SessionDependency,
 	company_name: str | None = Query(default=None),
-	job_id: int | None = Query(default=None),
+	id: int | None = Query(default=None),
 	job_role: str | None = Query(default=None),
 	location: str | None = Query(default=None),
 	query: str | None = Query(default=None),
@@ -444,11 +457,11 @@ def get_matched_jobs(
 	resolved_prompt_version = resolve_prompt_version(session, prompt_version)
 	statement = (
 		select(JobListing, JobMatch)
-		.join(JobMatch, JobMatch.job_id == JobListing.job_id)
-		.order_by(JobMatch.evaluated_at.desc(), JobListing.job_id.desc())
+		.join(JobMatch, JobMatch.job_listing_id == JobListing.id)
+		.order_by(JobMatch.evaluated_at.desc(), JobListing.id.desc())
 	)
-	if job_id is not None:
-		statement = statement.where(JobListing.job_id == job_id)
+	if id is not None:
+		statement = statement.where(JobListing.id == id)
 	statement = with_company_filter(statement, company_name)
 	statement = with_search_filters(statement, job_role=job_role, location=location, query=query)
 	statement = with_match_filters(
@@ -464,7 +477,7 @@ def get_matched_jobs(
 def count_matched_jobs(
 	session: SessionDependency,
 	company_name: str | None = Query(default=None),
-	job_id: int | None = Query(default=None),
+	id: int | None = Query(default=None),
 	job_role: str | None = Query(default=None),
 	location: str | None = Query(default=None),
 	query: str | None = Query(default=None),
@@ -477,9 +490,9 @@ def count_matched_jobs(
 	defaulting) so a caller paginating that endpoint can compute total pages instead of guessing
 	from a short page."""
 	resolved_prompt_version = resolve_prompt_version(session, prompt_version)
-	statement = select(func.count()).select_from(JobListing).join(JobMatch, JobMatch.job_id == JobListing.job_id)
-	if job_id is not None:
-		statement = statement.where(JobListing.job_id == job_id)
+	statement = select(func.count()).select_from(JobListing).join(JobMatch, JobMatch.job_listing_id == JobListing.id)
+	if id is not None:
+		statement = statement.where(JobListing.id == id)
 	statement = with_company_filter(statement, company_name)
 	statement = with_search_filters(statement, job_role=job_role, location=location, query=query)
 	statement = with_match_filters(
@@ -489,25 +502,26 @@ def count_matched_jobs(
 	return {"total": int(total)}
 
 
-@app.get("/jobs/{job_id}", response_model=JobRead)
-def get_job(job_id: int, session: SessionDependency, company_name: str | None = Query(default=None)) -> JobListing:
-	return get_job_or_404(session, job_id, company_name)
+@app.get("/jobs/{id}", response_model=JobRead)
+def get_job(id: int, session: SessionDependency, company_name: str | None = Query(default=None)) -> JobListing:
+	return get_job_or_404(session, id, company_name)
 
 
 @app.post("/jobs", response_model=JobRead, status_code=status.HTTP_201_CREATED)
 def create_job(payload: JobCreate, session: SessionDependency) -> JobListing:
-	existing_listing = session.get(JobListing, payload.job_id)
+	existing_listing = session.scalar(
+		select(JobListing).where(JobListing.source == payload.source, JobListing.source_job_id == payload.source_job_id)
+	)
 	if existing_listing is not None:
 		raise HTTPException(
 			status_code=status.HTTP_409_CONFLICT,
-			detail=f"Job {payload.job_id} already exists",
+			detail=f"Job {payload.source}/{payload.source_job_id} already exists",
 		)
 
 	normalized_payload = normalize_job_payload(payload.model_dump())
 	listing = JobListing(
-		job_id=payload.job_id,
-		source_job_id=str(payload.job_id),
-		source=DEFAULT_JOB_SOURCE,
+		source_job_id=payload.source_job_id,
+		source=payload.source,
 		**normalized_payload,
 	)
 	session.add(listing)
@@ -516,15 +530,15 @@ def create_job(payload: JobCreate, session: SessionDependency) -> JobListing:
 	publish_server_event(
 		get_event_publisher(),
 		"job_created",
-		job_id=listing.job_id,
+		id=listing.id,
 		job=serialize_job_listing(listing),
 	)
 	return listing
 
 
-@app.patch("/jobs/{job_id}", response_model=JobRead)
+@app.patch("/jobs/{id}", response_model=JobRead)
 def patch_job(
-	job_id: int,
+	id: int,
 	patch: JobPatch,
 	session: SessionDependency,
 	company_name: str | None = Query(default=None),
@@ -535,7 +549,7 @@ def patch_job(
 			detail="Provide at least one field to update",
 		)
 
-	listing = get_job_or_404(session, job_id, company_name)
+	listing = get_job_or_404(session, id, company_name)
 	merged_payload = merge_patch_payload(listing, patch)
 	changed = apply_job_delta(listing, merged_payload)
 	session.commit()
@@ -544,29 +558,29 @@ def patch_job(
 		publish_server_event(
 			get_event_publisher(),
 			"job_updated",
-			job_id=listing.job_id,
+			id=listing.id,
 			job=serialize_job_listing(listing),
 			updated_fields=sorted(patch.model_fields_set),
 		)
 	else:
-		LOGGER.info("No changes detected for job_id=%s", listing.job_id)
+		LOGGER.info("No changes detected for id=%s", listing.id)
 	return listing
 
 
-@app.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete("/jobs/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_job(
-	job_id: int,
+	id: int,
 	session: SessionDependency,
 	company_name: str | None = Query(default=None),
 ) -> Response:
-	listing = get_job_or_404(session, job_id, company_name)
+	listing = get_job_or_404(session, id, company_name)
 	deleted_job = serialize_job_listing(listing)
 	session.delete(listing)
 	session.commit()
 	publish_server_event(
 		get_event_publisher(),
 		"job_deleted",
-		job_id=job_id,
+		id=id,
 		job=deleted_job,
 	)
 	return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -582,7 +596,7 @@ def delete_job(
 @app.get("/matches", response_model=list[JobMatchRead])
 def get_matches(
 	session: SessionDependency,
-	job_id: int | None = Query(default=None),
+	job_listing_id: int | None = Query(default=None),
 	is_match: bool | None = Query(default=None, description="Filter to jobs that cleared MATCH_THRESHOLD (true) or not (false)."),
 	min_score: int | None = Query(default=None, ge=0, le=100),
 	max_score: int | None = Query(default=None, ge=0, le=100),
@@ -591,9 +605,9 @@ def get_matches(
 	offset: int = Query(default=0, ge=0),
 ) -> list[JobMatch]:
 	resolved_prompt_version = resolve_prompt_version(session, prompt_version)
-	statement = select(JobMatch).order_by(JobMatch.evaluated_at.desc(), JobMatch.job_id.desc())
-	if job_id is not None:
-		statement = statement.where(JobMatch.job_id == job_id)
+	statement = select(JobMatch).order_by(JobMatch.evaluated_at.desc(), JobMatch.job_listing_id.desc())
+	if job_listing_id is not None:
+		statement = statement.where(JobMatch.job_listing_id == job_listing_id)
 	statement = with_match_filters(
 		statement, is_match=is_match, min_score=min_score, max_score=max_score, prompt_version=resolved_prompt_version
 	)
@@ -701,17 +715,17 @@ def get_pipeline_funnel(
 	)
 
 
-@app.get("/matches/{job_id}", response_model=JobMatchRead)
+@app.get("/matches/{job_listing_id}", response_model=JobMatchRead)
 def get_match(
-	job_id: int,
+	job_listing_id: int,
 	session: SessionDependency,
 	prompt_version: str | None = Query(default=None, description="Defaults to the most recently evaluated prompt_version."),
 ) -> JobMatch:
 	resolved_prompt_version = resolve_prompt_version(session, prompt_version)
-	statement = select(JobMatch).where(JobMatch.job_id == job_id)
+	statement = select(JobMatch).where(JobMatch.job_listing_id == job_listing_id)
 	if resolved_prompt_version:
 		statement = statement.where(JobMatch.prompt_version == resolved_prompt_version)
 	match = session.scalar(statement.order_by(JobMatch.evaluated_at.desc()))
 	if match is None:
-		raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No match recorded for job {job_id}")
+		raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No match recorded for job {job_listing_id}")
 	return match

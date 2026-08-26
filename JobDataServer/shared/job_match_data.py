@@ -26,19 +26,14 @@ class JobMatch(Base):
 
 	__tablename__ = load_job_match_table_name()
 
-	# Composite PK (job_id, prompt_version): a job can carry one row per prompt version it's
-	# been scored under (its original score plus any backfilled rubric score), not just one
-	# ever. See JobManagerAgent/scripts/migrate_job_matches_v2.py for the one-time migration.
-	job_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+	# Composite PK (job_listing_id, prompt_version): a job can carry one row per prompt version
+	# it's been scored under (its original score plus any backfilled rubric score), not just one
+	# ever. job_listing_id (FK to job_listings.id, the surrogate key -- see
+	# JobManagerAgent/scripts/migrations/0003_.../0004_.../0006_drop_job_id_from_job_matches.py)
+	# replaced the old job_id INTEGER column once Ashby/Greenhouse/Lever jobs meant job_id alone
+	# could no longer stay a safe global key.
+	job_listing_id: Mapped[int] = mapped_column(BigInteger, ForeignKey(f"{load_job_table_name()}.id"), primary_key=True)
 	prompt_version: Mapped[str] = mapped_column(String(50), primary_key=True)
-	# FK to job_listings.id (the new surrogate key -- see
-	# JobManagerAgent/scripts/migrations/0003_add_source_and_surrogate_key_to_job_listings.py),
-	# replacing job_id as the way this table identifies a job now that job_id alone can't stay a
-	# safe global key once Ashby/Greenhouse/Lever jobs exist. Nullable until JobManagerAgent (the
-	# sole writer) has been redeployed to always set it; a later contract migration widens the
-	# primary key to (job_listing_id, prompt_version) and drops job_id. Backfilled for pre-existing
-	# rows by scripts/migrations/0004_add_job_listing_id_to_job_matches.py.
-	job_listing_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey(f"{load_job_table_name()}.id"))
 	match_score: Mapped[int] = mapped_column(Integer, nullable=False)
 	is_match: Mapped[bool] = mapped_column(Boolean, nullable=False)
 	reasoning: Mapped[str | None] = mapped_column(Text)

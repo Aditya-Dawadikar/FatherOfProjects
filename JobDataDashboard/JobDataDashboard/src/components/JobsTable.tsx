@@ -35,6 +35,7 @@ export default function JobsTable({ jobs, selectedJobId, busy, onSelectJob, onDe
         <thead>
           <tr>
             <th>ID</th>
+            <th>Source</th>
             <th>Company</th>
             <th>Role</th>
             <th>Location</th>
@@ -45,14 +46,17 @@ export default function JobsTable({ jobs, selectedJobId, busy, onSelectJob, onDe
         </thead>
         <tbody>
           {jobs.map((job) => {
-            const selected = job.job_id === selectedJobId
+            const selected = job.id === selectedJobId
             return (
               <tr
-                key={job.job_id}
+                key={job.id}
                 className={selected ? 'is-selected' : undefined}
                 onClick={() => onSelectJob(job)}
               >
-                <td>{job.job_id}</td>
+                <td>{job.id}</td>
+                <td>
+                  <span className="source-badge">{job.source}</span>
+                </td>
                 <td>
                   <div className="company-cell">
                     <strong>{job.company_name}</strong>

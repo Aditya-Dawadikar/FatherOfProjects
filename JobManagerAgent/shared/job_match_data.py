@@ -17,21 +17,15 @@ def load_job_match_table_name() -> str:
 class JobMatch(Base):
 	__tablename__ = load_job_match_table_name()
 
-	# Composite PK (job_id, prompt_version) -- not job_id alone -- so the same job can carry
-	# one row per prompt version it's been scored under (e.g. its original v1 score and a
+	# Composite PK (job_listing_id, prompt_version) -- not job_listing_id alone -- so the same job
+	# can carry one row per prompt version it's been scored under (e.g. its original v1 score and a
 	# rubric-based v4/v5 backfill score can coexist) instead of a re-score overwriting/colliding
-	# with history. See scripts/migrate_job_matches_v2.py for the one-time migration that widens
-	# an existing table's PK to match.
-	job_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+	# with history. job_listing_id (FK to job_listings.id, the surrogate key -- see
+	# scripts/migrations/0003_.../0004_.../0006_drop_job_id_from_job_matches.py) replaced the old
+	# job_id INTEGER column once Ashby/Greenhouse/Lever jobs meant job_id alone could no longer
+	# stay a safe global key.
+	job_listing_id: Mapped[int] = mapped_column(BigInteger, ForeignKey(f"{load_job_table_name()}.id"), primary_key=True)
 	prompt_version: Mapped[str] = mapped_column(String(50), primary_key=True)
-	# FK to job_listings.id (the new surrogate key -- see
-	# scripts/migrations/0003_add_source_and_surrogate_key_to_job_listings.py), replacing job_id
-	# as the way this table identifies a job now that job_id alone can't stay a safe global key
-	# once Ashby/Greenhouse/Lever jobs exist. Nullable until this module's own writer
-	# (tools/db_tools.py's record_job_result) is updated to always set it; a later contract
-	# migration widens the primary key to (job_listing_id, prompt_version) and drops job_id.
-	# Backfilled for pre-existing rows by scripts/migrations/0004_add_job_listing_id_to_job_matches.py.
-	job_listing_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey(f"{load_job_table_name()}.id"))
 	match_score: Mapped[int] = mapped_column(Integer, nullable=False)
 	is_match: Mapped[bool] = mapped_column(Boolean, nullable=False)
 	reasoning: Mapped[str | None] = mapped_column(Text)
@@ -61,8 +55,11 @@ class JobMatch(Base):
 
 def unevaluated_job_ids_stmt(limit: int) -> Select:
 	return (
-		select(JobListing.job_id, JobListing.job_url, JobListing.job_role, JobListing.company_name)
-		.where(JobListing.job_id.notin_(select(JobMatch.job_id)))
+		select(
+			JobListing.id, JobListing.source, JobListing.source_job_id, JobListing.job_url,
+			JobListing.job_role, JobListing.company_name,
+		)
+		.where(JobListing.id.notin_(select(JobMatch.job_listing_id)))
 		.order_by(JobListing.updated_at.desc())
 		.limit(limit)
 	)
@@ -77,24 +74,28 @@ def reprocess_candidates_stmt(*, target_prompt_version: str, limit: int) -> Sele
 	first, then non-matches) then oldest-first-evaluated within each group, so a repeated/resumed
 	backfill run always makes forward progress instead of re-picking recently-touched rows.
 
-	Aggregates per job_id (bool_or/min) rather than joining JobMatch directly onto JobListing --
-	a job can now have multiple job_matches rows (one per prompt_version), and a plain join would
-	fan out into one duplicate JobListing row per existing version instead of one candidate per job.
+	Aggregates per job_listing_id (bool_or/min) rather than joining JobMatch directly onto
+	JobListing -- a job can now have multiple job_matches rows (one per prompt_version), and a
+	plain join would fan out into one duplicate JobListing row per existing version instead of one
+	candidate per job.
 	"""
-	already_has_target_version = select(JobMatch.job_id).where(JobMatch.prompt_version == target_prompt_version)
+	already_has_target_version = select(JobMatch.job_listing_id).where(JobMatch.prompt_version == target_prompt_version)
 	existing_match_summary = (
 		select(
-			JobMatch.job_id.label("job_id"),
+			JobMatch.job_listing_id.label("job_listing_id"),
 			func.bool_or(JobMatch.is_match).label("ever_matched"),
 			func.min(JobMatch.evaluated_at).label("first_evaluated_at"),
 		)
-		.group_by(JobMatch.job_id)
+		.group_by(JobMatch.job_listing_id)
 		.subquery()
 	)
 	return (
-		select(JobListing.job_id, JobListing.job_url, JobListing.job_role, JobListing.company_name)
-		.join(existing_match_summary, existing_match_summary.c.job_id == JobListing.job_id)
-		.where(JobListing.job_id.notin_(already_has_target_version))
+		select(
+			JobListing.id, JobListing.source, JobListing.source_job_id, JobListing.job_url,
+			JobListing.job_role, JobListing.company_name,
+		)
+		.join(existing_match_summary, existing_match_summary.c.job_listing_id == JobListing.id)
+		.where(JobListing.id.notin_(already_has_target_version))
 		.order_by(existing_match_summary.c.ever_matched.desc(), existing_match_summary.c.first_evaluated_at.asc())
 		.limit(limit)
 	)

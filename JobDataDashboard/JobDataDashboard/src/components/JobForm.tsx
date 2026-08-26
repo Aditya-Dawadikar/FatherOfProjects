@@ -2,25 +2,30 @@ import type { ChangeEvent } from 'react'
 import { FiPlusCircle, FiRotateCcw, FiSave, FiTrash2 } from 'react-icons/fi'
 import type { JobDraft } from '../types'
 
+// id is server-generated (see JobDraft) and never rendered as an editable form field -- every
+// FIELD_CONFIG entry is one of the remaining, always-string fields.
+type EditableJobDraftField = Exclude<keyof JobDraft, 'id'>
+
 type JobFormProps = {
   draft: JobDraft
   mode: 'create' | 'edit'
   busy: boolean
-  onChange: (field: keyof JobDraft, value: string) => void
+  onChange: (field: EditableJobDraftField, value: string) => void
   onSubmit: () => void
   onReset: () => void
   onDelete: () => void
 }
 
 type FieldConfig = {
-  key: keyof JobDraft
+  key: EditableJobDraftField
   label: string
   required?: boolean
   textarea?: boolean
 }
 
 const FIELD_CONFIG: FieldConfig[] = [
-  { key: 'job_id', label: 'Job ID', required: true },
+  { key: 'source', label: 'Source', required: true },
+  { key: 'source_job_id', label: 'Source job ID', required: true },
   { key: 'company_name', label: 'Company', required: true },
   { key: 'job_role', label: 'Job role', required: true },
   { key: 'location', label: 'Location' },
@@ -40,7 +45,7 @@ function handleInputChange(
   event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   onChange: JobFormProps['onChange'],
 ) {
-  const field = event.target.name as keyof JobDraft
+  const field = event.target.name as EditableJobDraftField
   onChange(field, event.target.value)
 }
 
@@ -50,7 +55,7 @@ export default function JobForm({ draft, mode, busy, onChange, onSubmit, onReset
       <div className="panel-heading">
         <div>
           <p className="eyebrow">{mode === 'create' ? 'Create' : 'Edit'}</p>
-          <h2>{mode === 'create' ? 'New job record' : `Job ${draft.job_id}`}</h2>
+          <h2>{mode === 'create' ? 'New job record' : `Job ${draft.source}/${draft.source_job_id}`}</h2>
         </div>
         <button type="button" className="ghost-button ghost-button-with-icon" onClick={onReset}>
           <FiRotateCcw aria-hidden="true" className="button-icon" />
@@ -65,7 +70,7 @@ export default function JobForm({ draft, mode, busy, onChange, onSubmit, onReset
             name: field.key,
             value: draft[field.key],
             required: field.required,
-            disabled: busy || (mode === 'edit' && field.key === 'job_id'),
+            disabled: busy || (mode === 'edit' && (field.key === 'source' || field.key === 'source_job_id')),
             onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => handleInputChange(event, onChange),
             placeholder: field.label,
           }
@@ -73,11 +78,7 @@ export default function JobForm({ draft, mode, busy, onChange, onSubmit, onReset
           return (
             <label key={field.key} className={field.textarea ? 'field field-span' : 'field'} htmlFor={field.key}>
               <span>{field.label}</span>
-              {field.textarea ? (
-                <textarea rows={4} {...sharedProps} />
-              ) : (
-                <input type={field.key === 'job_id' ? 'number' : 'text'} {...sharedProps} />
-              )}
+              {field.textarea ? <textarea rows={4} {...sharedProps} /> : <input type="text" {...sharedProps} />}
             </label>
           )
         })}

@@ -32,6 +32,7 @@ export default function MatchesTable({ matches, selectedJobId = null, onSelectMa
         <thead>
           <tr>
             <th>ID</th>
+            <th>Source</th>
             <th>Company</th>
             <th>Role</th>
             <th>Score</th>
@@ -45,11 +46,14 @@ export default function MatchesTable({ matches, selectedJobId = null, onSelectMa
         <tbody>
           {matches.map((match) => (
             <tr
-              key={match.job_id}
-              className={match.job_id === selectedJobId ? 'is-selected' : undefined}
+              key={match.id}
+              className={match.id === selectedJobId ? 'is-selected' : undefined}
               onClick={() => onSelectMatch?.(match)}
             >
-              <td>{match.job_id}</td>
+              <td>{match.id}</td>
+              <td>
+                <span className="source-badge">{match.source}</span>
+              </td>
               <td>
                 <div className="company-cell">
                   <strong>{match.company_name}</strong>

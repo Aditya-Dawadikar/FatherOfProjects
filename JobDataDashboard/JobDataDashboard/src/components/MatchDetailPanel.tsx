@@ -23,6 +23,7 @@ function criterionLabel(key: string) {
 
 function rawFields(match: MatchedJobRecord): RawFieldConfig[] {
   return [
+    { label: 'Source', value: match.source },
     { label: 'Role', value: match.job_role },
     { label: 'Company', value: match.company_name },
     { label: 'Location', value: match.location },
@@ -59,7 +60,7 @@ export default function MatchDetailPanel({ match }: MatchDetailPanelProps) {
     <section className="form-panel match-detail-panel">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">Job {match.job_id}</p>
+          <p className="eyebrow">Job {match.id}</p>
           <h2>{match.job_role}</h2>
         </div>
         <span className={`score-badge score-${scoreBand(match.match_score)}`}>{match.match_score}</span>

@@ -1,5 +1,7 @@
 export type JobRecord = {
-  job_id: number
+  id: number
+  source: string
+  source_job_id: string
   company_name: string
   company_batch: string | null
   company_url: string | null
@@ -17,7 +19,9 @@ export type JobRecord = {
 }
 
 export type JobDraft = {
-  job_id: string
+  id: number | null
+  source: string
+  source_job_id: string
   company_name: string
   company_batch: string
   company_url: string
