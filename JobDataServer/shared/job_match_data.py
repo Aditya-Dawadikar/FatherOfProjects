@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from shared.job_data import Base
+from shared.job_data import Base, load_job_table_name
 
 
 DEFAULT_JOB_MATCH_TABLE_NAME = "job_matches"
@@ -31,6 +31,14 @@ class JobMatch(Base):
 	# ever. See JobManagerAgent/scripts/migrate_job_matches_v2.py for the one-time migration.
 	job_id: Mapped[int] = mapped_column(Integer, primary_key=True)
 	prompt_version: Mapped[str] = mapped_column(String(50), primary_key=True)
+	# FK to job_listings.id (the new surrogate key -- see
+	# JobManagerAgent/scripts/migrations/0003_add_source_and_surrogate_key_to_job_listings.py),
+	# replacing job_id as the way this table identifies a job now that job_id alone can't stay a
+	# safe global key once Ashby/Greenhouse/Lever jobs exist. Nullable until JobManagerAgent (the
+	# sole writer) has been redeployed to always set it; a later contract migration widens the
+	# primary key to (job_listing_id, prompt_version) and drops job_id. Backfilled for pre-existing
+	# rows by scripts/migrations/0004_add_job_listing_id_to_job_matches.py.
+	job_listing_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey(f"{load_job_table_name()}.id"))
 	match_score: Mapped[int] = mapped_column(Integer, nullable=False)
 	is_match: Mapped[bool] = mapped_column(Boolean, nullable=False)
 	reasoning: Mapped[str | None] = mapped_column(Text)

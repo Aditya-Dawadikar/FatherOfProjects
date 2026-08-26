@@ -84,8 +84,16 @@ def record_job_result(session: Session, result: JobResult) -> bool:
 	double-writing; that's treated as a successful no-op rather than an error. A different
 	prompt_version for the same job_id is a distinct row by design -- that's what lets a job
 	carry both its original score and a rubric-based backfill score side by side.
+
+	Also dual-writes job_listing_id (the job_listings.id this job_id resolves to) alongside the
+	legacy job_id column -- see shared/job_data.py's surrogate `id` column and
+	scripts/migrations/0003_add_source_and_surrogate_key_to_job_listings.py for why job_id alone
+	can't stay job_matches' join key once Ashby/Greenhouse/Lever jobs exist. Left NULL (rather than
+	failing the write) if no matching JobListing.id is found, since job_id itself is still the
+	authoritative identifier until the contract migration drops it.
 	"""
-	session.add(JobMatch(**asdict(result)))
+	job_listing_id = session.scalar(select(JobListing.id).where(JobListing.job_id == result.job_id))
+	session.add(JobMatch(job_listing_id=job_listing_id, **asdict(result)))
 	try:
 		session.commit()
 		return True

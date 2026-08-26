@@ -135,6 +135,11 @@ REQUEST_TIMEOUT_SECONDS = 30
 DEFAULT_JOB_TABLE_NAME = "job_listings"
 DEFAULT_JOB_MATCH_TABLE_NAME = "job_matches"
 
+# job_listings.source value for every job scraped from Work at a Startup -- the only source that
+# has ever existed, so this is what scripts/migrations/0003_...py backfills pre-existing rows to.
+# Ashby/Greenhouse/Lever writers will pass their own source string instead of this constant.
+DEFAULT_JOB_SOURCE = "ycombinator"
+
 # --- Migration history tables (backfill/models.py, integrations/mlflow/models.py) -------------
 # Durable (Postgres, not Redis) audit trails for the two "what happened during a prompt cutover"
 # histories -- see docs/backfill-design.md. Deliberately in Postgres rather than Redis: this is

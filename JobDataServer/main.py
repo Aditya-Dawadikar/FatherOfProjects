@@ -26,6 +26,7 @@ if str(SERVICE_ROOT) not in sys.path:
 
 from shared.job_data import (  # noqa: E402
 	Base,
+	DEFAULT_JOB_SOURCE,
 	JOB_FIELD_NAMES,
 	JobListing,
 	apply_job_delta,
@@ -503,7 +504,12 @@ def create_job(payload: JobCreate, session: SessionDependency) -> JobListing:
 		)
 
 	normalized_payload = normalize_job_payload(payload.model_dump())
-	listing = JobListing(job_id=payload.job_id, **normalized_payload)
+	listing = JobListing(
+		job_id=payload.job_id,
+		source_job_id=str(payload.job_id),
+		source=DEFAULT_JOB_SOURCE,
+		**normalized_payload,
+	)
 	session.add(listing)
 	session.commit()
 	session.refresh(listing)

@@ -3,11 +3,16 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, create_engine
+from sqlalchemy import BigInteger, DateTime, Identity, Integer, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 DEFAULT_JOB_TABLE_NAME = "job_listings"
+
+# job_listings.source value for every job scraped from Work at a Startup -- the only source that
+# has ever existed. Mirrors JobManagerAgent/utils/config.py's DEFAULT_JOB_SOURCE (each service
+# keeps its own copy of shared/job_data.py by convention, so this constant is duplicated too).
+DEFAULT_JOB_SOURCE = "ycombinator"
 
 
 def load_job_table_name() -> str:
@@ -29,8 +34,26 @@ class Base(DeclarativeBase):
 
 class JobListing(Base):
 	__tablename__ = load_job_table_name()
+	__table_args__ = (
+		UniqueConstraint("id", name="uq_job_listings_id"),
+		UniqueConstraint("source", "source_job_id", name="uq_job_listings_source_source_job_id"),
+	)
 
 	job_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+	# Surrogate key that will become the real primary key once every service reads/writes it
+	# instead of job_id -- see JobManagerAgent/scripts/migrations/0003_add_source_and_surrogate_key_to_job_listings.py.
+	# Ashby/Lever ids are UUID strings and Greenhouse ids can exceed job_id's 32-bit range, in a
+	# separate id space from YC's, so job_id can no longer be a safe global key once those sources
+	# exist. Server-generated (Postgres IDENTITY) -- never set this from application code.
+	id: Mapped[int] = mapped_column(BigInteger, Identity(always=False), nullable=False)
+	# The source's native job id, as text (job_id cast to text for pre-existing YC rows -- see the
+	# same migration's backfill). Nullable until every writer (WebScraper, this service's
+	# create_job) has been redeployed to always set it alongside job_id; a later contract migration
+	# tightens this to NOT NULL once job_id itself is dropped.
+	source_job_id: Mapped[str | None] = mapped_column(Text)
+	# Which platform this job came from (e.g. "ycombinator", "ashby", "greenhouse", "lever").
+	# Same nullability note as source_job_id.
+	source: Mapped[str | None] = mapped_column(Text)
 	company_name: Mapped[str] = mapped_column(String(255), nullable=False)
 	company_batch: Mapped[str | None] = mapped_column(String(50))
 	company_url: Mapped[str | None] = mapped_column(Text)

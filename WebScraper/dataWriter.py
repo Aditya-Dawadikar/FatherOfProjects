@@ -8,7 +8,14 @@ from sqlalchemy.orm import Session
 
 from scraper import load_env_value
 
-from shared.job_data import Base, JobListing, apply_job_delta, create_db_engine, normalize_job_payload  # noqa: E402
+from shared.job_data import (  # noqa: E402
+	Base,
+	DEFAULT_JOB_SOURCE,
+	JobListing,
+	apply_job_delta,
+	create_db_engine,
+	normalize_job_payload,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -38,7 +45,9 @@ def upsert_jobs(database_url: str, jobs: list[dict[str, object]]) -> int:
 			existing_listing = existing_listings.get(job_id)
 			if existing_listing is None:
 				LOGGER.info("Inserting job_id=%s payload=%s", job_id, payload)
-				session.add(JobListing(job_id=job_id, **payload))
+				session.add(
+					JobListing(job_id=job_id, source_job_id=str(job_id), source=DEFAULT_JOB_SOURCE, **payload)
+				)
 				delta_count += 1
 				continue
 
