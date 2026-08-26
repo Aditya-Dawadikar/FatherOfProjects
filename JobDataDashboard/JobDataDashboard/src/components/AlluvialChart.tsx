@@ -41,6 +41,7 @@ const FLOW_GOOD = 'var(--accent)'
 const FLOW_MODERATE = 'var(--warn)'
 const FLOW_BAD = 'var(--error)'
 const FLOW_FAILED = 'var(--flow-failed)'
+const FLOW_PENDING = 'var(--flow-pending)'
 
 // One categorical color per data source, validated (dataviz skill: fixed hue order, never
 // cycled) against this dashboard's light chart surface (#ffffff) -- blue/orange/aqua/yellow,
@@ -109,6 +110,17 @@ export default function AlluvialChart({ funnel }: AlluvialChartProps) {
         }),
       ),
       { id: 'processed', label: 'Processed by agent', value: funnel.total_processed, column: 1, fill: FLOW_TOTAL, textColor: 'light' },
+      {
+        id: 'pending',
+        label: 'Pending (backlog)',
+        // Scraped but never touched by the agent at all -- not a failure outcome (that's
+        // failed_matches, a 404'd posting the agent DID process), just the queue it hasn't
+        // reached yet under the current rubric_version/prompt_version filter.
+        value: Math.max(0, funnel.total_scraped - funnel.total_processed),
+        column: 1,
+        fill: FLOW_PENDING,
+        textColor: 'light',
+      },
       { id: 'success', label: 'Success', value: success, column: 2, fill: FLOW_TOTAL, textColor: 'light' },
       { id: 'failed', label: 'Failed (not found)', value: funnel.failed_matches, column: 2, fill: FLOW_FAILED, textColor: 'light' },
       { id: 'good', label: 'Good match', value: funnel.good_matches, column: 3, fill: FLOW_GOOD, textColor: 'light' },
@@ -125,6 +137,14 @@ export default function AlluvialChart({ funnel }: AlluvialChartProps) {
           value: slice.total_processed,
         }),
       ),
+      ...sourcesScraped.map(
+        (slice): FlowLink => ({
+          id: `source-${slice.source}-pending`,
+          source: `source-${slice.source}`,
+          target: 'pending',
+          value: Math.max(0, slice.total_scraped - slice.total_processed),
+        }),
+      ),
       { id: 'processed-success', source: 'processed', target: 'success', value: success },
       { id: 'processed-failed', source: 'processed', target: 'failed', value: funnel.failed_matches },
       { id: 'success-good', source: 'success', target: 'good', value: funnel.good_matches },
@@ -133,7 +153,7 @@ export default function AlluvialChart({ funnel }: AlluvialChartProps) {
     ]
 
     const total = funnel.total_scraped
-    const columnCounts = [Math.max(sourcesScraped.length, 1), 1, 2, 3]
+    const columnCounts = [Math.max(sourcesScraped.length, 1), 2, 2, 3]
     const maxGaps = Math.max(...columnCounts) - 1
     const availableHeight = CHART_BOTTOM - CHART_TOP - maxGaps * NODE_GAP
     const scale = total > 0 ? availableHeight / total : 0
