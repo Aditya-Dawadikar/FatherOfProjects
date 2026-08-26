@@ -49,9 +49,15 @@ export type JobsCountResponse = {
 
 export type JobsQuery = {
   searchText: string
+  source: string | null
   limit: number
   offset: number
 }
+
+// Every source WebScraper's pipeline knows how to scrape today -- see WebScraper/ats_scraper.py
+// and scraper.py. Kept as a fixed list (matching MatchFilter's approach) rather than derived from
+// data, same tradeoff: a fifth source added later needs this list updated too.
+export const JOB_SOURCES = ['ycombinator', 'greenhouse', 'ashby', 'lever'] as const
 
 export type MatchFilter = 'all' | 'matched' | 'unmatched'
 

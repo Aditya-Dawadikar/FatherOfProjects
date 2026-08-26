@@ -117,7 +117,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
-async function fetchJobs({ searchText, limit, offset }: JobsQuery): Promise<JobRecord[]> {
+async function fetchJobs({ searchText, source, limit, offset }: JobsQuery): Promise<JobRecord[]> {
   const params = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
@@ -128,16 +128,22 @@ async function fetchJobs({ searchText, limit, offset }: JobsQuery): Promise<JobR
   if (trimmedQuery) {
     params.set('query', trimmedQuery)
   }
+  if (source) {
+    params.set('source', source)
+  }
 
   return requestJson<JobRecord[]>(`${path}?${params.toString()}`)
 }
 
-async function fetchJobsCount({ searchText }: Pick<JobsQuery, 'searchText'>): Promise<JobsCountResponse> {
+async function fetchJobsCount({ searchText, source }: Pick<JobsQuery, 'searchText' | 'source'>): Promise<JobsCountResponse> {
   const params = new URLSearchParams()
   const trimmedQuery = searchText.trim()
 
   if (trimmedQuery) {
     params.set('query', trimmedQuery)
+  }
+  if (source) {
+    params.set('source', source)
   }
 
   const querySuffix = params.size ? `?${params.toString()}` : ''
@@ -295,10 +301,10 @@ export function useJobs(filters: JobsQuery) {
   })
 }
 
-export function useJobsCount(searchText: string) {
+export function useJobsCount(searchText: string, source: string | null) {
   return useQuery({
-    queryKey: ['jobsCount', searchText],
-    queryFn: () => fetchJobsCount({ searchText }),
+    queryKey: ['jobsCount', searchText, source],
+    queryFn: () => fetchJobsCount({ searchText, source }),
     staleTime: 5_000,
   })
 }

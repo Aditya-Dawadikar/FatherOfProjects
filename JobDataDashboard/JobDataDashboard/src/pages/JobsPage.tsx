@@ -12,7 +12,7 @@ import {
   useJobsCount,
   useJobs,
 } from '../hooks'
-import type { JobDraft, JobRecord } from '../types'
+import { JOB_SOURCES, type JobDraft, type JobRecord } from '../types'
 
 const JOBS_QUERY_KEY = ['jobs']
 const PAGE_SIZE = 20
@@ -20,6 +20,7 @@ const PAGE_SIZE = 20
 export default function JobsPage() {
   const [isFormDrawerOpen, setIsFormDrawerOpen] = useState(false)
   const [searchText, setSearchText] = useState('')
+  const [sourceFilter, setSourceFilter] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null)
   const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create')
@@ -28,10 +29,11 @@ export default function JobsPage() {
   const deferredSearchText = useDeferredValue(searchText)
   const jobsQuery = useJobs({
     searchText: deferredSearchText,
+    source: sourceFilter,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   })
-  const jobsCountQuery = useJobsCount(deferredSearchText)
+  const jobsCountQuery = useJobsCount(deferredSearchText, sourceFilter)
   const jobList = jobsQuery.data ?? []
   const reactQueryClient = useQueryClient()
   const totalRows = jobsCountQuery.data?.total ?? 0
@@ -155,6 +157,11 @@ export default function JobsPage() {
     setPage(1)
   }
 
+  function changeSourceFilter(value: string) {
+    setSourceFilter(value || null)
+    setPage(1)
+  }
+
   function goToPreviousPage() {
     setPage((currentPage) => Math.max(1, currentPage - 1))
   }
@@ -183,6 +190,18 @@ export default function JobsPage() {
             <FiPlus aria-hidden="true" className="button-icon" />
             New Job
           </button>
+          <select
+            className="search-input filter-select"
+            value={sourceFilter ?? ''}
+            onChange={(event) => changeSourceFilter(event.target.value)}
+          >
+            <option value="">All sources</option>
+            {JOB_SOURCES.map((source) => (
+              <option key={source} value={source}>
+                {source}
+              </option>
+            ))}
+          </select>
           <input
             className="search-input"
             type="search"
