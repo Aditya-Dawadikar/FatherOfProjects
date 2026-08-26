@@ -1,9 +1,8 @@
 import { FiRefreshCw } from 'react-icons/fi'
-import AlluvialChart from '../AlluvialChart'
+import AlluvialChart, { sourceColor, sourceLabel } from '../AlluvialChart'
 import { usePipelineFunnel } from '../../hooks'
 
 const LEGEND_ITEMS = [
-  { key: 'total', label: 'Scraped', swatchClass: 'legend-swatch-total' },
   { key: 'processed', label: 'Processed by Agent', swatchClass: 'legend-swatch-processed' },
   { key: 'pending', label: 'Not yet processed', swatchClass: 'legend-swatch-pending' },
   { key: 'good', label: 'Good match', swatchClass: 'legend-swatch-good' },
@@ -74,6 +73,14 @@ export default function OverviewDataOverviewTab() {
         <>
           <AlluvialChart funnel={funnel} />
           <div className="alluvial-legend">
+            {funnel.by_source
+              .filter((slice) => slice.total_scraped > 0)
+              .map((slice) => (
+                <div key={slice.source} className="legend-item">
+                  <span className="legend-swatch" style={{ background: sourceColor(slice.source) }} />
+                  {sourceLabel(slice.source)} (scraped)
+                </div>
+              ))}
             {LEGEND_ITEMS.map((item) => (
               <div key={item.key} className="legend-item">
                 <span className={`legend-swatch ${item.swatchClass}`} />

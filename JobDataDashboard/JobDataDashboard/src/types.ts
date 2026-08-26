@@ -99,6 +99,12 @@ export type PromptVersionSummary = {
   latest_evaluated_at: string
 }
 
+export type SourceFunnelSlice = {
+  source: string
+  total_scraped: number
+  total_processed: number
+}
+
 export type PipelineFunnel = {
   total_scraped: number
   total_processed: number
@@ -106,6 +112,7 @@ export type PipelineFunnel = {
   moderate_matches: number
   bad_matches: number
   failed_matches: number
+  by_source: SourceFunnelSlice[]
 }
 
 export type AgentTopologyNodeKind = 'agent' | 'tool' | 'middleware' | 'guardrail' | 'prompt'

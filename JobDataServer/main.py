@@ -161,6 +161,12 @@ class PromptVersionSummary(BaseModel):
 	latest_evaluated_at: datetime
 
 
+class SourceFunnelSlice(BaseModel):
+	source: str
+	total_scraped: int
+	total_processed: int
+
+
 class PipelineFunnelResponse(BaseModel):
 	total_scraped: int
 	total_processed: int
@@ -168,6 +174,11 @@ class PipelineFunnelResponse(BaseModel):
 	moderate_matches: int
 	bad_matches: int
 	failed_matches: int
+	# Per-source breakdown of the same total_scraped/total_processed counts above -- lets the
+	# dashboard's alluvial chart show scraped jobs flowing in from each ATS separately instead of
+	# one combined "Scraped jobs" block, now that job_listings.source can be more than just
+	# "ycombinator". Sorted by source name for a stable chart legend/ordering.
+	by_source: list[SourceFunnelSlice]
 
 
 def serialize_job_listing(listing: JobListing) -> dict[str, object]:
@@ -705,6 +716,23 @@ def get_pipeline_funnel(
 		matches.c.match_score >= _MODERATE_MATCH_MIN_SCORE, matches.c.match_score < _GOOD_MATCH_MIN_SCORE, ~not_found
 	)
 	bad_matches = _count(matches.c.match_score < _MODERATE_MATCH_MIN_SCORE, ~not_found)
+
+	scraped_by_source = dict(
+		session.execute(select(JobListing.source, func.count()).group_by(JobListing.source)).all()
+	)
+	processed_by_source = dict(
+		session.execute(
+			select(JobListing.source, func.count())
+			.select_from(JobListing)
+			.join(matches, matches.c.job_listing_id == JobListing.id)
+			.group_by(JobListing.source)
+		).all()
+	)
+	by_source = [
+		SourceFunnelSlice(source=source, total_scraped=count, total_processed=processed_by_source.get(source, 0))
+		for source, count in sorted(scraped_by_source.items())
+	]
+
 	return PipelineFunnelResponse(
 		total_scraped=int(total_scraped),
 		total_processed=int(total_processed),
@@ -712,6 +740,7 @@ def get_pipeline_funnel(
 		moderate_matches=int(moderate_matches),
 		bad_matches=int(bad_matches),
 		failed_matches=int(failed_matches),
+		by_source=by_source,
 	)
 
 

@@ -42,6 +42,33 @@ const FLOW_MODERATE = 'var(--warn)'
 const FLOW_BAD = 'var(--error)'
 const FLOW_FAILED = 'var(--flow-failed)'
 
+// One categorical color per data source, validated (dataviz skill: fixed hue order, never
+// cycled) against this dashboard's light chart surface (#ffffff) -- blue/orange/aqua/yellow,
+// the first four slots of the reference categorical palette. A fifth source added later takes
+// the next fixed slot (magenta, #e87ba4) rather than a generated hue.
+const SOURCE_COLORS: Record<string, string> = {
+  ycombinator: '#2a78d6',
+  greenhouse: '#eb6834',
+  ashby: '#1baf7a',
+  lever: '#eda100',
+}
+const FALLBACK_SOURCE_COLOR = '#e87ba4'
+
+const SOURCE_LABELS: Record<string, string> = {
+  ycombinator: 'Y Combinator',
+  greenhouse: 'Greenhouse',
+  ashby: 'Ashby',
+  lever: 'Lever',
+}
+
+export function sourceColor(source: string) {
+  return SOURCE_COLORS[source] ?? FALLBACK_SOURCE_COLOR
+}
+
+export function sourceLabel(source: string) {
+  return SOURCE_LABELS[source] ?? source
+}
+
 function formatCount(value: number) {
   return value.toLocaleString()
 }
@@ -63,9 +90,24 @@ export default function AlluvialChart({ funnel }: AlluvialChartProps) {
 
   const { nodes, links, total } = useMemo(() => {
     const success = Math.max(0, funnel.good_matches + funnel.moderate_matches + funnel.bad_matches)
+    // One column-0 node per source instead of a single combined "Scraped jobs" block -- each
+    // source keeps its own scraped total (bar height) and flows only its own processed share into
+    // the shared "Processed by agent" node, same partial-fill behavior the old single block had
+    // between total_scraped and total_processed. Sources with zero scraped rows are dropped
+    // rather than rendered as an empty sliver.
+    const sourcesScraped = funnel.by_source.filter((slice) => slice.total_scraped > 0)
 
     const rawNodes: FlowNode[] = [
-      { id: 'scraped', label: 'Scraped jobs', value: funnel.total_scraped, column: 0, fill: FLOW_TOTAL, textColor: 'light' },
+      ...sourcesScraped.map(
+        (slice): FlowNode => ({
+          id: `source-${slice.source}`,
+          label: sourceLabel(slice.source),
+          value: slice.total_scraped,
+          column: 0,
+          fill: sourceColor(slice.source),
+          textColor: 'light',
+        }),
+      ),
       { id: 'processed', label: 'Processed by agent', value: funnel.total_processed, column: 1, fill: FLOW_TOTAL, textColor: 'light' },
       { id: 'success', label: 'Success', value: success, column: 2, fill: FLOW_TOTAL, textColor: 'light' },
       { id: 'failed', label: 'Failed (not found)', value: funnel.failed_matches, column: 2, fill: FLOW_FAILED, textColor: 'light' },
@@ -75,7 +117,14 @@ export default function AlluvialChart({ funnel }: AlluvialChartProps) {
     ]
 
     const rawLinks: FlowLink[] = [
-      { id: 'scraped-processed', source: 'scraped', target: 'processed', value: funnel.total_processed },
+      ...sourcesScraped.map(
+        (slice): FlowLink => ({
+          id: `source-${slice.source}-processed`,
+          source: `source-${slice.source}`,
+          target: 'processed',
+          value: slice.total_processed,
+        }),
+      ),
       { id: 'processed-success', source: 'processed', target: 'success', value: success },
       { id: 'processed-failed', source: 'processed', target: 'failed', value: funnel.failed_matches },
       { id: 'success-good', source: 'success', target: 'good', value: funnel.good_matches },
@@ -84,7 +133,7 @@ export default function AlluvialChart({ funnel }: AlluvialChartProps) {
     ]
 
     const total = funnel.total_scraped
-    const columnCounts = [1, 1, 2, 3]
+    const columnCounts = [Math.max(sourcesScraped.length, 1), 1, 2, 3]
     const maxGaps = Math.max(...columnCounts) - 1
     const availableHeight = CHART_BOTTOM - CHART_TOP - maxGaps * NODE_GAP
     const scale = total > 0 ? availableHeight / total : 0
