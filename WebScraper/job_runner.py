@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ats_scraper import run_scrape_stage_for_source
-from dataWriter import run_write_stage
+from ats_scraper import RETENTION_MAX_AGE_DAYS, RETENTION_SOURCES, run_scrape_stage_for_source
+from dataWriter import run_purge_stage, run_write_stage
 from scraper import run_scrape_stage
 from stream_events import RedisStreamPublisher
 
@@ -69,12 +69,19 @@ def run_pipeline_job(publisher: RedisStreamPublisher) -> None:
 		total_scraped += job_count
 		total_written += written_count
 
+	LOGGER.info("Starting purge stage: %s older than %s day(s)", RETENTION_SOURCES, RETENTION_MAX_AGE_DAYS)
+	emit_pipeline_event(publisher, "stage_started", stage="purge")
+	purged_count = run_purge_stage(sources=RETENTION_SOURCES, max_age_days=RETENTION_MAX_AGE_DAYS)
+	LOGGER.info("Purge completed: %s row(s) deleted", purged_count)
+	emit_pipeline_event(publisher, "stage_completed", stage="purge", purged_count=purged_count)
+
 	emit_pipeline_event(
 		publisher,
 		"pipeline_completed",
 		stage="pipeline",
 		job_count=total_scraped,
 		written_count=total_written,
+		purged_count=purged_count,
 	)
 
 

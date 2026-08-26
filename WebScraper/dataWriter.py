@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import bindparam, delete, select, text
 from sqlalchemy.orm import Session
 
 from scraper import load_env_value
@@ -13,6 +15,7 @@ from shared.job_data import (  # noqa: E402
 	JobListing,
 	apply_job_delta,
 	create_db_engine,
+	load_job_table_name,
 	normalize_job_payload,
 )
 
@@ -73,6 +76,48 @@ def upsert_jobs(database_url: str, jobs: list[dict[str, object]]) -> int:
 	return delta_count
 
 
+def purge_stale_jobs(database_url: str, *, sources: tuple[str, ...], max_age_days: int) -> int:
+	"""Deletes job_listings rows (and their job_matches, if any) for `sources` whose updated_at is
+	older than `max_age_days`. See ats_scraper.py's RECENCY_WINDOW_HOURS/RETENTION_MAX_AGE_DAYS
+	docstring for why this exists: a job outside the scrape's recency window never gets re-written
+	(each source's own timestamp only moves forward, so a future scrape's recency filter keeps
+	excluding it too), so its updated_at here freezes at ingestion time and correctly reflects
+	"not seen in a scrape since" -- keeping it around indefinitely only grows JobManagerAgent's
+	backlog for no benefit.
+
+	job_matches has no ON DELETE CASCADE on its job_listing_id FK (see JobManagerAgent's
+	scripts/migrations/0004_add_job_listing_id_to_job_matches.py), so any match rows for a purged
+	listing are deleted first via raw SQL -- WebScraper has no JobMatch model of its own (it never
+	otherwise touches that table), so this reaches it by table name instead of importing one.
+	"""
+	engine = create_db_engine(database_url)
+	job_table = load_job_table_name()
+	match_table = os.getenv("JOB_MATCH_TABLE_NAME", "job_matches").strip() or "job_matches"
+	cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max_age_days)
+
+	with Session(engine) as session:
+		stale_ids = list(
+			session.scalars(
+				select(JobListing.id).where(JobListing.source.in_(sources), JobListing.updated_at < cutoff)
+			)
+		)
+		if not stale_ids:
+			LOGGER.info("purge_stale_jobs: no %s rows older than %s day(s)", sources, max_age_days)
+			return 0
+
+		session.execute(
+			text(f'DELETE FROM "{match_table}" WHERE job_listing_id IN :ids').bindparams(
+				bindparam("ids", expanding=True)
+			),
+			{"ids": stale_ids},
+		)
+		session.execute(delete(JobListing).where(JobListing.id.in_(stale_ids)))
+		session.commit()
+
+	LOGGER.info("purge_stale_jobs: deleted %s row(s) from %s older than %s day(s)", len(stale_ids), sources, max_age_days)
+	return len(stale_ids)
+
+
 def load_database_url() -> str:
 	try:
 		return load_env_value("DATABASE_URL")
@@ -83,6 +128,11 @@ def load_database_url() -> str:
 def run_write_stage(jobs: list[dict[str, Any]], database_url: str | None = None) -> int:
 	resolved_database_url = database_url or load_database_url()
 	return upsert_jobs(resolved_database_url, jobs)
+
+
+def run_purge_stage(*, sources: tuple[str, ...], max_age_days: int, database_url: str | None = None) -> int:
+	resolved_database_url = database_url or load_database_url()
+	return purge_stale_jobs(resolved_database_url, sources=sources, max_age_days=max_age_days)
 
 
 def run_write_from_scrape_result(scrape_result: dict[str, Any], database_url: str | None = None) -> int:
