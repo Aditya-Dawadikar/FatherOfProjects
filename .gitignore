@@ -1,3 +1,5 @@
 .claude
 SmokeTesting
 .venv
+WebScraper/slugs/invalid_slugs.txt
+WebScraper/slugs/reference_slugs/*
