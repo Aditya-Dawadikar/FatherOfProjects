@@ -15,6 +15,7 @@ from guardrails.report import record_guardrail_trigger
 from integrations.mlflow import PROMPT_NAME, get_active_prompt
 from integrations.streaming import RedisStreamPublisher, publish_event
 from llm_providers import build_client, load_provider_name
+from shared.feature_flags import AGENT_BACKFILL_ENABLED, AGENT_LIVE_ENABLED, is_enabled
 from shared.job_data import Base, create_db_engine, load_database_url
 from tools import build_agent_tools
 from utils.agent_logger import get_agent_logger, new_id
@@ -31,7 +32,6 @@ from utils.config import (
 	load_resume,
 )
 from utils.env_utils import load_env_value
-from utils.matching_controls import unscored_backfill_pause_reason
 from utils.mlflow_utils import (
 	ensure_tracking_uri_configured,
 	get_tracking_uri,
@@ -105,19 +105,23 @@ def run_matching_cycle_with_agent(
 	cycle_id = cycle_id or new_id()
 	log = LOGGER.bind(cycle_id=cycle_id, mode=mode)
 
-	# Only mode="backfill" (idle-triggered draining of never-scored jobs) can be paused -- live
-	# cycles (mode="live", triggered by pipeline_completed or boot catch-up) always run. See
-	# utils/matching_controls.py for why this exists alongside get_active_prompt() already
-	# re-resolving 'production' fresh every cycle: this gives an operator a clean, predictable
-	# window during a prompt cutover rather than depending solely on that automatic resolution.
-	if mode == "backfill":
-		pause_reason = unscored_backfill_pause_reason()
-		if pause_reason is not None:
-			log.action("cycle_skipped_unscored_backfill_paused", pause_reason=pause_reason)
-			return {"cycle_id": cycle_id, "mode": mode, "skipped": True, "reason": "unscored_backfill_paused"}
-
 	engine = create_db_engine(load_database_url())
 	Base.metadata.create_all(engine)
+
+	# agent_live_enabled/agent_backfill_enabled -- see shared/feature_flags.py. Checked before
+	# anything else in this function touches the LLM client, the rate limiter, or MLflow: an
+	# operator flipping either off should mean genuinely zero API calls on the very next cycle,
+	# not just fewer. mode="backfill" also folds in what used to be a separate Redis-backed pause
+	# flag (utils/matching_controls.py) -- POST /admin/unscored-backfill/pause and /resume still
+	# work the same way, they just flip this same row now instead of a second mechanism. This also
+	# gives an operator a clean, predictable window during a prompt cutover (pause here, promote
+	# the new version via POST /admin/active-prompt, resume here), same as before -- it's just not
+	# required for correctness, since get_active_prompt() re-resolves 'production' fresh every
+	# cycle regardless.
+	flag_name = AGENT_LIVE_ENABLED if mode == "live" else AGENT_BACKFILL_ENABLED
+	if not is_enabled(engine, flag_name):
+		log.action("cycle_skipped_feature_flag_disabled", flag=flag_name)
+		return {"cycle_id": cycle_id, "mode": mode, "skipped": True, "reason": f"{flag_name}_disabled"}
 
 	max_jobs = load_max_jobs_per_cycle()
 	order = _ORDER_BY_MODE[mode]

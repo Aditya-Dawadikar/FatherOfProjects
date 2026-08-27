@@ -383,6 +383,18 @@ export type UnscoredBackfillStatus = {
   reason: string | null
 }
 
+// Generic named on/off switch -- see JobManagerAgent/shared/feature_flags.py. New flags show up
+// here automatically (this type has no fixed set of names); UnscoredBackfillStatus above is the
+// older, single-purpose predecessor this generalizes (agent_backfill_enabled is the same switch
+// under the hood now).
+export type FeatureFlag = {
+  name: string
+  enabled: boolean
+  description: string | null
+  updated_at: string
+  updated_reason: string | null
+}
+
 export type RpmBucketUsage = {
   bucket: string
   model: string

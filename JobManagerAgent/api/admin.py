@@ -12,6 +12,7 @@ from integrations.mlflow import (
 	revert_active_prompt_version,
 	set_active_prompt_version,
 )
+from shared.feature_flags import FeatureFlag, list_flags, set_flag
 from shared.job_data import get_shared_engine
 from utils.agent_logger import get_agent_logger
 from utils.config import DEFAULT_MODEL, WINDOW_SECONDS, load_provider_rpm_quota
@@ -387,3 +388,55 @@ def reset_billing_status_endpoint() -> BillingStatusResponse:
 	reset_billing_status()
 	LOGGER.action("billing_status_reset")
 	return _to_billing_status_response(get_billing_status())
+
+
+class FeatureFlagResponse(BaseModel):
+	name: str
+	enabled: bool
+	description: str | None
+	updated_at: str
+	updated_reason: str | None
+
+
+class SetFeatureFlagRequest(BaseModel):
+	enabled: bool
+	reason: str | None = Field(default=None, description="Why -- recorded alongside the flag for later audit.")
+
+
+def _to_feature_flag_response(flag: FeatureFlag) -> FeatureFlagResponse:
+	return FeatureFlagResponse(
+		name=flag.name,
+		enabled=flag.enabled,
+		description=flag.description,
+		updated_at=flag.updated_at.isoformat(),
+		updated_reason=flag.updated_reason,
+	)
+
+
+@router.get(
+	"/feature-flags",
+	summary="List every feature flag -- the generic on/off switch registry",
+)
+def list_feature_flags() -> list[FeatureFlagResponse]:
+	"""Every named switch in feature_flags (see shared/feature_flags.py and
+	scripts/migrations/0007_add_feature_flags.py), current state first: scrape_enabled
+	(WebScraper's whole pipeline), agent_live_enabled and agent_backfill_enabled (this service's
+	two matching-cycle modes -- see agents/react_agent.py). A flag not yet seeded by a migration
+	simply doesn't appear here until its first POST; its call site's own `default` still applies
+	in the meantime.
+	"""
+	return [_to_feature_flag_response(flag) for flag in list_flags(get_shared_engine())]
+
+
+@router.post(
+	"/feature-flags/{name}",
+	summary="Turn a feature flag on or off",
+)
+def set_feature_flag_endpoint(name: str, payload: SetFeatureFlagRequest) -> FeatureFlagResponse:
+	"""Upserts -- works even for a flag not yet seeded by a migration. Takes effect on whatever
+	the next check of that flag is (WebScraper's next pipeline run, JobManagerAgent's next matching
+	cycle) -- every gate reads fresh from Postgres, nothing is cached.
+	"""
+	flag = set_flag(get_shared_engine(), name, payload.enabled, reason=payload.reason)
+	LOGGER.action("feature_flag_set", name=name, enabled=payload.enabled, reason=payload.reason)
+	return _to_feature_flag_response(flag)

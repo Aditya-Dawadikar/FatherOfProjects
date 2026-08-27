@@ -11,6 +11,7 @@ import type {
   EvalSweepTrigger,
   EvalTrigger,
   EvalTriggerRequest,
+  FeatureFlag,
   GuardrailsEvalRun,
   GuardrailsEvalTrigger,
   HealthResponse,
@@ -804,5 +805,39 @@ export function useCancelBackfillRun() {
   return useMutation({
     mutationFn: cancelBackfillRun,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['backfillRuns'] }),
+  })
+}
+
+// --- Feature flags (generic on/off switches) ---------------------------------------------------
+// JobManagerAgent (api/admin.py, shared/feature_flags.py) owns the registry; scrape_enabled gates
+// WebScraper's whole pipeline, agent_live_enabled/agent_backfill_enabled gate this service's two
+// matching-cycle modes. New flags added later show up here automatically -- this list has no
+// fixed set of names on either the frontend or backend side.
+
+async function fetchFeatureFlags(): Promise<FeatureFlag[]> {
+  return requestAgentJson<FeatureFlag[]>('/agent-api/admin/feature-flags')
+}
+
+async function setFeatureFlag(payload: { name: string; enabled: boolean; reason?: string }): Promise<FeatureFlag> {
+  return requestAgentJson<FeatureFlag>(`/agent-api/admin/feature-flags/${encodeURIComponent(payload.name)}`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled: payload.enabled, reason: payload.reason ?? null }),
+  })
+}
+
+export function useFeatureFlags() {
+  return useQuery({
+    queryKey: ['featureFlags'],
+    queryFn: fetchFeatureFlags,
+    staleTime: 3_000,
+    refetchInterval: 10_000,
+  })
+}
+
+export function useSetFeatureFlag() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: setFeatureFlag,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['featureFlags'] }),
   })
 }

@@ -4,8 +4,10 @@ import logging
 from typing import Any
 
 from ats_scraper import RETENTION_MAX_AGE_DAYS, RETENTION_SOURCES, run_scrape_stage_for_source
-from dataWriter import run_purge_stage, run_write_stage
+from dataWriter import load_database_url, run_purge_stage, run_write_stage
 from scraper import run_scrape_stage
+from shared.feature_flags import SCRAPE_ENABLED, is_enabled
+from shared.job_data import create_db_engine
 from stream_events import RedisStreamPublisher
 
 
@@ -38,6 +40,12 @@ def emit_pipeline_event(
 
 
 def run_pipeline_job(publisher: RedisStreamPublisher) -> None:
+	engine = create_db_engine(load_database_url())
+	if not is_enabled(engine, SCRAPE_ENABLED):
+		LOGGER.info("scrape_enabled is off; skipping this pipeline run entirely")
+		emit_pipeline_event(publisher, "pipeline_skipped", stage="pipeline", reason="scrape_disabled")
+		return
+
 	emit_pipeline_event(publisher, "pipeline_started", stage="pipeline")
 
 	total_scraped = 0
