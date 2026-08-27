@@ -1138,6 +1138,50 @@
   border-color: var(--accent);
 }
 
+.admin-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 20px;
+  padding: 0 32px 32px;
+  align-items: start;
+}
+
+.admin-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 20px;
+  padding: 12px;
+  position: sticky;
+  top: 20px;
+}
+
+.admin-sidebar-link {
+  display: block;
+  padding: 10px 14px;
+  border-radius: 12px;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.admin-sidebar-link:hover {
+  color: var(--text);
+  background: var(--overlay);
+}
+
+.admin-sidebar-link.is-active {
+  color: var(--text);
+  background: var(--accent-dim);
+}
+
+.admin-content {
+  min-width: 0;
+}
+
 .pane-tab.is-active {
   background: var(--accent-dim);
   color: var(--text);
@@ -1978,9 +2022,20 @@
 
 @media (max-width: 720px) {
   .top-nav,
-  .app-body {
+  .app-body,
+  .admin-layout {
     padding-left: 18px;
     padding-right: 18px;
+  }
+
+  .admin-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-sidebar {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
   }
 
   .view-tabs {

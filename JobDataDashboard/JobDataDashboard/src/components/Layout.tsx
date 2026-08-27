@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { FiActivity, FiAlertTriangle, FiBarChart2, FiDatabase, FiLayout, FiShuffle, FiTrendingUp } from 'react-icons/fi'
+import { FiActivity, FiAlertTriangle, FiBarChart2, FiDatabase, FiLayout, FiSettings } from 'react-icons/fi'
 import { useBillingStatus } from '../hooks'
 import ObservabilityPage from '../pages/ObservabilityPage'
 
@@ -50,13 +50,9 @@ export default function Layout() {
             <FiDatabase aria-hidden="true" className="button-icon" />
             ETL Data
           </NavLink>
-          <NavLink to="/migration" className={tabClassName}>
-            <FiShuffle aria-hidden="true" className="button-icon" />
-            Migration
-          </NavLink>
-          <NavLink to="/rate-limits" className={tabClassName}>
-            <FiTrendingUp aria-hidden="true" className="button-icon" />
-            Rate Limits
+          <NavLink to="/admin" className={tabClassName}>
+            <FiSettings aria-hidden="true" className="button-icon" />
+            Admin
           </NavLink>
         </nav>
       </div>

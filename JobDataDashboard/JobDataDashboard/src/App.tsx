@@ -2,16 +2,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Navigate, Route, HashRouter as Router, Routes } from 'react-router-dom'
 import './App.css'
 import Layout from './components/Layout'
+import AdminLayout from './pages/AdminLayout'
+import BillingTab from './pages/admin/BillingTab'
+import RateLimitsTab from './pages/admin/RateLimitsTab'
+import FeatureFlagsTab from './pages/admin/FeatureFlagsTab'
 import EtlDataLayout from './pages/EtlDataLayout'
 import JobsPage from './pages/JobsPage'
 import MatchesPage from './pages/MatchesPage'
-import MigrationPage from './pages/MigrationPage'
 import MigrationLayout from './pages/migration/MigrationLayout'
 import PromptVersionTab from './pages/migration/PromptVersionTab'
 import BackfillHandoffTab from './pages/migration/BackfillHandoffTab'
 import PromptCatalogTab from './pages/migration/PromptCatalogTab'
 import OverviewPage from './pages/OverviewPage'
-import RateLimitsPage from './pages/RateLimitsPage'
 import EvalsPage from './pages/EvalsPage'
 import AgentBehaviorTab from './pages/evals/AgentBehaviorTab'
 import DatasetsTab from './pages/evals/DatasetsTab'
@@ -40,15 +42,18 @@ export default function App() {
               <Route path="jobs" element={<JobsPage />} />
               <Route path="matches" element={<MatchesPage />} />
             </Route>
-            <Route path="migration" element={<MigrationPage />}>
-              <Route element={<MigrationLayout />}>
+            <Route path="admin" element={<AdminLayout />}>
+              <Route index element={<Navigate to="billing" replace />} />
+              <Route path="billing" element={<BillingTab />} />
+              <Route path="rate-limits" element={<RateLimitsTab />} />
+              <Route path="feature-flags" element={<FeatureFlagsTab />} />
+              <Route path="migrations" element={<MigrationLayout />}>
                 <Route index element={<Navigate to="prompt-version" replace />} />
                 <Route path="prompt-version" element={<PromptVersionTab />} />
                 <Route path="backfill-handoff" element={<BackfillHandoffTab />} />
                 <Route path="prompt-catalog" element={<PromptCatalogTab />} />
               </Route>
             </Route>
-            <Route path="rate-limits" element={<RateLimitsPage />} />
             <Route path="evals" element={<EvalsPage />}>
               <Route element={<EvalsLayout />}>
                 <Route index element={<Navigate to="kpis" replace />} />
