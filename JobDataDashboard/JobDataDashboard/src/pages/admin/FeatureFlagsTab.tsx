@@ -1,5 +1,6 @@
 import { FiRefreshCw } from 'react-icons/fi'
 import { useFeatureFlags, useSetFeatureFlag } from '../../hooks'
+import { trackEvent } from '../../lib/posthog'
 import { formatDateTime } from './adminUtils'
 
 // scrape_enabled/agent_live_enabled/agent_backfill_enabled today -- see JobManagerAgent/shared/
@@ -14,6 +15,7 @@ export default function FeatureFlagsTab() {
   const flags = flagsQuery.data ?? []
 
   function toggleFlag(name: string, currentlyEnabled: boolean) {
+    trackEvent('feature_flag_toggled', { flag: name, enabled: !currentlyEnabled })
     setFlagMutation.mutate({ name, enabled: !currentlyEnabled, reason: 'Toggled from dashboard' })
   }
 

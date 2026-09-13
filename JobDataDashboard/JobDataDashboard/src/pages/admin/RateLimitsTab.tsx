@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FiRefreshCw, FiZap } from 'react-icons/fi'
 import { useRateLimits, useUpdateRateLimitsDistribution } from '../../hooks'
+import { trackEvent } from '../../lib/posthog'
 import { BUCKET_LABEL, usagePercent } from './adminUtils'
 
 export default function RateLimitsTab() {
@@ -54,6 +55,12 @@ export default function RateLimitsTab() {
     }
 
     setFormError(null)
+    trackEvent('rate_limit_distribution_updated', {
+      live_cap: nextLive,
+      backfill_cap: nextBackfill,
+      eval_cap: nextEval,
+      provider_quota: nextProviderQuota,
+    })
     updateDistributionMutation.mutate({
       live_cap: nextLive,
       backfill_cap: nextBackfill,

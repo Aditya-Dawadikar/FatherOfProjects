@@ -1,6 +1,8 @@
+import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { FiActivity, FiAlertTriangle, FiBarChart2, FiDatabase, FiLayout, FiSettings } from 'react-icons/fi'
 import { useBillingStatus } from '../hooks'
+import { trackPageview } from '../lib/posthog'
 import ObservabilityPage from '../pages/ObservabilityPage'
 
 function tabClassName({ isActive }: { isActive: boolean }) {
@@ -15,7 +17,14 @@ export default function Layout() {
   // the current route -- the "observability" child route below still exists (so /observability
   // is a real, refreshable, linkable URL and its NavLink still activates) but renders nothing;
   // this is the thing actually on screen there.
-  const isObservability = useLocation().pathname === '/observability'
+  const location = useLocation()
+  const isObservability = location.pathname === '/observability'
+  // HashRouter navigation never triggers a real page load, so posthog-js's own history-based
+  // pageview autocapture (disabled in src/lib/posthog.ts) would miss every tab switch -- fire one
+  // manually here instead, in the one place every route renders through.
+  useEffect(() => {
+    trackPageview(location.pathname)
+  }, [location.pathname])
   // Polls from every tab (not just Rate Limits, where the billing-exhaustion alert detail lives)
   // -- billing exhaustion means every subsequent live/backfill scoring call keeps failing the
   // same way, so it needs to be visible no matter what an operator happens to have open when it
