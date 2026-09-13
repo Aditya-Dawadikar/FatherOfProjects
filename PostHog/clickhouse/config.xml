@@ -189,7 +189,7 @@
     <!-- PostHog's own migrate_clickhouse hardcodes replicated=True, which issues ON CLUSTER DDL
          even for our single self-referencing node (see default.xml). ON CLUSTER needs a working
          Keeper/ZooKeeper for the distributed-DDL queue, or the CREATE TABLE step silently never
-         completes and the very next query 500s with "Unknown table" -- confirmed the hard way
+         completes and the very next query 500s with "Unknown table": confirmed the hard way
          (railway ssh into the container showed "ZooKeeperClient: ... Host not found: zookeeper",
          from the vendored config's original docker-compose hostname, which we don't run as a
          separate service). Embedded single-node ClickHouse Keeper instead of a real ZooKeeper
