@@ -54,9 +54,8 @@ throwaway Postgres/Redis) and as the same set of services on Railway (production
 - MLflowServer — backs the prompt registry and eval-run tracking JobManagerAgent and the dashboard
   use for prompt versioning.
 - SmokeTesting — lightweight smoke tests for the platform.
-- PostHog — self-hosted product analytics for JobDataDashboard (exploration depth, session
-  recordings), deployed as three of its own services (app/ClickHouse/Kafka) same as everything
-  else here. See `PostHog/README.md`.
+- PostHog — product analytics for JobDataDashboard (exploration depth, session recordings), on
+  PostHog Cloud's free tier. See `PostHog/README.md`.
 
 ## Structure
 

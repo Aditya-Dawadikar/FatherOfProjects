@@ -1,91 +1,55 @@
 # PostHog
 
-Self-hosted PostHog, used to see how far people actually explore JobDataDashboard when it's shared
-with recruiters -- which tabs they reach, how deep they go, where they drop off, and (via session
-recordings) what a real visit looks like. Deployed the same way as every other service in this
-repo: a folder per component, each with its own `Dockerfile` + `railway.toml`, pointed at PostHog's
-own published images -- no Railway template, no vendored PostHog source. Portable to any Docker
-host by copying the same three Dockerfiles and re-pointing the env vars.
-
-## Services
-
-| Folder | Image | Role |
-| --- | --- | --- |
-| `PostHog/app/` | `posthog/posthog:latest` | The actual PostHog application. Runs the image's own default entrypoint (`bin/docker`): migrations, then a worker process and the web/API server together in one container -- PostHog's supported single-container ("hobby") mode, gated by `DEPLOYMENT=hobby`. |
-| `PostHog/clickhouse/` | `clickhouse/clickhouse-server:26.8-alpine` | Analytics event store. |
-| `PostHog/kafka/` | `bitnami/kafka:3.7` | Single-broker, KRaft mode (no separate Zookeeper container) -- right-sized for hobby-scale traffic. |
-
-Postgres, Redis, and object storage (for session recordings) are **not** hand-built -- they're
-Railway's own managed Postgres/Redis services plus a Railway Bucket, wired in via variable
-references, same pattern the rest of this repo already uses for its own Postgres/Redis.
-
-## Environment variables
-
-Set these as Railway variables on the **PostHog app** service (`PostHog/app/`):
-
-| Variable | Value |
-| --- | --- |
-| `DEPLOYMENT` | `hobby` |
-| `SITE_URL` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` (after generating a domain for this service) |
-| `SECRET_KEY` | a random 50+ char secret (sealed variable) |
-| `IS_BEHIND_PROXY` | `true` |
-| `DISABLE_SECURE_SSL_REDIRECT` | `true` |
-| `DATABASE_URL` | `${{PostHog-Postgres.DATABASE_URL}}` |
-| `REDIS_URL` | `${{PostHog-Redis.REDIS_URL}}` |
-| `CLICKHOUSE_HOST` | `${{PostHog-ClickHouse.RAILWAY_PRIVATE_DOMAIN}}` |
-| `CLICKHOUSE_DATABASE` | `posthog` |
-| `CLICKHOUSE_SECURE` | `false` |
-| `CLICKHOUSE_VERIFY` | `false` |
-| `KAFKA_HOSTS` | `${{PostHog-Kafka.RAILWAY_PRIVATE_DOMAIN}}:9092` |
-| `OBJECT_STORAGE_ENABLED` | `true` |
-| `OBJECT_STORAGE_ENDPOINT` | bucket endpoint from `railway bucket credentials` |
-| `OBJECT_STORAGE_ACCESS_KEY_ID` / `OBJECT_STORAGE_SECRET_ACCESS_KEY` | bucket credentials |
-| `OBJECT_STORAGE_BUCKET` | the bucket name |
-
-On **PostHog-ClickHouse**: `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DB=posthog` (the
-official image bootstraps from these on first boot). Attach a Railway volume at
-`/var/lib/clickhouse` so events survive a redeploy.
-
-On **PostHog-Kafka** (single-node KRaft bootstrap):
-
-```
-KAFKA_ENABLE_KRAFT=yes
-KAFKA_CFG_PROCESS_ROLES=broker,controller
-KAFKA_CFG_NODE_ID=1
-KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
-KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://${{RAILWAY_PRIVATE_DOMAIN}}:9092
-KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
-KAFKA_KRAFT_CLUSTER_ID=<fixed-22-char-base64-id, generate once and never change it>
-ALLOW_PLAINTEXT_LISTENER=yes
-```
+Product analytics for JobDataDashboard: how far recruiters explore it (which tabs they reach,
+how deep, where they drop off), plus session recordings. Running on **PostHog Cloud's free
+tier**, not self-hosted -- see [History](#history) below for why.
 
 ## Wiring into JobDataDashboard
 
-Same as before -- see `.env.example` in `JobDataDashboard/JobDataDashboard/`:
-
-| Variable | Value |
+| Variable (`JobDataDashboard/JobDataDashboard/.env`) | Value |
 | --- | --- |
-| `VITE_POSTHOG_KEY` | Project API key, from the PostHog instance's first-run signup (Project Settings) |
-| `VITE_POSTHOG_HOST` | The PostHog app service's public URL |
+| `VITE_POSTHOG_KEY` | Project API key from PostHog Cloud (Project Settings -> Project API Key) |
+| `VITE_POSTHOG_HOST` | `https://us.i.posthog.com` or `https://eu.i.posthog.com`, matching the project's region |
 
-Instrumentation itself (`src/lib/posthog.ts`, pageview tracking in `Layout.tsx`, the
-`feature_flag_toggled`/`rate_limit_distribution_updated` events) is unchanged by where PostHog
-runs -- see git history on this file for that part.
+Leave `VITE_POSTHOG_KEY` unset to disable analytics entirely -- `src/lib/posthog.ts` no-ops every
+call when it's blank, so the app behaves exactly as it did before PostHog existed. Both are baked
+in at build time (Vite's `import.meta.env`); there's no runtime env injection in the dashboard's
+static Caddy-served build, so changing either value means rebuilding.
 
-## Moving to a different host
+## What's instrumented
 
-Nothing here depends on Railway specifically: the three Dockerfiles just wrap public images.
-Rebuild them anywhere Docker runs, point `DATABASE_URL`/`REDIS_URL`/`CLICKHOUSE_HOST`/`KAFKA_HOSTS`
-at wherever those backing services live there, and update `VITE_POSTHOG_HOST` in the dashboard.
+- **`src/lib/posthog.ts`** -- `initAnalytics()` (called once from `main.tsx`), `trackPageview()`,
+  `trackEvent()`. Session recordings are on, with `maskAllInputs: true`.
+- **Pageviews** -- fired manually from `src/components/Layout.tsx` on every route change (a
+  `useEffect` keyed on `location.pathname`). Necessary because the app uses `HashRouter`; a
+  hash-only navigation never triggers a real page load, so posthog-js's own autocapture pageview
+  tracking (disabled via `capture_pageview: false`) would miss every tab switch. Every tab already
+  becomes a distinct `$pageview` pathname (`/`, `/observability`, `/evals/kpis`, `/etl-data/jobs`,
+  `/admin/feature-flags`, ...), so exploration-depth funnels are just PostHog insights over
+  pathname -- no custom "depth" code needed.
+- **Autocapture** -- on by default (posthog-js default), covers clicks/inputs across the app.
+- **Custom events** -- `feature_flag_toggled` (`pages/admin/FeatureFlagsTab.tsx`) and
+  `rate_limit_distribution_updated` (`pages/admin/RateLimitsTab.tsx`), the two places the
+  dashboard's *operator* changes real system state.
 
-## Notes / caveats
+## Suggested PostHog insights
 
-- **Single-broker Kafka and single-node ClickHouse** have no redundancy. Fine for hobby-scale
-  portfolio traffic; not a production-grade analytics pipeline.
-- **`posthog/posthog:latest`** tracks upstream continuously -- pin to a specific tag/digest if a
-  reproducible build matters more than always running current PostHog.
-- If the app container crash-loops on boot, check its logs first (`railway logs --service PostHog`)
-  -- `bin/docker`'s migration step is the most common failure point (usually a ClickHouse/Kafka/
-  Postgres connectivity issue, not an app bug).
+- **Exploration depth / funnel** -- distinct `$pageview` pathnames per session across
+  Overview (`/`) -> Observability -> Evals -> ETL Data -> Admin.
+- **Session recordings** filtered to first-time visitors.
+- **Time-on-page** per tab, and scroll depth on the Overview page.
+
+## History
+
+This started as a self-hosted deployment: three Railway services (a PostHog app container,
+ClickHouse, Kafka) backed by Railway's managed Postgres/Redis and a bucket for recordings, each
+component its own `Dockerfile` + `railway.toml`, matching this repo's usual per-service
+convention. It got the app fully migrated and past ClickHouse cluster/Keeper/named-collection
+config, Kafka KRaft setup, and a persons-database wiring gap -- real, working infrastructure --
+but the process took a long chain of one-off fixes (ClickHouse version mismatches with PostHog's
+vendored config, `ON CLUSTER` DDL needing an embedded Keeper, a users.xml grants conflict, missing
+`PERSONS_DB_WRITER_URL`/`PERSONS_DB_READER_URL` vars) with no end clearly in sight. Given this is
+a portfolio project, not a system that needs to own its own analytics infrastructure, the call was
+made to stop and switch to PostHog Cloud's free tier instead -- same product, same events, same
+instrumentation code, none of the ClickHouse/Kafka operational surface. The Railway services
+(and the object-storage bucket) created during that attempt have been deleted.
