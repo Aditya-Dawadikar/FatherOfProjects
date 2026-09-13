@@ -177,12 +177,12 @@
     <!-- Reallocate memory for machine code ("text") using huge pages. Highly experimental. -->
     <remap_executable>false</remap_executable>
 
-    <!-- Vendored from PostHog's own repo with a `.*` wildcard here, which permits url()/dictionary
-         sources to fetch literally any host -- SSRF risk once anything can run arbitrary SQL. This
-         deployment doesn't use url() table functions or remote dictionary sources, so the
-         allowlist is left empty (an empty <remote_url_allow_hosts> denies all remote hosts,
-         unlike omitting the element entirely, which leaves ClickHouse's default of no restriction
-         in place). Add specific <host> entries here if a real use case needs one later. -->
+    <!-- Vendored from PostHog's own repo with a wildcard here, which permits url()/dictionary
+         sources to fetch literally any host: an SSRF risk once anything can run arbitrary SQL.
+         This deployment doesn't use url() table functions or remote dictionary sources, so the
+         allowlist is left empty (an empty remote_url_allow_hosts denies all remote hosts, unlike
+         omitting the element entirely, which leaves ClickHouse's default of no restriction in
+         place). Add specific host entries here if a real use case needs one later. -->
     <remote_url_allow_hosts>
     </remote_url_allow_hosts>
 

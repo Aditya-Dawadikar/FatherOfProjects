@@ -136,12 +136,12 @@
                      Strongly recommended that regexp is ends with $
                  All results of DNS requests are cached till server restart.
             -->
-            <!-- This vendored file ships from PostHog's own repo with `default` wide open
-                 (::/0, empty password, access_management) plus three demo users with hardcoded
-                 plaintext passwords (api/app/dict_reader) -- fine for their own docker-compose
+            <!-- This vendored file ships from PostHog's own repo with default wide open (::/0,
+                 empty password, access_management) plus three demo users with hardcoded
+                 plaintext passwords (api/app/dict_reader): fine for their own docker-compose
                  test fixtures, not for a real deployment. Real access goes through the
                  entrypoint-provisioned CLICKHOUSE_USER/CLICKHOUSE_PASSWORD (Railway variables,
-                 layered on via users.d/, unaffected by this file) -- `default` is restricted to
+                 layered on via users.d/, unaffected by this file). default is restricted to
                  loopback only, for the container's own internal bootstrap use, and its elevated
                  grants are dropped. The api/app/dict_reader users are removed outright: unused by
                  this deployment, and their passwords are public (this is an open source repo). -->
