@@ -6,15 +6,21 @@ tier**, not self-hosted -- see [History](#history) below for why.
 
 ## Wiring into JobDataDashboard
 
-| Variable (`JobDataDashboard/JobDataDashboard/.env`) | Value |
+| Variable | Value |
 | --- | --- |
 | `VITE_POSTHOG_KEY` | Project API key from PostHog Cloud (Project Settings -> Project API Key) |
 | `VITE_POSTHOG_HOST` | `https://us.i.posthog.com` or `https://eu.i.posthog.com`, matching the project's region |
 
 Leave `VITE_POSTHOG_KEY` unset to disable analytics entirely -- `src/lib/posthog.ts` no-ops every
 call when it's blank, so the app behaves exactly as it did before PostHog existed. Both are baked
-in at build time (Vite's `import.meta.env`); there's no runtime env injection in the dashboard's
-static Caddy-served build, so changing either value means rebuilding.
+in at build time (Vite's `import.meta.env`), not read at runtime, so where you set them depends on
+where the build happens:
+
+- **Local dev**: `JobDataDashboard/JobDataDashboard/.env` (gitignored).
+- **Railway**: set both as variables on the **JobDataDashboard** service itself (Railway dashboard
+  -> that service -> Variables). `JobDataDashboard/Dockerfile` declares matching `ARG`s so Railway's
+  build forwards them into the Vite build -- setting them alone doesn't take effect until the
+  service redeploys and rebuilds.
 
 ## What's instrumented
 

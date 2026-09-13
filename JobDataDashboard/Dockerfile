@@ -9,6 +9,14 @@ RUN npm ci
 
 COPY JobDataDashboard/ ./
 
+# Vite bakes VITE_* vars in at build time, not runtime -- Railway auto-forwards a service's own
+# variables as build args, but only for ARGs actually declared here, so PostHog stays disabled
+# (see src/lib/posthog.ts) unless these are set as variables on the Railway service itself.
+ARG VITE_POSTHOG_KEY
+ARG VITE_POSTHOG_HOST
+ENV VITE_POSTHOG_KEY=$VITE_POSTHOG_KEY
+ENV VITE_POSTHOG_HOST=$VITE_POSTHOG_HOST
+
 RUN npm run build
 
 FROM caddy:2-alpine
