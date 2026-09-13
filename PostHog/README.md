@@ -12,7 +12,7 @@ host by copying the same three Dockerfiles and re-pointing the env vars.
 | Folder | Image | Role |
 | --- | --- | --- |
 | `PostHog/app/` | `posthog/posthog:latest` | The actual PostHog application. Runs the image's own default entrypoint (`bin/docker`): migrations, then a worker process and the web/API server together in one container -- PostHog's supported single-container ("hobby") mode, gated by `DEPLOYMENT=hobby`. |
-| `PostHog/clickhouse/` | `clickhouse/clickhouse-server:24.8-alpine` | Analytics event store. |
+| `PostHog/clickhouse/` | `clickhouse/clickhouse-server:26.8-alpine` | Analytics event store. |
 | `PostHog/kafka/` | `bitnami/kafka:3.7` | Single-broker, KRaft mode (no separate Zookeeper container) -- right-sized for hobby-scale traffic. |
 
 Postgres, Redis, and object storage (for session recordings) are **not** hand-built -- they're

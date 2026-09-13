@@ -1,4 +1,10 @@
-FROM clickhouse/clickhouse-server:24.8-alpine
+FROM clickhouse/clickhouse-server:26.8-alpine
+
+# 24.8 (the first tag tried here) fails to boot at all against PostHog's vendored users.xml --
+# it sets `optimize_rewrite_has_to_in` in the default profile, a setting that doesn't exist
+# before ClickHouse 26.3 (confirmed via `railway ssh` into the crashing container: "Unknown
+# setting 'optimize_rewrite_has_to_in'" in clickhouse-server.err.log, process list showing only
+# entrypoint.sh with nothing actually listening). 26.8 is current stable as of this deploy.
 
 # PostHog's own Django ClickHouse migrations run with `replicated=True` and use `ON CLUSTER`
 # DDL even for a single node -- a bare ClickHouse container fails migration with "Requested
