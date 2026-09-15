@@ -33,15 +33,48 @@ function readOverride(): Variant | null {
   return stored === 'test' || stored === 'control' ? stored : null
 }
 
+// A real phone/mobile browser always gets the mobile-first layout outright, without going
+// through PostHog's random per-visitor assignment -- the experiment's random split is what's
+// meant to decide *desktop* traffic (that's the actual A/B question: is mobile-first worth
+// shipping to browser visitors too), not whether someone on a phone gets a phone-shaped UI. Uses
+// the User-Agent Client Hints "mobile" flag where available (Chromium), falling back to a
+// standard UA regex (Safari/Firefox on iOS/Android don't expose userAgentData).
+function isMobileDevice(): boolean {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+
+  const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData
+  if (uaData && typeof uaData.mobile === 'boolean') {
+    return uaData.mobile
+  }
+
+  return /Mobi|Android|iPhone|iPod/i.test(navigator.userAgent)
+}
+
 const MobileLayoutContext = createContext(false)
 
 export function MobileLayoutProvider({ children }: { children: ReactNode }) {
-  const [isMobileFirst, setIsMobileFirst] = useState(() => readOverride() === 'test')
+  const [isMobileFirst, setIsMobileFirst] = useState(() => {
+    const override = readOverride()
+    if (override) {
+      return override === 'test'
+    }
+    return isMobileDevice()
+  })
 
   useEffect(() => {
     if (readOverride()) {
       // Override wins for the lifetime of this session -- don't let a later PostHog flag
       // evaluation clobber it.
+      return
+    }
+
+    if (isMobileDevice()) {
+      // Already set from the initializer above; skip asking PostHog entirely -- this visitor was
+      // never actually part of the randomized split, so evaluating the flag here would both be a
+      // no-op for what's rendered and would log a misleading exposure (PostHog recording "shown
+      // control" for someone who in fact always sees the mobile-first UI).
       return
     }
 
