@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import TabBar from '../../components/TabBar'
 
 // One route per experiment type this dashboard tracks (currently prompt-version comparison,
 // tool-selection/agent-behavior evals, and guardrails evals), plus KPIs (a curated
@@ -17,19 +18,21 @@ const EVALS_TABS = [
 ]
 
 export default function EvalsLayout() {
+  const location = useLocation()
+  const navigate = useNavigate()
+
   return (
     <section className="content-panel">
-      <div className="evals-tabs-bar pane-tabs">
-        {EVALS_TABS.map((tab) => (
-          <NavLink
-            key={tab.path}
-            to={tab.path}
-            className={({ isActive }) => `pane-tab${isActive ? ' is-active' : ''}`}
-          >
-            {tab.label}
-          </NavLink>
-        ))}
-      </div>
+      <TabBar
+        ariaLabel="Evals sub-tabs"
+        className="evals-tabs-bar"
+        items={EVALS_TABS.map((tab) => ({
+          key: tab.path,
+          label: tab.label,
+          isActive: location.pathname.endsWith(`/${tab.path}`),
+          onSelect: () => navigate(tab.path),
+        }))}
+      />
 
       <Outlet />
     </section>

@@ -2326,49 +2326,99 @@
   font-size: 0.82rem;
 }
 
-/* --- Sub-tab bars (Overview/ETL Data/Evals/Migrations) scroll as one row of pills instead of
-   wrapping into extra rows that eat vertical space ------------------------------------------- */
+/* --- Hamburger menu (see HamburgerTabMenu.tsx) -- what Overview/ETL Data/Evals/Migrations' sub-
+   tab bars and the Admin sidebar become under mobile-first, instead of a horizontally scrolling
+   row of pills: one button showing the current section, expanding into a vertical list. Only
+   ever rendered while mobile-first is active, so these aren't `.mobile-first`-scoped -- the
+   component itself decides whether to mount at all. ------------------------------------------ */
 
-.mobile-first .pane-tabs {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  scroll-snap-type: x proximity;
-  margin: 0 -16px 16px;
-  padding: 0 16px 2px;
+.tab-menu {
+  position: relative;
+  margin-bottom: 16px;
 }
 
-.mobile-first .pane-tabs::-webkit-scrollbar {
-  display: none;
+.tab-menu-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 12px 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.mobile-first .pane-tab {
-  flex: 0 0 auto;
-  scroll-snap-align: start;
+.tab-menu-trigger-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 8px 14px;
 }
 
-/* --- Admin sidebar becomes a horizontal scroller instead of eating a fixed side column ------ */
-
-.mobile-first .admin-sidebar {
-  flex-direction: row;
-  overflow-x: auto;
-  scrollbar-width: none;
-  position: static;
-  padding: 8px;
-  gap: 6px;
+.tab-menu-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 140ms ease;
 }
 
-.mobile-first .admin-sidebar::-webkit-scrollbar {
-  display: none;
+.tab-menu-chevron.is-open {
+  transform: rotate(180deg);
 }
 
-.mobile-first .admin-sidebar-link {
-  flex: 0 0 auto;
-  white-space: nowrap;
-  padding: 8px 14px;
+.tab-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  z-index: 45;
+}
+
+.tab-menu-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 60svh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 6px;
+  box-shadow: 0 16px 32px rgba(20, 26, 31, 0.16);
+}
+
+.tab-menu-item {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  padding: 11px 12px;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab-menu-item:hover {
+  background: var(--overlay);
+  color: var(--text);
+}
+
+.tab-menu-item.is-active {
+  background: var(--accent-dim);
+  color: var(--text);
 }
 
 /* --- Fixed-column grids collapse to one column so nothing forces horizontal overflow -------- */

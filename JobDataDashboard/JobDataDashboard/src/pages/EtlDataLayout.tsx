@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import TabBar from '../components/TabBar'
 
 // Jobs and Matches used to be their own top-level nav tabs, each with its own <main>/content-panel
 // wrapper. Grouped here under one "ETL Data" tab instead (same structure as EvalsLayout: one
@@ -11,20 +12,22 @@ const ETL_TABS = [
 ]
 
 export default function EtlDataLayout() {
+  const location = useLocation()
+  const navigate = useNavigate()
+
   return (
     <main className="app-body app-body-single">
       <section className="content-panel">
-        <div className="etl-subnav pane-tabs">
-          {ETL_TABS.map((tab) => (
-            <NavLink
-              key={tab.path}
-              to={tab.path}
-              className={({ isActive }) => `pane-tab${isActive ? ' is-active' : ''}`}
-            >
-              {tab.label}
-            </NavLink>
-          ))}
-        </div>
+        <TabBar
+          ariaLabel="ETL Data sub-tabs"
+          className="etl-subnav"
+          items={ETL_TABS.map((tab) => ({
+            key: tab.path,
+            label: tab.label,
+            isActive: location.pathname.endsWith(`/${tab.path}`),
+            onSelect: () => navigate(tab.path),
+          }))}
+        />
 
         <Outlet />
       </section>

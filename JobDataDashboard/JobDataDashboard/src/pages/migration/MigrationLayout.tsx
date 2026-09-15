@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import TabBar from '../../components/TabBar'
 
 // Three views grouped under one Migration tab: cutting the live feature flag over to a new prompt
 // version, the separate rescore-under-a-new-prompt backfill process (its own reserved RPM bucket,
@@ -13,19 +14,21 @@ const MIGRATION_TABS = [
 ]
 
 export default function MigrationLayout() {
+  const location = useLocation()
+  const navigate = useNavigate()
+
   return (
     <section className="content-panel">
-      <div className="migration-tabs-bar pane-tabs">
-        {MIGRATION_TABS.map((tab) => (
-          <NavLink
-            key={tab.path}
-            to={tab.path}
-            className={({ isActive }) => `pane-tab${isActive ? ' is-active' : ''}`}
-          >
-            {tab.label}
-          </NavLink>
-        ))}
-      </div>
+      <TabBar
+        ariaLabel="Migration sub-tabs"
+        className="migration-tabs-bar"
+        items={MIGRATION_TABS.map((tab) => ({
+          key: tab.path,
+          label: tab.label,
+          isActive: location.pathname.endsWith(`/${tab.path}`),
+          onSelect: () => navigate(tab.path),
+        }))}
+      />
 
       <Outlet />
     </section>
