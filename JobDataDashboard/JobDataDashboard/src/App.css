@@ -2499,7 +2499,29 @@
   transform: translateY(0);
 }
 
-/* --- Agent topology graph stacks above its detail panel, with a shorter canvas -------------- */
+/* --- Agent Architecture / ETL Architecture diagrams: flattened, locked, single-frame ---------
+   `.agent-hero` normally duplicates `.content-panel`'s own card chrome (border/shadow/background)
+   one level down -- a card nested inside an identical card, which only reads as intentional
+   grouping on a wide desktop layout. Flattened here so there's exactly one outer frame on mobile;
+   `.agent-graph-wrap`/`.agent-detail-panel` keep their own framing since those mark two actually
+   distinct regions (the diagram canvas vs. the text readout below it), not redundant nesting. */
+.mobile-first .agent-hero {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.mobile-first .agent-hero-kpis {
+  grid-template-columns: 1fr;
+}
+
+/* Was a horizontally-scrolling strip -- back to a single-column grid (each stage its own full-
+   width grid item, stacked) so nothing on this page needs a sideways swipe to read. */
+.mobile-first .agent-flow-stages {
+  grid-template-columns: 1fr;
+}
 
 .mobile-first .agent-hero-body {
   grid-template-columns: 1fr;
@@ -2511,30 +2533,26 @@
   min-height: 340px;
 }
 
+/* Pan/zoom/drag are disabled on this canvas under mobile-first (see AgentTopologyHero.tsx /
+   SystemArchitectureHero.tsx -- accidental touches while scrolling would otherwise pan/zoom the
+   graph instead), and fitView is given much more room to shrink to, so the whole diagram sits
+   inside this one frame with nothing left to pan to. Node tap-to-select still works. */
+.mobile-first .agent-flow .react-flow__node {
+  cursor: default;
+}
+
 .mobile-first .agent-detail-panel {
   height: auto;
   min-height: 0;
   max-height: 40svh;
 }
 
+.mobile-first .agent-detail-toggle {
+  margin-top: 4px;
+}
+
 .mobile-first .agent-flow-minimap {
   display: none;
-}
-
-.mobile-first .agent-flow-stages {
-  display: flex;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.mobile-first .agent-flow-stages::-webkit-scrollbar {
-  display: none;
-}
-
-.mobile-first .agent-stage-chip {
-  flex: 0 0 auto;
-  min-width: 200px;
 }
 
 /* --- Grafana embed fills the space left by the header/tabs/bottom nav ----------------------- */

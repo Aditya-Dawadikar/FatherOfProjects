@@ -3,8 +3,9 @@ import type { NodeProps } from '@xyflow/react'
 import { Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, useNodesState } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { IconType } from 'react-icons'
-import { FiLayers, FiShield, FiTool } from 'react-icons/fi'
+import { FiEye, FiEyeOff, FiLayers, FiShield, FiTool } from 'react-icons/fi'
 import { SiGooglegemini, SiLangchain } from 'react-icons/si'
+import { useMobileLayout } from '../lib/experiment'
 import type { AgentTopology, AgentTopologyNode, AgentTopologyNodeKind } from '../types'
 
 type Point = {
@@ -261,13 +262,21 @@ function buildFlowNode(
 }
 
 export default function AgentTopologyHero({ topology }: Props) {
+  const isMobileFirst = useMobileLayout()
   const [pinnedNodeId, setPinnedNodeId] = useState<string | null>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
+  const [isDetailExpanded, setIsDetailExpanded] = useState(false)
 
   const layout = useMemo(() => buildLayout(topology.nodes), [topology.nodes])
   const fallbackNodeId = topology.nodes.find((node) => node.kind === 'agent')?.id ?? topology.nodes[0]?.id ?? null
   const activeNodeId = pinnedNodeId ?? hoveredNodeId ?? fallbackNodeId
   const activeNode = topology.nodes.find((node) => node.id === activeNodeId) ?? null
+
+  // Collapse the (often long) prompt/tool text back down whenever the selected node changes,
+  // rather than leaving a stale expansion open across taps.
+  useEffect(() => {
+    setIsDetailExpanded(false)
+  }, [activeNodeId])
   const nodeTypes = useMemo(() => ({ detailNode: DetailNode }), [])
   const nodesById = useMemo(() => {
     const map = new Map<string, AgentTopologyNode>()
@@ -405,27 +414,39 @@ export default function AgentTopologyHero({ topology }: Props) {
                 edges={flowEdges}
                 nodeTypes={nodeTypes}
                 onNodesChange={onFlowNodesChange}
-                nodesDraggable
+                // Pan/zoom/drag are what actually fight page scroll on a touch screen -- a swipe
+                // meant to scroll the page gets captured as a graph pan instead. Locked out under
+                // the mobile-first-layout experiment; node tap-to-select (below) stays on since a
+                // discrete tap doesn't have that conflict. fitView's own bounds are widened way
+                // past desktop's so the whole topology renders in frame with nothing to pan to.
+                nodesDraggable={!isMobileFirst}
                 nodesConnectable={false}
                 elementsSelectable={false}
                 nodeDragThreshold={2}
                 zoomOnDoubleClick={false}
-                panOnScroll
-                minZoom={0.45}
+                panOnScroll={!isMobileFirst}
+                panOnDrag={!isMobileFirst}
+                zoomOnScroll={!isMobileFirst}
+                zoomOnPinch={!isMobileFirst}
+                minZoom={isMobileFirst ? 0.12 : 0.45}
                 maxZoom={1.35}
                 fitView
-                fitViewOptions={{ padding: 0.14, minZoom: 0.45 }}
-                defaultViewport={{ x: 0, y: 0, zoom: 0.7 }}
-                onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
-                onNodeMouseLeave={(_, node) => {
-                  setHoveredNodeId((current) => (current === node.id ? null : current))
-                }}
+                fitViewOptions={{ padding: isMobileFirst ? 0.06 : 0.14, minZoom: isMobileFirst ? 0.12 : 0.45 }}
+                defaultViewport={{ x: 0, y: 0, zoom: isMobileFirst ? 0.12 : 0.7 }}
+                onNodeMouseEnter={isMobileFirst ? undefined : (_, node) => setHoveredNodeId(node.id)}
+                onNodeMouseLeave={
+                  isMobileFirst
+                    ? undefined
+                    : (_, node) => {
+                        setHoveredNodeId((current) => (current === node.id ? null : current))
+                      }
+                }
                 onNodeClick={(_, node) => {
                   setPinnedNodeId((current) => (current === node.id ? null : node.id))
                 }}
               >
                 <Background color="rgba(20, 26, 31, 0.1)" gap={22} size={1.4} />
-                <Controls showInteractive={false} />
+                {!isMobileFirst && <Controls showInteractive={false} />}
                 <MiniMap
                   pannable
                   zoomable
@@ -448,7 +469,25 @@ export default function AgentTopologyHero({ topology }: Props) {
             <strong>{activeNode?.label ?? 'No node selected'}</strong>
           </div>
           <p className="agent-detail-source">Source: {activeNode?.source ?? 'n/a'}</p>
-          <pre className="agent-detail-content">{activeNode?.detail ?? ''}</pre>
+          {isMobileFirst ? (
+            <>
+              <button
+                type="button"
+                className="ghost-button ghost-button-with-icon agent-detail-toggle"
+                onClick={() => setIsDetailExpanded((current) => !current)}
+              >
+                {isDetailExpanded ? (
+                  <FiEyeOff aria-hidden="true" className="button-icon" />
+                ) : (
+                  <FiEye aria-hidden="true" className="button-icon" />
+                )}
+                {isDetailExpanded ? 'Hide prompt' : 'Show prompt'}
+              </button>
+              {isDetailExpanded && <pre className="agent-detail-content">{activeNode?.detail ?? ''}</pre>}
+            </>
+          ) : (
+            <pre className="agent-detail-content">{activeNode?.detail ?? ''}</pre>
+          )}
           <p className="agent-detail-footer">Generated at {new Date(topology.generated_at).toLocaleString()}</p>
         </aside>
       </div>
