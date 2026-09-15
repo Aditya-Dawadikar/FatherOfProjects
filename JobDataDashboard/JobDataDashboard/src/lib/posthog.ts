@@ -8,6 +8,13 @@ const POSTHOG_KEY = import.meta.env.VITE_POSTHOG_KEY
 const POSTHOG_HOST = import.meta.env.VITE_POSTHOG_HOST || 'http://localhost'
 const enabled = Boolean(POSTHOG_KEY)
 
+// Exposed so other modules (see src/lib/experiment.tsx) can tell whether it's safe to call into
+// the posthog-js singleton at all -- same "no configured instance" case initAnalytics/trackEvent/
+// trackPageview already no-op on above.
+export function isAnalyticsEnabled() {
+  return enabled
+}
+
 export function initAnalytics() {
   if (!enabled) return
   posthog.init(POSTHOG_KEY, {

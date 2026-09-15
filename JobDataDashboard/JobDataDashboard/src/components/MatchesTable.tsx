@@ -50,31 +50,31 @@ export default function MatchesTable({ matches, selectedJobId = null, onSelectMa
               className={match.id === selectedJobId ? 'is-selected' : undefined}
               onClick={() => onSelectMatch?.(match)}
             >
-              <td>{match.id}</td>
-              <td>
+              <td data-label="ID">{match.id}</td>
+              <td data-label="Source">
                 <span className="source-badge">{match.source}</span>
               </td>
-              <td>
+              <td data-label="Company">
                 <div className="company-cell">
                   <strong>{match.company_name}</strong>
                   <span>{match.location ?? 'Remote / n/a'}</span>
                 </div>
               </td>
-              <td>{match.job_role}</td>
-              <td>
+              <td data-label="Role">{match.job_role}</td>
+              <td data-label="Score">
                 <span className={`score-badge score-${scoreBand(match.match_score)}`}>{match.match_score}</span>
               </td>
-              <td>
+              <td data-label="Match">
                 <span className={`match-badge ${match.is_match ? 'match-badge-yes' : 'match-badge-no'}`}>
                   {match.is_match ? 'Match' : 'No match'}
                 </span>
               </td>
-              <td className="reasoning-cell" title={match.reasoning ?? ''}>
+              <td className="reasoning-cell" data-label="Reasoning" title={match.reasoning ?? ''}>
                 {match.reasoning || 'n/a'}
               </td>
-              <td>v{match.prompt_version}</td>
-              <td>{match.model_name}</td>
-              <td>{new Date(match.evaluated_at).toLocaleString()}</td>
+              <td data-label="Prompt">v{match.prompt_version}</td>
+              <td data-label="Model">{match.model_name}</td>
+              <td data-label="Evaluated">{new Date(match.evaluated_at).toLocaleString()}</td>
             </tr>
           ))}
         </tbody>

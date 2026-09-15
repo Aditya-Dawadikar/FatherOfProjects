@@ -2055,6 +2055,17 @@
     align-items: stretch;
   }
 
+  /* .toolbar-actions's own flex-wrap: wrap (its base rule, further up this file) combines with
+     the flex-direction: column just above to lay items out as wrapped *columns* of limited
+     height instead of one full-width column -- each control ends up in its own side-by-side
+     column, overflowing the viewport instead of stacking. Force a single column. Matches
+     `.records-toolbar .toolbar-actions`'s own specificity (the @media (max-width: 1080px) rule
+     above that sets flex-wrap: wrap for this same element) so this actually wins the cascade. */
+  .records-toolbar .toolbar-actions,
+  .toolbar-actions {
+    flex-wrap: nowrap;
+  }
+
   .search-input {
     min-width: 0;
   }
@@ -2205,4 +2216,395 @@
 
 .legend-swatch-failed {
   background: #5c4a99;
+}
+
+/* =========================================================================================
+   Mobile-first experiment (PostHog flag "mobile-first-layout", variant "test")
+   Everything below is scoped under `.mobile-first`, a class Layout.tsx adds to `.app-shell`
+   based on the PostHog experiment variant (see src/lib/experiment.tsx) -- not on viewport
+   width, so control/test stay comparable regardless of the visitor's actual screen size.
+   Tuned for real phone widths (~360-430px); a desktop window bucketed into "test" gets the same
+   treatment, which is the point of the experiment.
+   ========================================================================================= */
+
+.bottom-nav {
+  display: none;
+}
+
+.mobile-first .top-nav {
+  display: none;
+}
+
+.mobile-first .app-header {
+  padding: 16px 16px 10px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.mobile-first .app-body {
+  grid-template-columns: 1fr;
+  padding: 0 16px 24px;
+  gap: 16px;
+}
+
+.mobile-first .app-body-single {
+  padding: 0 16px 24px;
+}
+
+.mobile-first .admin-layout {
+  grid-template-columns: 1fr;
+  padding: 0 16px 24px;
+  gap: 12px;
+}
+
+.mobile-first .content-panel,
+.mobile-first .form-panel {
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.mobile-first .form-panel {
+  position: static;
+}
+
+/* --- Bottom tab bar replaces the top nav, always reachable with a thumb -------------------- */
+
+.mobile-first .bottom-nav {
+  display: flex;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line);
+  padding: 6px max(6px, env(safe-area-inset-left)) calc(6px + env(safe-area-inset-bottom))
+    max(6px, env(safe-area-inset-right));
+  box-shadow: 0 -8px 24px rgba(20, 26, 31, 0.08);
+}
+
+.mobile-first .bottom-nav-link {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 7px 2px;
+  border-radius: 14px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.mobile-first .bottom-nav-icon {
+  font-size: 1.2rem;
+}
+
+.mobile-first .bottom-nav-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.mobile-first .bottom-nav-link.is-active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.mobile-first .app-main {
+  padding-bottom: calc(70px + env(safe-area-inset-bottom));
+}
+
+.mobile-first .global-alert-banner {
+  margin: 8px 16px 0;
+  font-size: 0.82rem;
+}
+
+/* --- Sub-tab bars (Overview/ETL Data/Evals/Migrations) scroll as one row of pills instead of
+   wrapping into extra rows that eat vertical space ------------------------------------------- */
+
+.mobile-first .pane-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  margin: 0 -16px 16px;
+  padding: 0 16px 2px;
+}
+
+.mobile-first .pane-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-first .pane-tab {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  white-space: nowrap;
+  padding: 8px 14px;
+}
+
+/* --- Admin sidebar becomes a horizontal scroller instead of eating a fixed side column ------ */
+
+.mobile-first .admin-sidebar {
+  flex-direction: row;
+  overflow-x: auto;
+  scrollbar-width: none;
+  position: static;
+  padding: 8px;
+  gap: 6px;
+}
+
+.mobile-first .admin-sidebar::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-first .admin-sidebar-link {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 8px 14px;
+}
+
+/* --- Fixed-column grids collapse to one column so nothing forces horizontal overflow -------- */
+
+.mobile-first .summary-grid,
+.mobile-first .kpi-grid,
+.mobile-first .rpm-config-grid,
+.mobile-first .mlflow-summary-grid,
+.mobile-first .form-grid,
+.mobile-first .eval-run-fields,
+.mobile-first .match-detail-fields {
+  grid-template-columns: 1fr;
+}
+
+/* --- Toolbars stack, and every action becomes a full-width, thumb-sized target --------------
+   The app already has a `@media (max-width: 720px)` layer (further down this file) that column-
+   stacks this same selector list for any narrow *window*, control or test. Mirrored here under
+   `.mobile-first` so "test" gets the same stacking at any width (a desktop-width window bucketed
+   into "test" still needs it), and relying on `align-items: stretch` (the default) for full-
+   width children rather than a flex-basis hack -- `flex: 1 1 100%` on the children of a *column*-
+   direction flex container sets their HEIGHT to 100%, not width, which is what produced a broken
+   masonry-style layout the first time this was tried here. */
+.mobile-first .toolbar,
+.mobile-first .panel-heading,
+.mobile-first .form-actions,
+.mobile-first .job-form-drawer-header,
+.mobile-first .toolbar-actions,
+.mobile-first .pagination-bar,
+.mobile-first .pagination-actions,
+.mobile-first .pagination-copy {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.mobile-first .toolbar-actions {
+  flex-wrap: nowrap;
+}
+
+.mobile-first .records-toolbar {
+  grid-template-columns: 1fr;
+}
+
+.mobile-first .search-input,
+.mobile-first .filter-select,
+.mobile-first .min-score-input,
+.mobile-first .date-input,
+.mobile-first .field input,
+.mobile-first .field textarea {
+  min-width: 0;
+  min-height: 44px;
+}
+
+.mobile-first .ghost-button,
+.mobile-first .primary-button,
+.mobile-first .danger-button {
+  min-height: 44px;
+  justify-content: center;
+}
+
+/* --- Job/match forms open as a bottom sheet instead of a side drawer ------------------------ */
+
+.mobile-first .job-form-drawer {
+  top: auto;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: auto;
+  max-height: 88svh;
+  border-left: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 20px 20px 0 0;
+  transform: translateY(102%);
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+}
+
+.mobile-first .job-form-drawer.is-open {
+  transform: translateY(0);
+}
+
+/* --- Agent topology graph stacks above its detail panel, with a shorter canvas -------------- */
+
+.mobile-first .agent-hero-body {
+  grid-template-columns: 1fr;
+}
+
+.mobile-first .agent-graph-wrap,
+.mobile-first .agent-flow {
+  height: 58svh;
+  min-height: 340px;
+}
+
+.mobile-first .agent-detail-panel {
+  height: auto;
+  min-height: 0;
+  max-height: 40svh;
+}
+
+.mobile-first .agent-flow-minimap {
+  display: none;
+}
+
+.mobile-first .agent-flow-stages {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mobile-first .agent-flow-stages::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-first .agent-stage-chip {
+  flex: 0 0 auto;
+  min-width: 200px;
+}
+
+/* --- Grafana embed fills the space left by the header/tabs/bottom nav ----------------------- */
+
+.mobile-first .grafana-embed {
+  height: calc(100svh - 230px);
+  min-height: 420px;
+}
+
+/* --- Jobs & Matches become tap-friendly cards instead of a table wider than the screen ------- */
+
+.mobile-first .table-wrap {
+  border: 0;
+  overflow: visible;
+}
+
+.mobile-first .jobs-table,
+.mobile-first .jobs-table tbody,
+.mobile-first .jobs-table tr,
+.mobile-first .jobs-table td {
+  display: block;
+  width: 100%;
+}
+
+.mobile-first .jobs-table thead {
+  display: none;
+}
+
+.mobile-first .jobs-table tr {
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  padding: 4px 14px;
+  box-shadow: 0 10px 24px rgba(20, 26, 31, 0.06);
+}
+
+.mobile-first .jobs-table td {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+}
+
+.mobile-first .jobs-table td:last-child {
+  border-bottom: 0;
+}
+
+.mobile-first .jobs-table td::before {
+  content: attr(data-label);
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+}
+
+.mobile-first .jobs-table td.row-actions-cell {
+  justify-content: flex-end;
+}
+
+.mobile-first .jobs-table td.row-actions-cell::before {
+  display: none;
+}
+
+/* --- Other data tables (evals/migration comparisons) stay tables but read more compactly ---- */
+
+.mobile-first .sweep-compare-table th,
+.mobile-first .sweep-compare-table td {
+  padding: 10px 12px;
+  font-size: 0.85rem;
+}
+
+/* --- Modals become full-screen sheets so there's no double scroll region -------------------- */
+
+.mobile-first .modal-overlay {
+  padding: 0;
+}
+
+.mobile-first .modal-panel {
+  width: 100%;
+  max-width: none;
+  height: 100svh;
+  max-height: 100svh;
+  border-radius: 0;
+}
+
+/* --- Dev-only variant switcher (dead code in production -- see MobileLayoutDevToggle.tsx) --- */
+
+.dev-layout-toggle {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 60;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(20, 26, 31, 0.85);
+  box-shadow: 0 8px 20px rgba(20, 26, 31, 0.25);
+}
+
+.dev-layout-toggle button {
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.dev-layout-toggle button.is-active {
+  background: #ffffff;
+  color: var(--text);
 }

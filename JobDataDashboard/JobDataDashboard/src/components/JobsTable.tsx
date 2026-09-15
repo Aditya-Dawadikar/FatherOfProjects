@@ -53,20 +53,20 @@ export default function JobsTable({ jobs, selectedJobId, busy, onSelectJob, onDe
                 className={selected ? 'is-selected' : undefined}
                 onClick={() => onSelectJob(job)}
               >
-                <td>{job.id}</td>
-                <td>
+                <td data-label="ID">{job.id}</td>
+                <td data-label="Source">
                   <span className="source-badge">{job.source}</span>
                 </td>
-                <td>
+                <td data-label="Company">
                   <div className="company-cell">
                     <strong>{job.company_name}</strong>
                     <span>{job.company_batch ?? 'Batch n/a'}</span>
                   </div>
                 </td>
-                <td>{job.job_role}</td>
-                <td>{job.location ?? 'Remote / n/a'}</td>
-                <td>{job.job_type ?? 'n/a'}</td>
-                <td>{new Date(job.updated_at).toLocaleString()}</td>
+                <td data-label="Role">{job.job_role}</td>
+                <td data-label="Location">{job.location ?? 'Remote / n/a'}</td>
+                <td data-label="Type">{job.job_type ?? 'n/a'}</td>
+                <td data-label="Updated">{new Date(job.updated_at).toLocaleString()}</td>
                 <td className="row-actions-cell">
                   <button
                     type="button"
