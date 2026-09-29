@@ -36,7 +36,44 @@ where the build happens:
 - **Autocapture** -- on by default (posthog-js default), covers clicks/inputs across the app.
 - **Custom events** -- `feature_flag_toggled` (`pages/admin/FeatureFlagsTab.tsx`) and
   `rate_limit_distribution_updated` (`pages/admin/RateLimitsTab.tsx`), the two places the
-  dashboard's *operator* changes real system state.
+  dashboard's *operator* changes real system state; plus the landing-page experiment's events
+  (below).
+
+## Experiment: `landing-page`
+
+Does seeing a landing page first make visitors explore more of the dashboard? The test variant
+gets `#/welcome` (`src/pages/LandingPage.tsx`, a lazy-loaded chunk), control gets the Overview tab
+as before. Gating lives in `src/lib/landingExperiment.ts` + `src/components/LandingGate.tsx`:
+
+- **Who's enrolled**: only visitors arriving at the root (no hash, or `#/`). Deep links
+  (`#/evals/kpis`, ...) skip the landing page and never read the flag, so they log no exposure.
+- **Once per visitor**: after the landing page is shown, `localStorage.landing_seen` sends later
+  root visits straight to the dashboard.
+- **Phones are included** -- independent of `mobile-first-layout`; the landing page is responsive
+  on its own.
+- **Flag timeout**: a root arrival waits up to 1.5s for flags, then falls back to the dashboard
+  without reading the flag (no exposure logged).
+- **QA override**: `?landing=test` or `?landing=control` (not remembered, unlike
+  `?mobile_layout`).
+
+Events:
+
+| Event | Where | Properties |
+| --- | --- | --- |
+| `dashboard_section_reached` | `Layout.tsx`, both variants | `section` (first path segment, `overview` for `/`), `sections_reached_count` -- once per section per browser session |
+| `landing_viewed` | landing page mount | -- |
+| `landing_section_viewed` | landing page, section scrolled into view | `section` (`stats`, `how`, `under-the-hood`, `doors`, `footer`) |
+| `landing_cta_clicked` | every link out of the landing page | `target` (route), `position` (`header`, `door`, `step-score`, `hero-match`, ...) |
+
+Set up in PostHog Cloud (the code only reads the flag): create an experiment with feature flag
+key `landing-page`, variants `control` / `test` at 50/50, and metrics:
+
+- **Primary**: mean count of `dashboard_section_reached` per user.
+- **Secondary**: distinct `$pageview` pathnames per user (excluding `/welcome`); funnel from
+  exposure to any `$pageview` under `/evals` or `/admin`.
+- **Guardrail**: share of test users with no dashboard `$pageview` at all (landing drop-off).
+
+Portfolio-level traffic is low, so expect it to need weeks rather than days to reach significance.
 
 ## Suggested PostHog insights
 

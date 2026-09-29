@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Navigate, Route, HashRouter as Router, Routes } from 'react-router-dom'
 import './App.css'
@@ -23,6 +24,12 @@ import PromptComparisonTab from './pages/evals/PromptComparisonTab'
 import PromptVersionsTab from './pages/evals/PromptVersionsTab'
 import RunHistoryTab from './pages/evals/RunHistoryTab'
 import EvalsLayout from './pages/evals/EvalsLayout'
+import LandingGate from './components/LandingGate'
+import { LANDING_PATH } from './lib/landingExperiment'
+
+// Only the landing-page experiment's test variant ever renders this -- split into its own chunk so
+// everyone else never downloads it.
+const LandingPage = lazy(() => import('./pages/LandingPage'))
 
 const queryClient = new QueryClient()
 
@@ -30,45 +37,56 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Router>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route index element={<OverviewPage />} />
-            {/* Actually rendered by Layout (kept permanently mounted there, shown/hidden with CSS,
-                so its Grafana iframe doesn't reload every time this tab is revisited) -- this
-                route exists only so /observability is a real, matchable, refreshable URL. */}
-            <Route path="observability" element={null} />
-            <Route path="etl-data" element={<EtlDataLayout />}>
-              <Route index element={<Navigate to="jobs" replace />} />
-              <Route path="jobs" element={<JobsPage />} />
-              <Route path="matches" element={<MatchesPage />} />
-            </Route>
-            <Route path="admin" element={<AdminLayout />}>
-              <Route index element={<Navigate to="billing" replace />} />
-              <Route path="billing" element={<BillingTab />} />
-              <Route path="rate-limits" element={<RateLimitsTab />} />
-              <Route path="feature-flags" element={<FeatureFlagsTab />} />
-              <Route path="migrations" element={<MigrationLayout />}>
-                <Route index element={<Navigate to="prompt-version" replace />} />
-                <Route path="prompt-version" element={<PromptVersionTab />} />
-                <Route path="backfill-handoff" element={<BackfillHandoffTab />} />
-                <Route path="prompt-catalog" element={<PromptCatalogTab />} />
+        <LandingGate>
+          <Routes>
+            {/* Outside Layout: the landing page has its own header and no dashboard nav. */}
+            <Route
+              path={LANDING_PATH}
+              element={
+                <Suspense fallback={<div className="landing-gate-pending" />}>
+                  <LandingPage />
+                </Suspense>
+              }
+            />
+            <Route element={<Layout />}>
+              <Route index element={<OverviewPage />} />
+              {/* Actually rendered by Layout (kept permanently mounted there, shown/hidden with CSS,
+                  so its Grafana iframe doesn't reload every time this tab is revisited) -- this
+                  route exists only so /observability is a real, matchable, refreshable URL. */}
+              <Route path="observability" element={null} />
+              <Route path="etl-data" element={<EtlDataLayout />}>
+                <Route index element={<Navigate to="jobs" replace />} />
+                <Route path="jobs" element={<JobsPage />} />
+                <Route path="matches" element={<MatchesPage />} />
               </Route>
-            </Route>
-            <Route path="evals" element={<EvalsPage />}>
-              <Route element={<EvalsLayout />}>
-                <Route index element={<Navigate to="kpis" replace />} />
-                <Route path="kpis" element={<KpisTab />} />
-                <Route path="prompt" element={<PromptComparisonTab />} />
-                <Route path="prompt-versions" element={<PromptVersionsTab />} />
-                <Route path="datasets" element={<DatasetsTab />} />
-                <Route path="behavior" element={<AgentBehaviorTab />} />
-                <Route path="guardrails" element={<GuardrailsTab />} />
-                <Route path="history" element={<RunHistoryTab />} />
+              <Route path="admin" element={<AdminLayout />}>
+                <Route index element={<Navigate to="billing" replace />} />
+                <Route path="billing" element={<BillingTab />} />
+                <Route path="rate-limits" element={<RateLimitsTab />} />
+                <Route path="feature-flags" element={<FeatureFlagsTab />} />
+                <Route path="migrations" element={<MigrationLayout />}>
+                  <Route index element={<Navigate to="prompt-version" replace />} />
+                  <Route path="prompt-version" element={<PromptVersionTab />} />
+                  <Route path="backfill-handoff" element={<BackfillHandoffTab />} />
+                  <Route path="prompt-catalog" element={<PromptCatalogTab />} />
+                </Route>
               </Route>
+              <Route path="evals" element={<EvalsPage />}>
+                <Route element={<EvalsLayout />}>
+                  <Route index element={<Navigate to="kpis" replace />} />
+                  <Route path="kpis" element={<KpisTab />} />
+                  <Route path="prompt" element={<PromptComparisonTab />} />
+                  <Route path="prompt-versions" element={<PromptVersionsTab />} />
+                  <Route path="datasets" element={<DatasetsTab />} />
+                  <Route path="behavior" element={<AgentBehaviorTab />} />
+                  <Route path="guardrails" element={<GuardrailsTab />} />
+                  <Route path="history" element={<RunHistoryTab />} />
+                </Route>
+              </Route>
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
+          </Routes>
+        </LandingGate>
       </Router>
     </QueryClientProvider>
   )

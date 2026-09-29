@@ -2676,3 +2676,9 @@
   background: #ffffff;
   color: var(--text);
 }
+/* Shown by LandingGate (src/components/LandingGate.tsx) for the brief moment between a root
+   arrival and knowing its landing-page experiment variant -- blank, at most ~1.5s. */
+.landing-gate-pending {
+  min-height: 100svh;
+  background: var(--bg);
+}

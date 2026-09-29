@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { FiActivity, FiAlertTriangle, FiBarChart2, FiDatabase, FiLayout, FiSettings } from 'react-icons/fi'
 import { useBillingStatus } from '../hooks'
-import { trackPageview } from '../lib/posthog'
+import { trackPageview, trackSectionReached } from '../lib/posthog'
 import { useMobileLayout } from '../lib/experiment'
 import MobileLayoutDevToggle from './MobileLayoutDevToggle'
 import ObservabilityPage from '../pages/ObservabilityPage'
@@ -44,6 +44,7 @@ export default function Layout() {
   // manually here instead, in the one place every route renders through.
   useEffect(() => {
     trackPageview(location.pathname)
+    trackSectionReached(location.pathname)
   }, [location.pathname])
   // Polls from every tab (not just Rate Limits, where the billing-exhaustion alert detail lives)
   // -- billing exhaustion means every subsequent live/backfill scoring call keeps failing the
