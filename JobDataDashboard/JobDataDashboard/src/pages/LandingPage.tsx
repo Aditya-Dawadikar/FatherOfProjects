@@ -1,10 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import type { ComponentType, ReactNode } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import type { IconType } from 'react-icons'
 import { FiActivity, FiArrowRight, FiBarChart2, FiDatabase, FiLayout, FiSettings } from 'react-icons/fi'
+import BrandMark from '../components/BrandMark'
+import { AdminPreview, EtlPreview, EvalsPreview, ObservabilityPreview, OverviewPreview } from '../components/landing/DoorPreviews'
+import {
+  BudgetVisual,
+  EventStreamVisual,
+  GuardrailVisual,
+  KillSwitchVisual,
+  ObservabilityVisual,
+  SchedulingVisual,
+} from '../components/landing/FeatureVisuals'
 import FunnelHero from '../components/landing/FunnelHero'
+import LandingFooter from '../components/landing/LandingFooter'
 import { useMlflowSummary, usePipelineFunnel } from '../hooks'
+import { PRODUCT_NAME } from '../lib/brand'
 import { LANDING_PATH } from '../lib/landingExperiment'
 import { trackEvent, trackPageview } from '../lib/posthog'
 import './LandingPage.css'
@@ -56,61 +68,70 @@ const STEPS: Step[] = [
   },
 ]
 
-type Feature = { tag: string; title: string; body: string; spark: string; to: string }
+// Bento grid, 3 columns: "wide" cards span two, and each row pairs one wide with one narrow,
+// alternating sides.
+type Feature = { tag: string; title: string; body: string; to: string; visual: ComponentType; size: 'wide' | 'narrow' }
 
 const FEATURES: Feature[] = [
   {
     tag: 'Guardrails',
     title: 'Postings are untrusted input',
-    body: 'Checks for prompt-injected job descriptions, evaluated like everything else.',
-    spark: 'M0 40 L20 36 L40 38 L60 20 L80 24 L100 10 L120 12',
+    body: 'A job description can carry instructions aimed at the model. They are caught before scoring, and the checks are evaluated like everything else.',
     to: '/evals/guardrails',
+    visual: GuardrailVisual,
+    size: 'wide',
   },
   {
     tag: 'Cost control',
     title: 'RPM budget + billing alarm',
     body: 'A per-minute request budget. If Gemini billing runs out, every tab shows it right away.',
-    spark: 'M0 24 L20 24 L40 24 L60 8 L80 24 L100 24 L120 24',
     to: '/admin/rate-limits',
+    visual: BudgetVisual,
+    size: 'narrow',
   },
   {
     tag: 'Scheduling',
     title: 'Live vs backfill split',
     body: 'Fresh jobs always get scored first. A backlog cannot crowd them out.',
-    spark: 'M0 44 L30 30 L60 30 L90 14 L120 6',
     to: '/admin/migrations/backfill-handoff',
+    visual: SchedulingVisual,
+    size: 'narrow',
   },
   {
     tag: 'Observability',
     title: 'Prometheus + Grafana',
-    body: 'Operational health tracked apart from the pipeline data.',
-    spark: 'M0 30 L15 22 L30 34 L45 18 L60 26 L75 12 L90 28 L105 16 L120 20',
+    body: 'Throughput, latency and errors for every service, tracked apart from the pipeline data itself.',
     to: '/observability',
+    visual: ObservabilityVisual,
+    size: 'wide',
   },
   {
     tag: 'Kill switches',
     title: 'Feature-flag registry',
     body: 'Scrape, agent and backfill can each be switched off from Admin.',
-    spark: 'M0 10 L40 10 L40 38 L80 38 L80 10 L120 10',
     to: '/admin/feature-flags',
+    visual: KillSwitchVisual,
+    size: 'narrow',
   },
   {
     tag: 'Events',
     title: 'Redis stream of every stage',
-    body: 'Pipeline start, stage and completion events for the whole system.',
-    spark: 'M0 24 L10 24 L14 8 L18 40 L22 24 L60 24 L64 8 L68 40 L72 24 L120 24',
+    body: 'Every service publishes pipeline start, stage and completion events to one shared stream.',
     to: '/',
+    visual: EventStreamVisual,
+    size: 'wide',
   },
 ]
 
-type Door = { title: string; body: string; to: string; icon: IconType; bars: number[]; tone: 'accent' | 'coral' | 'muted' }
+// 6-column grid: the two "large" doors share the first row, the three "small" ones the second.
+type Door = { title: string; body: string; to: string; icon: IconType; preview: ComponentType; size: 'large' | 'small' }
 
 const DOORS: Door[] = [
-  { title: 'Agent Overview', body: 'The live agent graph, ETL architecture and data overview.', to: '/', icon: FiLayout, bars: [30, 60, 44, 80, 52, 70, 40], tone: 'accent' },
-  { title: 'Observability', body: 'Grafana boards for throughput, latency and errors.', to: '/observability', icon: FiBarChart2, bars: [50, 54, 48, 70, 66, 90, 84], tone: 'accent' },
-  { title: 'Agent Evals', body: 'KPIs, prompt comparisons, datasets, guardrails and run history.', to: '/evals', icon: FiActivity, bars: [80, 72, 86, 64, 90, 76, 88], tone: 'coral' },
-  { title: 'ETL Data', body: 'Every scraped job and every scored match.', to: '/etl-data', icon: FiDatabase, bars: [90, 70, 56, 40, 30, 20, 14], tone: 'accent' },
-  { title: 'Admin', body: 'Billing, rate limits, feature flags and prompt migrations.', to: '/admin', icon: FiSettings, bars: [40, 40, 40, 90, 40, 40, 40], tone: 'muted' },
+  { title: 'Agent Overview', body: 'The live agent graph, ETL architecture and data overview.', to: '/', icon: FiLayout, preview: OverviewPreview, size: 'large' },
+  { title: 'Agent Evals', body: 'KPIs, prompt comparisons, datasets, guardrails and run history.', to: '/evals', icon: FiActivity, preview: EvalsPreview, size: 'large' },
+  { title: 'Observability', body: 'Grafana boards for throughput, latency and errors.', to: '/observability', icon: FiBarChart2, preview: ObservabilityPreview, size: 'small' },
+  { title: 'ETL Data', body: 'Every scraped job and every scored match.', to: '/etl-data', icon: FiDatabase, preview: EtlPreview, size: 'small' },
+  { title: 'Admin', body: 'Billing, rate limits, feature flags and prompt migrations.', to: '/admin', icon: FiSettings, preview: AdminPreview, size: 'small' },
 ]
 
 function trackCta(target: string, position: string) {
@@ -180,6 +201,11 @@ function Section({ name, id, className, revealed, register, children }: SectionP
 }
 
 export default function LandingPage() {
+  const location = useLocation()
+  // How this visit got here: "experiment" (LandingGate's redirect for the test variant),
+  // "dashboard-nav" (the brand link in the dashboard's top nav), or "direct" (typed/shared URL).
+  // Lets the experiment analysis drop control visitors who opened the landing page themselves.
+  const [entry] = useState<string>(() => (location.state as { entry?: string } | null)?.entry ?? 'direct')
   const funnelQuery = usePipelineFunnel()
   const mlflowQuery = useMlflowSummary()
   const [revealed, setRevealed] = useState<Set<string>>(() => new Set())
@@ -188,7 +214,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     trackPageview(LANDING_PATH)
-    trackEvent('landing_viewed')
+    trackEvent('landing_viewed', { entry })
 
     if (!document.getElementById(FONTS_LINK_ID)) {
       const link = document.createElement('link')
@@ -197,7 +223,7 @@ export default function LandingPage() {
       link.href = FONTS_HREF
       document.head.appendChild(link)
     }
-  }, [])
+  }, [entry])
 
   useEffect(() => {
     const seen = new Set<string>()
@@ -214,7 +240,7 @@ export default function LandingPage() {
           setRevealed((current) => new Set(current).add(name))
         }
       },
-      { threshold: 0.2 },
+      { threshold: 0.12 },
     )
     observerRef.current = observer
     sectionsRef.current.forEach((element) => observer.observe(element))
@@ -246,11 +272,8 @@ export default function LandingPage() {
     <div className="landing">
       <header className="landing-header">
         <Link to="/" className="landing-brand" onClick={() => trackCta('/', 'header-brand')}>
-          <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
-            <circle cx="14" cy="14" r="12" fill="none" stroke="var(--l-accent)" strokeWidth="2" />
-            <circle cx="14" cy="14" r="4" fill="var(--l-coral)" />
-          </svg>
-          FatherOfProjects
+          <BrandMark />
+          {PRODUCT_NAME}
         </Link>
         <nav className="landing-nav" aria-label="Landing page">
           <button type="button" onClick={() => scrollTo('how')}>How it works</button>
@@ -265,15 +288,15 @@ export default function LandingPage() {
       </header>
 
       <section className="landing-intro">
-        <div className="landing-eyebrow">An autonomous job-search pipeline</div>
+        <div className="landing-eyebrow">Job recommendation agent</div>
         <h1>
           Four job boards in.{' '}
           <br />
           <span className="landing-highlight">One ranked list</span> out.
         </h1>
         <p>
-          It scrapes engineering roles every four hours, has an LLM agent read and score each one against a resume, and
-          puts the results in one dashboard. Nobody has to rescan four career sites by hand.
+          Built to scrape engineering roles every four hours, have an LLM agent read and score each one against a resume,
+          and put the results in one dashboard, so nobody has to rescan four career sites by hand.
         </p>
       </section>
 
@@ -298,7 +321,7 @@ export default function LandingPage() {
         </div>
         <div className="landing-stat">
           <StatValue target={4} active={statsActive} />
-          <span className="landing-stat-label">job boards, checked every 4 hours</span>
+          <span className="landing-stat-label">job boards it scrapes</span>
         </div>
       </Section>
 
@@ -335,15 +358,17 @@ export default function LandingPage() {
             <Link
               key={feature.tag}
               to={feature.to}
-              className="landing-card landing-feature"
+              className={`landing-card landing-feature is-${feature.size}`}
               onClick={() => trackCta(feature.to, `feature-${feature.tag.toLowerCase().replace(/\s+/g, '-')}`)}
             >
-              <svg className="landing-feature-spark" width="120" height="48" viewBox="0 0 120 48" aria-hidden="true">
-                <path d={feature.spark} />
-              </svg>
-              <span className="landing-mono is-upper">{feature.tag}</span>
-              <h3>{feature.title}</h3>
-              <p>{feature.body}</p>
+              <div className="landing-feature-visual">
+                <feature.visual />
+              </div>
+              <div className="landing-feature-text">
+                <span className="landing-mono is-upper">{feature.tag}</span>
+                <h3>{feature.title}</h3>
+                <p>{feature.body}</p>
+              </div>
             </Link>
           ))}
         </div>
@@ -352,36 +377,42 @@ export default function LandingPage() {
       <Section name="doors" id="doors" className="landing-section" revealed={revealed.has('doors')} register={registerSection}>
         <div className="landing-section-head">
           <h2>Pick a door.</h2>
-          <p>Five sections, all running on live data. Each door opens its tab directly.</p>
+          <p>Five sections, all backed by the real data the pipeline collected. Each door opens its tab directly.</p>
         </div>
         <div className="landing-doors">
           {DOORS.map((door) => (
-            <Link key={door.to} to={door.to} className="landing-card landing-door" onClick={() => trackCta(door.to, 'door')}>
-              <div className={`landing-door-preview is-${door.tone}`} aria-hidden="true">
-                <door.icon className="landing-door-icon" />
-                <div className="landing-door-bars">
-                  {door.bars.map((height, index) => (
-                    <span key={index} style={{ height: `${height}%` }} />
-                  ))}
-                </div>
+            <Link key={door.to} to={door.to} className={`landing-card landing-door is-${door.size}`} onClick={() => trackCta(door.to, 'door')}>
+              <div className="landing-door-preview">
+                <door.preview />
               </div>
-              <span className="landing-door-title">{door.title}</span>
-              <span className="landing-door-body">{door.body}</span>
-              <span className="landing-mono is-accent">#{door.to}</span>
+              <div className="landing-door-text">
+                <span className="landing-door-title">
+                  <door.icon aria-hidden="true" className="landing-door-icon" />
+                  {door.title}
+                </span>
+                <span className="landing-door-body">{door.body}</span>
+              </div>
+              <span className="landing-door-enter">
+                Open <ArrowIcon />
+              </span>
             </Link>
           ))}
         </div>
       </Section>
 
-      <Section name="footer" className="landing-footer" revealed={revealed.has('footer')} register={registerSection}>
+      <Section name="cta" className="landing-footer" revealed={revealed.has('cta')} register={registerSection}>
         <div>
-          <h2>See it running.</h2>
+          <h2>See how it works.</h2>
           <p>Real data, a real agent, real evals.</p>
         </div>
         <Link to="/" className="landing-button is-primary is-large" onClick={() => trackCta('/', 'footer')}>
           Open the dashboard
           <ArrowIcon />
         </Link>
+      </Section>
+
+      <Section name="footer" className="landing-site-footer-section" revealed={revealed.has('footer')} register={registerSection}>
+        <LandingFooter />
       </Section>
     </div>
   )

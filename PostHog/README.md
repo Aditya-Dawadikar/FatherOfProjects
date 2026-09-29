@@ -49,6 +49,9 @@ as before. Gating lives in `src/lib/landingExperiment.ts` + `src/components/Land
   (`#/evals/kpis`, ...) skip the landing page and never read the flag, so they log no exposure.
 - **Every root arrival**: for test visitors `/welcome` is the front door -- each visit to the
   root lands there, not just the first. "Open the dashboard" (or any door) goes into the app.
+- **Revisits from the dashboard**: the brand link in the top nav opens `/welcome` from any page, for
+  both variants. Filter `landing_viewed` on `entry = experiment` when comparing variants, so control
+  visitors who chose to open it don't count as exposed to the landing page.
 - **Phones are included** -- independent of `mobile-first-layout`; the landing page is responsive
   on its own.
 - **Flag timeout**: a root arrival waits up to 1.5s for flags, then falls back to the dashboard
@@ -61,8 +64,10 @@ Events:
 | Event | Where | Properties |
 | --- | --- | --- |
 | `dashboard_section_reached` | `Layout.tsx`, both variants | `section` (first path segment, `overview` for `/`), `sections_reached_count` -- once per section per browser session |
-| `landing_viewed` | landing page mount | -- |
-| `landing_section_viewed` | landing page, section scrolled into view | `section` (`stats`, `how`, `under-the-hood`, `doors`, `footer`) |
+| `landing_viewed` | landing page mount | `entry`: `experiment` (the test variant's redirect), `dashboard-nav` (brand link in the dashboard's top nav), or `direct` |
+| `landing_section_viewed` | landing page, section scrolled into view | `section` (`stats`, `how`, `under-the-hood`, `doors`, `cta`, `footer`) |
+| `landing_link_clicked` | brand link in the dashboard's top nav (every page) | `from` (pathname it was clicked on) |
+| `landing_profile_link_clicked` | landing page footer | `kind` (`github`, `leetcode`, `linkedin`, `email`, `phone`) |
 | `landing_cta_clicked` | every link out of the landing page | `target` (route), `position` (`header`, `door`, `step-score`, `hero-bucket-high`, ...) |
 
 Set up in PostHog Cloud (the code only reads the flag): create an experiment with feature flag

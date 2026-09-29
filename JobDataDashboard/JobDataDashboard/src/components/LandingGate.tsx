@@ -24,7 +24,7 @@ export default function LandingGate({ children }: { children: ReactNode }) {
         return
       }
       if (variant === 'test') {
-        navigate(LANDING_PATH, { replace: true })
+        navigate(LANDING_PATH, { replace: true, state: { entry: 'experiment' } })
       }
       setIsResolving(false)
     })

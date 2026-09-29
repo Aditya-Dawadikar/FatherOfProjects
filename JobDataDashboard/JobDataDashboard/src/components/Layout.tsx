@@ -1,8 +1,11 @@
 import { useEffect } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { FiActivity, FiAlertTriangle, FiBarChart2, FiDatabase, FiLayout, FiSettings } from 'react-icons/fi'
 import { useBillingStatus } from '../hooks'
-import { trackPageview, trackSectionReached } from '../lib/posthog'
+import { PRODUCT_NAME } from '../lib/brand'
+import { LANDING_PATH } from '../lib/landingExperiment'
+import { trackEvent, trackPageview, trackSectionReached } from '../lib/posthog'
+import BrandMark from './BrandMark'
 import { useMobileLayout } from '../lib/experiment'
 import MobileLayoutDevToggle from './MobileLayoutDevToggle'
 import ObservabilityPage from '../pages/ObservabilityPage'
@@ -64,6 +67,19 @@ export default function Layout() {
         </NavLink>
       )}
       <div className="top-nav">
+        {/* Way back to the landing page from anywhere in the dashboard. Reachable by control
+            visitors of the landing-page experiment too -- landing_viewed's `entry` property
+            ("dashboard-nav") is how the analysis tells those visits apart. */}
+        <Link
+          to={LANDING_PATH}
+          state={{ entry: 'dashboard-nav' }}
+          className="top-nav-brand"
+          aria-label={`${PRODUCT_NAME}: about this project`}
+          onClick={() => trackEvent('landing_link_clicked', { from: location.pathname })}
+        >
+          <BrandMark size={24} />
+          <span>{PRODUCT_NAME}</span>
+        </Link>
         <nav className="view-tabs">
           {NAV_ITEMS.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end} className={tabClassName}>
