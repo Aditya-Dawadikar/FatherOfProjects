@@ -63,7 +63,7 @@ Events:
 | `dashboard_section_reached` | `Layout.tsx`, both variants | `section` (first path segment, `overview` for `/`), `sections_reached_count` -- once per section per browser session |
 | `landing_viewed` | landing page mount | -- |
 | `landing_section_viewed` | landing page, section scrolled into view | `section` (`stats`, `how`, `under-the-hood`, `doors`, `footer`) |
-| `landing_cta_clicked` | every link out of the landing page | `target` (route), `position` (`header`, `door`, `step-score`, `hero-match`, ...) |
+| `landing_cta_clicked` | every link out of the landing page | `target` (route), `position` (`header`, `door`, `step-score`, `hero-bucket-high`, ...) |
 
 Set up in PostHog Cloud (the code only reads the flag): create an experiment with feature flag
 key `landing-page`, variants `control` / `test` at 50/50, and metrics:

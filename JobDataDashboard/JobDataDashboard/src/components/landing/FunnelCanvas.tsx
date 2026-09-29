@@ -1,12 +1,14 @@
 import { useEffect, useRef } from 'react'
-import { FUNNEL_GEOMETRY } from './funnelGeometry'
+import { BUCKETS, FUNNEL_GEOMETRY } from './funnelGeometry'
 import type { FunnelOrientation } from './funnelGeometry'
 
 // The landing page's hero graphic: postings stream in from the four job boards, most get dropped
-// at WebScraper's filter gates, the survivors pass through the scoring agent, and a few come out
-// as ranked matches. Purely illustrative (particles aren't real jobs -- the counts and match cards
-// around it are the live data). Drawn on a <canvas> rather than as SVG/React elements because it's
-// a few hundred moving particles redrawn every frame.
+// at WebScraper's filter gates, the survivors pass through the scoring agent, and each comes out
+// into one of the four score buckets -- in the same proportions as the real scored jobs (see
+// bucketCounts). Particles aren't individual real jobs; the counts on the buckets are. Drawn on a
+// <canvas> rather than as SVG/React elements because it's a few hundred particles every frame.
+
+export type FunnelHighlight = { side: 'source' | 'bucket'; index: number } | null
 
 const GATE_LABELS = ['recent', 'eng title', 'per-source cap']
 
@@ -21,6 +23,9 @@ const COLORS = {
   text: '#ECEBF5',
   caption: '#7D7C98',
 }
+
+// Used until /matches/funnel has loaded (or when nothing has been scored yet).
+const DEFAULT_BUCKET_SHARES = [0.2, 0.35, 0.35, 0.1]
 
 // Timestamp used for the single still frame drawn under prefers-reduced-motion -- far enough in
 // that the particles are spread along the whole funnel rather than bunched at the start.
@@ -39,14 +44,26 @@ function smooth(v: number) {
   return v * v * (3 - 2 * v)
 }
 
+function pickBucket(fate: number, shares: number[]) {
+  let cumulative = 0
+  for (let index = 0; index < shares.length; index++) {
+    cumulative += shares[index]
+    if (fate < cumulative) {
+      return index
+    }
+  }
+  return shares.length - 1
+}
+
 type DrawOptions = {
   orientation: FunnelOrientation
   t: number
-  highlightedLane: number | null
+  highlight: FunnelHighlight
   lensCaption: string
+  bucketShares: number[]
 }
 
-function drawFrame(ctx: CanvasRenderingContext2D, { orientation, t, highlightedLane, lensCaption }: DrawOptions) {
+function drawFrame(ctx: CanvasRenderingContext2D, { orientation, t, highlight, lensCaption, bucketShares }: DrawOptions) {
   const g = FUNNEL_GEOMETRY[orientation]
   const horizontal = orientation === 'horizontal'
   // Maps (along, across) design coords to canvas (x, y).
@@ -54,13 +71,15 @@ function drawFrame(ctx: CanvasRenderingContext2D, { orientation, t, highlightedL
 
   ctx.clearRect(0, 0, g.width, g.height)
 
-  // Lane guides from each source into the first gate.
+  // Lane guides: sources into the first gate, and mirrored out of the fan-out into each bucket.
   ctx.strokeStyle = COLORS.lane
   ctx.lineWidth = 1
   for (const lane of g.lanes) {
     ctx.beginPath()
     ctx.moveTo(...point(g.alongStart, lane))
     ctx.lineTo(...point(g.gates[0], lane))
+    ctx.moveTo(...point(g.spreadEnd, lane))
+    ctx.lineTo(...point(g.alongEnd, lane))
     ctx.stroke()
   }
 
@@ -129,39 +148,48 @@ function drawFrame(ctx: CanvasRenderingContext2D, { orientation, t, highlightedL
   ctx.globalAlpha = 1
 
   // Particles.
-  const matchTravel = g.matchEnd - g.lensAlong
+  const alongLength = g.alongEnd - g.alongStart
   for (let i = 0; i < g.count; i++) {
     const lane = i % 4
-    const u = (hash(i, 1) + t * (0.045 + hash(i, 2) * 0.04)) % 1
-    const along = g.alongStart + u * g.alongLength
-    const squeeze = smooth(clamp01((along - g.squeezeStart) / g.squeezeLength))
-    let across = g.lanes[lane] + (g.center - g.lanes[lane]) * squeeze + (hash(i, 3) - 0.5) * g.jitter * (1 - squeeze * 0.9)
+    const bucket = pickBucket(hash(i, 5), bucketShares)
+    const u = (hash(i, 1) + t * (0.04 + hash(i, 2) * 0.035)) % 1
+    const along = g.alongStart + u * alongLength
+    const jitter = (hash(i, 3) - 0.5) * g.jitter
+    let across: number
     let alpha = 0.85
     let color = COLORS.accent
     let radius = 1.4 + hash(i, 7) * 1.6
 
-    // ~40% survive the three gates; of those, ~45% come out of the agent as matches.
+    // ~55% survive the three gates -- enough to keep the bucket side as lively as the source side.
     const fate = hash(i, 4)
-    const droppedAt = fate < 0.3 ? 0 : fate < 0.5 ? 1 : fate < 0.6 ? 2 : -1
-    if (droppedAt >= 0 && along > g.gates[droppedAt]) {
-      const d = along - g.gates[droppedAt]
-      across += horizontal ? d * d * 0.03 : (lane < 2 ? -1 : 1) * d * d * 0.03
-      alpha = Math.max(0, 0.7 - d / 60)
-      color = COLORS.dropped
-    } else if (along > g.lensAlong) {
-      if (hash(i, 5) > 0.55) {
-        const k = smooth(clamp01((along - g.lensAlong) / matchTravel))
-        across = g.center + (g.slots[Math.floor(hash(i, 6) * g.slots.length)] - g.center) * k
-        color = COLORS.coral
-        radius = 3
-        alpha = along > g.matchEnd ? Math.max(0, 1 - (along - g.matchEnd) / 20) : 1
-      } else {
+    const droppedAt = fate < 0.2 ? 0 : fate < 0.35 ? 1 : fate < 0.45 ? 2 : -1
+    const isDropped = droppedAt >= 0
+
+    if (along < g.lensAlong) {
+      const squeeze = smooth(clamp01((along - g.squeezeStart) / (g.squeezeEnd - g.squeezeStart)))
+      across = g.lanes[lane] + (g.center - g.lanes[lane]) * squeeze + jitter * (1 - squeeze * 0.9)
+      if (isDropped && along > g.gates[droppedAt]) {
+        const d = along - g.gates[droppedAt]
+        across += horizontal ? d * d * 0.03 : (lane < 2 ? -1 : 1) * d * d * 0.03
+        alpha = Math.max(0, 0.7 - d / 60)
         color = COLORS.dropped
-        alpha = Math.max(0, 0.6 - (along - g.lensAlong) / (matchTravel * 0.45))
       }
+    } else if (isDropped) {
+      continue
+    } else {
+      const spread = smooth(clamp01((along - g.spreadStart) / (g.spreadEnd - g.spreadStart)))
+      across = g.center + (g.lanes[bucket] - g.center) * spread + jitter * (0.1 + 0.15 * spread)
+      color = BUCKETS[bucket].color
+      radius = 1.8 + hash(i, 7) * 1.4
+      // Sink into the bucket over the last stretch.
+      alpha = Math.min(1, (g.alongEnd - along) / 40)
     }
-    if (highlightedLane !== null && lane !== highlightedLane) {
-      alpha *= 0.12
+
+    if (highlight) {
+      const isHighlighted = highlight.side === 'source' ? lane === highlight.index : !isDropped && bucket === highlight.index
+      if (!isHighlighted) {
+        alpha *= 0.12
+      }
     }
     if (alpha <= 0.01) {
       continue
@@ -194,21 +222,29 @@ function drawFrame(ctx: CanvasRenderingContext2D, { orientation, t, highlightedL
 
 type FunnelCanvasProps = {
   orientation: FunnelOrientation
-  highlightedLane: number | null
+  highlight: FunnelHighlight
   lensCaption: string
+  // Real number of jobs in each bucket (BUCKETS order) -- sets how particles split between them.
+  bucketCounts: number[] | null
 }
 
-export default function FunnelCanvas({ orientation, highlightedLane, lensCaption }: FunnelCanvasProps) {
+export default function FunnelCanvas({ orientation, highlight, lensCaption, bucketCounts }: FunnelCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  // Read by the animation loop every frame -- kept in refs so hovering a lane doesn't tear down
-  // and restart the loop.
-  const highlightedLaneRef = useRef(highlightedLane)
-  const lensCaptionRef = useRef(lensCaption)
+  // Read by the animation loop every frame -- kept in a ref so hovering or new data doesn't tear
+  // down and restart the loop.
+  const liveRef = useRef({ highlight, lensCaption, bucketShares: DEFAULT_BUCKET_SHARES })
+  const redrawStillRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
-    highlightedLaneRef.current = highlightedLane
-    lensCaptionRef.current = lensCaption
-  }, [highlightedLane, lensCaption])
+    const total = bucketCounts?.reduce((sum, count) => sum + count, 0) ?? 0
+    liveRef.current = {
+      highlight,
+      lensCaption,
+      bucketShares: bucketCounts && total > 0 ? bucketCounts.map((count) => count / total) : DEFAULT_BUCKET_SHARES,
+    }
+    // Under reduced motion nothing is animating, so repaint the still frame to reflect the change.
+    redrawStillRef.current?.()
+  }, [highlight, lensCaption, bucketCounts])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -223,8 +259,7 @@ export default function FunnelCanvas({ orientation, highlightedLane, lensCaption
     let isVisible = true
     const startedAt = performance.now()
 
-    const draw = (seconds: number) =>
-      drawFrame(ctx, { orientation, t: seconds, highlightedLane: highlightedLaneRef.current, lensCaption: lensCaptionRef.current })
+    const draw = (seconds: number) => drawFrame(ctx, { orientation, t: seconds, ...liveRef.current })
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1
@@ -253,6 +288,8 @@ export default function FunnelCanvas({ orientation, highlightedLane, lensCaption
       }
     }
 
+    redrawStillRef.current = reducedMotion ? () => draw(STILL_FRAME_SECONDS) : null
+
     const resizeObserver = new ResizeObserver(resize)
     resizeObserver.observe(canvas)
     resize()
@@ -271,6 +308,7 @@ export default function FunnelCanvas({ orientation, highlightedLane, lensCaption
 
     return () => {
       cancelAnimationFrame(frame)
+      redrawStillRef.current = null
       resizeObserver.disconnect()
       intersectionObserver.disconnect()
       document.removeEventListener('visibilitychange', onVisibilityChange)

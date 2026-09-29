@@ -249,190 +249,170 @@ a.landing-card:hover {
   height: 100%;
 }
 
-.funnel-lane {
+.funnel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bucket-color, var(--l-accent));
+  flex-shrink: 0;
+}
+
+/* Sources (left / top) and buckets (right / bottom) mirror each other around the agent. */
+.funnel-source,
+.funnel-bucket {
+  box-sizing: border-box;
+  border: 1px solid var(--l-line-3);
+  background: var(--l-deep);
+  color: var(--l-text);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.funnel-source:hover,
+.funnel-source.is-active {
+  border-color: var(--l-accent);
+  background: var(--l-surface-hover);
+}
+
+.funnel-bucket:hover,
+.funnel-bucket.is-active {
+  border-color: var(--bucket-color);
+  background: var(--l-surface-hover);
+}
+
+.funnel-source {
   display: flex;
   align-items: center;
   gap: 10px;
   height: 44px;
   padding: 0 12px;
   border-radius: 10px;
-  border: 1px solid var(--l-line-3);
-  background: var(--l-deep);
-  color: var(--l-text);
   font: 500 13px var(--l-body);
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 160ms ease, background 160ms ease;
 }
 
-.funnel-lane:hover,
-.funnel-lane.is-active {
-  border-color: var(--l-accent);
-  background: var(--l-surface-hover);
-}
-
-.funnel-lane-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--l-accent);
-  flex-shrink: 0;
-}
-
-.funnel-hero.is-horizontal .funnel-lane {
-  position: absolute;
-  left: 3.3%;
-  transform: translateY(-50%);
-}
-
-.funnel-hero.is-vertical .funnel-lanes {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  top: 0;
+.funnel-bucket {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+  padding: 10px 14px;
+  border-radius: 12px;
 }
 
-.funnel-hero.is-vertical .funnel-lane {
-  height: 36px;
-  justify-content: center;
-  padding: 0 4px;
-  font-size: 11px;
-  gap: 6px;
-}
-
-.funnel-hero.is-vertical .funnel-lane-dot {
-  display: none;
-}
-
-.funnel-matches-label {
-  font-family: var(--l-mono);
-  font-size: 11px;
-  color: var(--l-faint);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.funnel-matches-empty {
-  color: var(--l-muted);
-  font-size: 13px;
-}
-
-.funnel-match {
-  box-sizing: border-box;
+.funnel-bucket-head {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 14px;
-  border-radius: 12px;
-  background: var(--l-surface-2);
-  border: 1px solid var(--l-line-3);
-  transition: border-color 160ms ease;
-}
-
-.funnel-match:hover {
-  border-color: var(--l-coral);
-}
-
-.funnel-match.is-loading {
-  background: linear-gradient(90deg, var(--l-surface-2) 30%, var(--l-surface-hover) 50%, var(--l-surface-2) 70%) 0 0 / 300% 100%;
-  animation: landing-shimmer 1.4s linear infinite;
-}
-
-@keyframes landing-shimmer {
-  to {
-    background-position: -150% 0;
-  }
-}
-
-.funnel-match-rank {
-  font-family: var(--l-display);
-  font-weight: 800;
-  font-size: 20px;
-  color: var(--l-coral);
-  width: 22px;
-  flex-shrink: 0;
-}
-
-.funnel-match-body {
-  flex-grow: 1;
+  gap: 8px;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.funnel-match-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
   font-size: 13px;
   font-weight: 600;
 }
 
-.funnel-match-role,
-.funnel-match-meta {
+.funnel-bucket-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.funnel-match-score {
-  font-family: var(--l-mono);
-  color: var(--l-coral);
-  flex-shrink: 0;
+.funnel-bucket-count {
+  grid-row: span 2;
+  font-family: var(--l-display);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--bucket-color);
+  font-variant-numeric: tabular-nums;
 }
 
-.funnel-match-meta {
+/* Full label on wide desktops; the short one once the cards narrow (tablet) or turn into bins. */
+.funnel-bucket-label.is-short,
+.funnel-hero.is-vertical .funnel-bucket-label.is-long {
+  display: none;
+}
+
+.funnel-hero.is-vertical .funnel-bucket-label.is-short {
+  display: inline;
+}
+
+.funnel-bucket-range {
+  font-family: var(--l-mono);
   font-size: 11px;
   color: var(--l-faint);
 }
 
-.funnel-match-bar {
-  display: block;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--l-line-3);
-}
-
-.funnel-match-bar span {
-  display: block;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--l-coral);
-}
-
-.funnel-hero.is-horizontal .funnel-matches-label,
-.funnel-hero.is-horizontal .funnel-matches-empty,
-.funnel-hero.is-horizontal .funnel-match {
+/* Same width on both sides so the two columns mirror each other around the agent. Particles
+   emerge from under the source cards and sink under the bucket cards. */
+.funnel-hero.is-horizontal .funnel-source,
+.funnel-hero.is-horizontal .funnel-bucket {
   position: absolute;
-  left: 73.6%;
-  width: 23%;
-}
-
-.funnel-hero.is-horizontal .funnel-matches-empty {
-  top: 50%;
-}
-
-.funnel-hero.is-horizontal .funnel-match {
-  height: clamp(44px, 4.4vw, 62px);
+  width: 220px;
   transform: translateY(-50%);
 }
 
-.funnel-hero.is-vertical .funnel-matches {
+.funnel-hero.is-horizontal .funnel-source {
+  left: 3.3%;
+  height: 56px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+.funnel-hero.is-horizontal .funnel-bucket {
+  right: 3.3%;
+}
+
+.funnel-hero.is-vertical .funnel-sources,
+.funnel-hero.is-vertical .funnel-buckets {
   position: absolute;
   left: 16px;
   right: 16px;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
 }
 
-.funnel-hero.is-vertical .funnel-match {
-  height: 52px;
+.funnel-hero.is-vertical .funnel-sources {
+  top: 0;
+}
+
+.funnel-hero.is-vertical .funnel-buckets {
+  bottom: 0;
+}
+
+.funnel-hero.is-vertical .funnel-source {
+  height: 36px;
+  justify-content: center;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.funnel-hero.is-vertical .funnel-source .funnel-dot {
+  display: none;
+}
+
+/* On phones each bucket is a bin the particles drop into: open at the top, count inside. */
+.funnel-hero.is-vertical .funnel-bucket {
+  height: 96px;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  align-content: center;
+  padding: 8px 4px;
+  border-top-color: transparent;
+  border-radius: 0 0 12px 12px;
+  background: linear-gradient(to bottom, transparent, var(--l-deep) 40%);
+}
+
+.funnel-hero.is-vertical .funnel-bucket-head {
+  font-size: 11px;
+}
+
+.funnel-hero.is-vertical .funnel-bucket-count {
+  grid-row: auto;
+  font-size: 20px;
+}
+
+.funnel-hero.is-vertical .funnel-bucket-range {
+  font-size: 9px;
 }
 
 /* --- Live stats strip ------------------------------------------------------------------------ */
@@ -721,8 +701,22 @@ a.landing-card:hover {
     margin-right: 64px;
   }
 
-  .funnel-hero.is-horizontal .funnel-match-meta {
+  .funnel-hero.is-horizontal .funnel-source,
+  .funnel-hero.is-horizontal .funnel-bucket {
+    width: 160px;
+  }
+
+  .funnel-hero.is-horizontal .funnel-bucket-range,
+  .funnel-hero.is-horizontal .funnel-bucket-label.is-long {
     display: none;
+  }
+
+  .funnel-hero.is-horizontal .funnel-bucket-label.is-short {
+    display: inline;
+  }
+
+  .funnel-hero.is-horizontal .funnel-bucket-count {
+    font-size: 18px;
   }
 }
 
@@ -828,8 +822,7 @@ a.landing-card:hover {
   }
 
   .landing-card,
-  .landing-arrow,
-  .funnel-match.is-loading {
+  .landing-arrow {
     transition: none;
     animation: none;
   }

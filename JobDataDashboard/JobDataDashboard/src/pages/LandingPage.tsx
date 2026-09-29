@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import type { IconType } from 'react-icons'
 import { FiActivity, FiArrowRight, FiBarChart2, FiDatabase, FiLayout, FiSettings } from 'react-icons/fi'
 import FunnelHero from '../components/landing/FunnelHero'
-import { useMatchedJobs, useMlflowSummary, usePipelineFunnel } from '../hooks'
+import { useMlflowSummary, usePipelineFunnel } from '../hooks'
 import { LANDING_PATH } from '../lib/landingExperiment'
 import { trackEvent, trackPageview } from '../lib/posthog'
 import './LandingPage.css'
@@ -18,10 +18,6 @@ import './LandingPage.css'
 const FONTS_LINK_ID = 'landing-fonts'
 const FONTS_HREF =
   'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap'
-
-// Only the matched jobs the API returns first (newest evaluations) are ranked for the hero --
-// enough to surface strong recent matches without paging the whole table.
-const TOP_MATCHES_QUERY = { searchText: '', matchFilter: 'matched' as const, minScore: null, promptVersion: null, limit: 50, offset: 0 }
 
 type Step = { n: string; tech: string; title: string; body: string; to: string; linkLabel: string }
 
@@ -186,7 +182,6 @@ function Section({ name, id, className, revealed, register, children }: SectionP
 export default function LandingPage() {
   const funnelQuery = usePipelineFunnel()
   const mlflowQuery = useMlflowSummary()
-  const matchesQuery = useMatchedJobs(TOP_MATCHES_QUERY)
   const [revealed, setRevealed] = useState<Set<string>>(() => new Set())
   const observerRef = useRef<IntersectionObserver | null>(null)
   const sectionsRef = useRef(new Map<string, HTMLElement>())
@@ -241,7 +236,6 @@ export default function LandingPage() {
     document.getElementById(id)?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' })
   }
 
-  const topMatches = matchesQuery.data ? [...matchesQuery.data].sort((a, b) => b.match_score - a.match_score) : matchesQuery.isError ? [] : null
   const productionPrompt = mlflowQuery.data?.production_prompt_version
   const lensCaption = productionPrompt
     ? `Gemini · prompt ${productionPrompt.startsWith('v') ? productionPrompt : `v${productionPrompt}`}`
@@ -283,7 +277,11 @@ export default function LandingPage() {
         </p>
       </section>
 
-      <FunnelHero topMatches={topMatches} lensCaption={lensCaption} onMatchClick={() => trackCta('/etl-data/matches', 'hero-match')} />
+      <FunnelHero
+        funnel={funnelQuery.data}
+        lensCaption={lensCaption}
+        onBucketClick={(bucketId) => trackCta('/etl-data/matches', `hero-bucket-${bucketId}`)}
+      />
 
       <Section name="stats" className="landing-stats" revealed={statsActive} register={registerSection}>
         <div className="landing-stat">
