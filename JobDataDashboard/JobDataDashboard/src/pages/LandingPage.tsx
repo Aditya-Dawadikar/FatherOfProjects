@@ -5,7 +5,7 @@ import type { IconType } from 'react-icons'
 import { FiActivity, FiArrowRight, FiBarChart2, FiDatabase, FiLayout, FiSettings } from 'react-icons/fi'
 import FunnelHero from '../components/landing/FunnelHero'
 import { useMatchedJobs, useMlflowSummary, usePipelineFunnel } from '../hooks'
-import { LANDING_PATH, markLandingSeen } from '../lib/landingExperiment'
+import { LANDING_PATH } from '../lib/landingExperiment'
 import { trackEvent, trackPageview } from '../lib/posthog'
 import './LandingPage.css'
 
@@ -192,7 +192,6 @@ export default function LandingPage() {
   const sectionsRef = useRef(new Map<string, HTMLElement>())
 
   useEffect(() => {
-    markLandingSeen()
     trackPageview(LANDING_PATH)
     trackEvent('landing_viewed')
 

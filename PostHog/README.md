@@ -47,8 +47,8 @@ as before. Gating lives in `src/lib/landingExperiment.ts` + `src/components/Land
 
 - **Who's enrolled**: only visitors arriving at the root (no hash, or `#/`). Deep links
   (`#/evals/kpis`, ...) skip the landing page and never read the flag, so they log no exposure.
-- **Once per visitor**: after the landing page is shown, `localStorage.landing_seen` sends later
-  root visits straight to the dashboard.
+- **Every root arrival**: for test visitors `/welcome` is the front door -- each visit to the
+  root lands there, not just the first. "Open the dashboard" (or any door) goes into the app.
 - **Phones are included** -- independent of `mobile-first-layout`; the landing page is responsive
   on its own.
 - **Flag timeout**: a root arrival waits up to 1.5s for flags, then falls back to the dashboard

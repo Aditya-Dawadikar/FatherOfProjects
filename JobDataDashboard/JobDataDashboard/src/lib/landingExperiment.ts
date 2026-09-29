@@ -14,35 +14,18 @@ type Variant = 'control' | 'test'
 // "test" shows the landing page on every root arrival that carries it, which is what you want
 // while iterating on the page itself.
 const OVERRIDE_PARAM = 'landing'
-// Set once the landing page has been shown, so a test visitor sees it once, not on every visit.
-const SEEN_STORAGE_KEY = 'landing_seen'
 // How long a root arrival waits for PostHog's flags before falling back to the dashboard. Past
 // this the visitor is treated as not enrolled (and the flag is never read, so no exposure gets
 // logged for someone who in fact saw the control experience by default).
 const FLAG_TIMEOUT_MS = 1500
 
-// Captured at module load, before HashRouter's <Navigate>s rewrite the hash. Only visitors who
-// arrive at the root are enrolled -- a deep link (e.g. someone sharing #/evals/kpis) means the
+// Captured at module load, before HashRouter's <Navigate>s rewrite the hash. /welcome is the
+// test variant's front door: every root arrival (not just the first) lands there. Only visitors
+// who arrive at the root are enrolled -- a deep link (e.g. someone sharing #/evals/kpis) means the
 // visitor already knows where they're going, and bouncing them through a landing page would
 // both be hostile and skew the exploration metric.
 const initialHash = typeof window === 'undefined' ? '' : window.location.hash
 export const arrivedAtRoot = initialHash === '' || initialHash === '#' || initialHash === '#/'
-
-function readStorage(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-export function markLandingSeen() {
-  try {
-    window.localStorage.setItem(SEEN_STORAGE_KEY, '1')
-  } catch {
-    // Storage blocked (private mode etc.) -- they may just see the landing page again next time.
-  }
-}
 
 function readOverride(): Variant | null {
   if (typeof window === 'undefined') {
@@ -83,7 +66,7 @@ export function resolveLandingVariant(): Promise<Variant | null> {
     const override = readOverride()
     if (override) {
       variantPromise = Promise.resolve(override)
-    } else if (readStorage(SEEN_STORAGE_KEY) || !isAnalyticsEnabled()) {
+    } else if (!isAnalyticsEnabled()) {
       variantPromise = Promise.resolve(null)
     } else {
       variantPromise = waitForFlag()
