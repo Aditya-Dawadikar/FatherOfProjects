@@ -1,25 +1,29 @@
 name: Dashboard regression
 
-# Railway's GitHub integration posts a deployment status for every service deploy -- each
-# successful one re-checks that every dashboard page still loads.
+# Every push to master deploys to Railway -- once that deploy is live, re-check that every
+# dashboard page still loads.
 on:
-  deployment_status:
+  push:
+    branches: [master]
   workflow_dispatch:
     inputs:
       dashboard_url:
         description: Dashboard URL to test (defaults to the DASHBOARD_URL repo variable / prod domain)
         required: false
 
-# A push to master deploys several services at once -- only the latest run matters.
+# Only the newest push matters -- it supersedes whatever an older run would have tested.
 concurrency:
   group: dashboard-regression
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  deployments: read
+
 jobs:
   pages:
-    if: github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: JobDataDashboard/regression-tests
@@ -28,8 +32,39 @@ jobs:
       DASHBOARD_URL: ${{ inputs.dashboard_url || vars.DASHBOARD_URL || 'https://projectycjobs.buildwithadi.dev' }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.deployment.sha || github.sha }}
+
+      # Railway's GitHub integration creates one deployment per pushed commit and marks it
+      # success once the environment is live. Testing before then would test the old build.
+      - name: Wait for Railway deploy of ${{ github.sha }}
+        if: github.event_name == 'push'
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          api="repos/${GITHUB_REPOSITORY}/deployments?sha=${GITHUB_SHA}"
+          # Up to ~5 min for Railway to register the deploy, ~30 min in total for it to finish.
+          for attempt in $(seq 1 90); do
+            deployment_id=$(gh api "$api" --jq '.[0].id // empty')
+            if [ -z "$deployment_id" ]; then
+              if [ "$attempt" -ge 15 ]; then
+                echo "::warning::Railway never created a deployment for ${GITHUB_SHA}; testing what's live."
+                exit 0
+              fi
+              echo "No Railway deployment for ${GITHUB_SHA} yet..."
+            else
+              state=$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses" --jq '.[0].state // "pending"')
+              echo "Railway deployment ${deployment_id}: ${state}"
+              case "$state" in
+                success) exit 0 ;;
+                failure|error|inactive)
+                  echo "::error::Railway deployment for ${GITHUB_SHA} ended in '${state}'."
+                  exit 1 ;;
+              esac
+            fi
+            sleep 20
+          done
+          echo "::error::Timed out waiting for Railway to deploy ${GITHUB_SHA}."
+          exit 1
 
       - uses: actions/setup-node@v4
         with:
