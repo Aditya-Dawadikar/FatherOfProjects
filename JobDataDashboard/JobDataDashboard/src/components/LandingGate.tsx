@@ -11,8 +11,11 @@ export default function LandingGate({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const [isResolving, setIsResolving] = useState(arrivedAtRoot)
 
+  // Keyed on isResolving, not just navigate: useNavigate() hands back a new function after every
+  // navigation, so without the guard this would re-run on each click and bounce the visitor back
+  // to /welcome. The redirect only ever belongs to the initial arrival.
   useEffect(() => {
-    if (!arrivedAtRoot) {
+    if (!isResolving) {
       return
     }
     let cancelled = false
@@ -28,7 +31,7 @@ export default function LandingGate({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [navigate])
+  }, [isResolving, navigate])
 
   if (isResolving) {
     return <div className="landing-gate-pending" aria-busy="true" />
