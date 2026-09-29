@@ -1,8 +1,7 @@
 name: Dashboard regression
 
-# Railway's GitHub integration posts a deployment status for every service deploy. Any of them
-# (dashboard, JobDataServer, JobManagerAgent) can break the dashboard's endpoints, so every
-# successful deploy re-checks the whole dashboard.
+# Railway's GitHub integration posts a deployment status for every service deploy -- each
+# successful one re-checks that every dashboard page still loads.
 on:
   deployment_status:
   workflow_dispatch:
@@ -17,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  endpoints:
+  pages:
     if: github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -39,7 +38,7 @@ jobs:
       - run: npm install
       - run: npx playwright install --with-deps chromium
 
-      - name: Run endpoint regression tests
+      - name: Run page load tests
         run: npx playwright test
 
       - uses: actions/upload-artifact@v4

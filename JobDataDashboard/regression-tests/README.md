@@ -1,12 +1,15 @@
 # JobDataDashboard regression tests
 
-Playwright checks that every endpoint of the deployed dashboard answers **200**:
+Playwright checks that every page of the deployed dashboard loads. Each route in `src/App.tsx` is opened in Chromium and fails if:
 
-- **server** – `/` and `/index.html` from Caddy.
-- **api** – every GET endpoint the dashboard calls, through the Caddy proxy (`/api/*` → JobDataServer, `/agent-api/*` → JobManagerAgent). Mutating endpoints are skipped since this runs against production.
-- **ui routes** – every route in `src/App.tsx` is loaded in Chromium; any same-origin response that isn't 200 (HTML, JS/CSS chunks, API calls the page fires), failed request, or uncaught page error fails the test. Third-party traffic (PostHog, Grafana iframe, Cloudflare `/cdn-cgi/`) is ignored.
+- the HTML document isn't a 200,
+- any of the page's own assets (JS/CSS chunks, images, fonts) isn't a 200 or never responds,
+- the page throws an uncaught error or renders nothing into `#root`,
+- the route redirects to `/` (i.e. it was removed from the router).
 
-When you add a route or a GET endpoint to the dashboard, add it to `UI_ROUTES` / `API_ENDPOINTS` in `tests/endpoints.spec.ts`.
+API calls the pages make (`/api/*`, `/agent-api/*`) are not checked, and neither is third-party traffic (PostHog, the Grafana iframe, Cloudflare `/cdn-cgi/`).
+
+When you add a page to the dashboard, add its route to `PAGES` in `tests/pages.spec.ts`.
 
 ## Run locally
 
