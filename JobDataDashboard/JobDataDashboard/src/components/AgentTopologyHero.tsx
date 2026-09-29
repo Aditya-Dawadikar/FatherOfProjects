@@ -85,11 +85,11 @@ const KIND_FALLBACK_ICON: Record<AgentTopologyNodeKind, IconType> = {
 }
 
 const MINIMAP_COLOR: Record<AgentTopologyNodeKind, string> = {
-  middleware: '#d9a441',
-  agent: '#1f8a57',
-  tool: '#2f8fc4',
-  prompt: '#7a5fd1',
-  guardrail: '#c8534a',
+  middleware: '#f5c26b',
+  agent: '#ff9b7a',
+  tool: '#a9b3ff',
+  prompt: '#c9a6ff',
+  guardrail: '#ff7a8a',
 }
 
 // Guardrail rules are stacked inside per-middleware nodes (see agent_topology.py's guardrail:checks
@@ -347,7 +347,7 @@ export default function AgentTopologyHero({ topology }: Props) {
           type: 'smoothstep',
           markerEnd: { type: MarkerType.ArrowClosed, width: 13, height: 13 },
           className: `agent-flow-edge${isEnforcement ? ' edge-enforcement' : ''}${isGuardrailCheck ? ' edge-guardrail' : ''}`,
-          labelStyle: { fill: '#4f6157', fontSize: 10, fontWeight: 600 },
+          labelStyle: { fill: '#a3a2ba', fontSize: 10, fontWeight: 600 },
         }
       })
 
@@ -359,7 +359,7 @@ export default function AgentTopologyHero({ topology }: Props) {
         type: 'smoothstep',
         markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15 },
         className: 'agent-flow-edge edge-primary',
-        labelStyle: { fill: '#0f4f30', fontSize: 10, fontWeight: 700 },
+        labelStyle: { fill: '#ff9b7a', fontSize: 10, fontWeight: 700 },
       }))
       return [...baseEdges, ...sequenceEdges]
     },
@@ -410,6 +410,7 @@ export default function AgentTopologyHero({ topology }: Props) {
           <div className="agent-flow">
             <ActiveNodeContext.Provider value={activeNodeId}>
               <ReactFlow
+                colorMode="dark"
                 nodes={flowNodes}
                 edges={flowEdges}
                 nodeTypes={nodeTypes}
@@ -445,14 +446,14 @@ export default function AgentTopologyHero({ topology }: Props) {
                   setPinnedNodeId((current) => (current === node.id ? null : node.id))
                 }}
               >
-                <Background color="rgba(20, 26, 31, 0.1)" gap={22} size={1.4} />
+                <Background color="rgba(236, 235, 245, 0.08)" gap={22} size={1.4} />
                 {!isMobileFirst && <Controls showInteractive={false} />}
                 <MiniMap
                   pannable
                   zoomable
                   nodeStrokeWidth={2}
-                  nodeColor={(node) => MINIMAP_COLOR[(node.data as unknown as DetailNodeData)?.kind] ?? '#9db8a6'}
-                  maskColor="rgba(20, 26, 31, 0.08)"
+                  nodeColor={(node) => MINIMAP_COLOR[(node.data as unknown as DetailNodeData)?.kind] ?? '#4a4d6e'}
+                  maskColor="rgba(10, 11, 20, 0.6)"
                   className="agent-flow-minimap"
                   style={{ width: 140, height: 96 }}
                 />

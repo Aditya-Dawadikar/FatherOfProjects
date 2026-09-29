@@ -37,18 +37,18 @@ const NODE_GAP = 26
 const COL_X = [24, 300, 576, 896]
 
 const FLOW_TOTAL = 'var(--flow-total)'
-const FLOW_GOOD = 'var(--accent)'
-const FLOW_MODERATE = 'var(--warn)'
-const FLOW_BAD = 'var(--error)'
+const FLOW_GOOD = 'var(--score-high)'
+const FLOW_MODERATE = 'var(--score-mid)'
+const FLOW_BAD = 'var(--score-low)'
 const FLOW_FAILED = 'var(--flow-failed)'
 const FLOW_PENDING = 'var(--flow-pending)'
 
 // One categorical color per data source, validated (dataviz skill: fixed hue order, never
-// cycled) against this dashboard's light chart surface (#ffffff) -- blue/orange/aqua/yellow,
+// cycled) against this dashboard's dark chart surface (#10122a) -- blue/orange/aqua/yellow,
 // the first four slots of the reference categorical palette. A fifth source added later takes
 // the next fixed slot (magenta, #e87ba4) rather than a generated hue.
 const SOURCE_COLORS: Record<string, string> = {
-  ycombinator: '#2a78d6',
+  ycombinator: '#4a90e8',
   greenhouse: '#eb6834',
   ashby: '#1baf7a',
   lever: '#eda100',

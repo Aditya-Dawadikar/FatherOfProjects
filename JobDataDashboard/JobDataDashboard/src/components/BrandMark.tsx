@@ -1,6 +1,6 @@
 // The product's logo mark: a ring (the agent) around a dot (the one match that comes out). The
-// ring takes the surrounding text color, so it works on both the dark landing page and the light
-// dashboard nav.
+// ring takes the surrounding text color, so it follows whatever it sits in (landing header, dashboard
+// nav).
 export default function BrandMark({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 28 28" aria-hidden="true" className="brand-mark">

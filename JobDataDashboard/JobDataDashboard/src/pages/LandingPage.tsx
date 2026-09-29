@@ -27,10 +27,6 @@ import './LandingPage.css'
 // landing_cta_clicked, and each section scrolling into view as landing_section_viewed, so PostHog
 // can tell which doors people actually used and how far down they read.
 
-const FONTS_LINK_ID = 'landing-fonts'
-const FONTS_HREF =
-  'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap'
-
 type Step = { n: string; tech: string; title: string; body: string; to: string; linkLabel: string }
 
 const STEPS: Step[] = [
@@ -215,14 +211,6 @@ export default function LandingPage() {
   useEffect(() => {
     trackPageview(LANDING_PATH)
     trackEvent('landing_viewed', { entry })
-
-    if (!document.getElementById(FONTS_LINK_ID)) {
-      const link = document.createElement('link')
-      link.id = FONTS_LINK_ID
-      link.rel = 'stylesheet'
-      link.href = FONTS_HREF
-      document.head.appendChild(link)
-    }
   }, [entry])
 
   useEffect(() => {

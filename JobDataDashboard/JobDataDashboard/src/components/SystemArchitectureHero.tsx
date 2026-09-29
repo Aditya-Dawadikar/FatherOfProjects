@@ -175,11 +175,11 @@ const NODE_ICON: Record<string, IconType> = {
 }
 
 const MINIMAP_COLOR: Record<SystemNodeKind, string> = {
-  ingestion: '#1b5f87',
-  datastore: '#785114',
-  compute: '#17553b',
-  observability: '#4b3787',
-  frontend: '#7e2520',
+  ingestion: '#a9b3ff',
+  datastore: '#f5c26b',
+  compute: '#ff9b7a',
+  observability: '#c9a6ff',
+  frontend: '#ff7a8a',
 }
 
 const KIND_COLUMN_X: Record<SystemNodeKind, number> = {
@@ -318,7 +318,7 @@ export default function SystemArchitectureHero() {
         type: 'smoothstep',
         markerEnd: { type: MarkerType.ArrowClosed, width: 13, height: 13 },
         className: `agent-flow-edge${edge.emphasis === 'primary' ? ' edge-primary' : ''}${edge.emphasis === 'observability' ? ' edge-observability' : ''}`,
-        labelStyle: { fill: '#4f6157', fontSize: 10, fontWeight: 600 },
+        labelStyle: { fill: '#a3a2ba', fontSize: 10, fontWeight: 600 },
       })),
     [],
   )
@@ -367,6 +367,7 @@ export default function SystemArchitectureHero() {
           <div className="agent-flow">
             <ActiveNodeContext.Provider value={activeNodeId}>
               <ReactFlow
+                colorMode="dark"
                 nodes={flowNodes}
                 edges={flowEdges}
                 nodeTypes={nodeTypes}
@@ -401,14 +402,14 @@ export default function SystemArchitectureHero() {
                   setPinnedNodeId((current) => (current === node.id ? null : node.id))
                 }}
               >
-                <Background color="rgba(20, 26, 31, 0.1)" gap={22} size={1.4} />
+                <Background color="rgba(236, 235, 245, 0.08)" gap={22} size={1.4} />
                 {!isMobileFirst && <Controls showInteractive={false} />}
                 <MiniMap
                   pannable
                   zoomable
                   nodeStrokeWidth={2}
-                  nodeColor={(node) => MINIMAP_COLOR[(node.data as unknown as DetailNodeData)?.kind] ?? '#9db8a6'}
-                  maskColor="rgba(20, 26, 31, 0.08)"
+                  nodeColor={(node) => MINIMAP_COLOR[(node.data as unknown as DetailNodeData)?.kind] ?? '#4a4d6e'}
+                  maskColor="rgba(10, 11, 20, 0.6)"
                   className="agent-flow-minimap"
                   style={{ width: 140, height: 96 }}
                 />

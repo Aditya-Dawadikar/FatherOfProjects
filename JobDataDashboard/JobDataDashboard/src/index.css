@@ -1,23 +1,47 @@
+/* One theme for the whole app: the landing page's dark navy surface with periwinkle-blue (accent)
+   and coral (highlight) -- mirrors the --l-* tokens in src/pages/LandingPage.css. */
 :root {
-  --bg: #f6f7f8;
-  --panel: #ffffff;
-  --panel-2: #f1f3f5;
-  --line: #e2e6ea;
-  --text: #1b2a33;
-  --muted: #5c6b74;
-  --accent: #00684a;
-  --accent-strong: #00543c;
-  --accent-dim: rgba(0, 104, 74, 0.1);
-  --warn: #9a6700;
-  --warn-strong: #7a5300;
-  --warn-dim: rgba(154, 103, 0, 0.12);
-  --error: #c0342a;
-  --error-strong: #932720;
-  --error-dim: rgba(192, 52, 42, 0.09);
-  --overlay: rgba(20, 26, 31, 0.035);
-  --overlay-strong: rgba(20, 26, 31, 0.065);
-  --focus-ring: rgba(0, 104, 74, 0.35);
-  font: 14px/1.55 -apple-system, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --bg: #0a0b14;
+  --panel: #10122a;
+  --panel-2: #0d0f22;
+  --panel-hover: #1a1d3a;
+  --line: #23264a;
+  --line-strong: #3b3f66;
+  --text: #ecebf5;
+  --muted: #a3a2ba;
+  --faint: #7d7c98;
+  --accent: #a9b3ff;
+  --accent-strong: #d0d6ff;
+  --accent-dim: rgba(169, 179, 255, 0.14);
+  --on-accent: #0a0b14;
+  --highlight: #ff9b7a;
+  --highlight-dim: rgba(255, 155, 122, 0.14);
+  --violet: #c9a6ff;
+  --warn: #f5c26b;
+  --warn-strong: #ffd894;
+  --warn-dim: rgba(245, 194, 107, 0.14);
+  --error: #ff7a8a;
+  --error-strong: #ffa3ae;
+  --error-dim: rgba(255, 122, 138, 0.13);
+  /* Match-score buckets, same colors as the landing funnel's (see landing/funnelGeometry.ts). */
+  --score-high: #ff9b7a;
+  --score-high-dim: rgba(255, 155, 122, 0.15);
+  --score-mid: #ffd6c7;
+  --score-mid-dim: rgba(255, 214, 199, 0.12);
+  --score-low: #8c8ba8;
+  --score-low-dim: rgba(140, 139, 168, 0.14);
+  /* Alluvial chart (AlluvialChart.tsx) node/flow fills that aren't score buckets. */
+  --flow-total: #4a4d6e;
+  --flow-pending: #33375e;
+  --flow-failed: #565a80;
+  --overlay: rgba(236, 235, 245, 0.04);
+  --overlay-strong: rgba(236, 235, 245, 0.08);
+  --focus-ring: rgba(169, 179, 255, 0.5);
+  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  color-scheme: dark;
+  font: 14px/1.55 var(--font-body);
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -36,8 +60,16 @@ body,
 
 body {
   margin: 0;
-  scrollbar-color: var(--line) transparent;
+  scrollbar-color: var(--line-strong) transparent;
   scrollbar-width: thin;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 button,
@@ -47,8 +79,14 @@ select {
   font: inherit;
 }
 
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
+}
+
 ::selection {
-  background: var(--accent-dim);
+  background: rgba(169, 179, 255, 0.3);
   color: var(--text);
 }
 

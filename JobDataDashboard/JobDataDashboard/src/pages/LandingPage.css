@@ -1,6 +1,6 @@
 /* Landing page (the landing-page experiment's test variant -- see src/pages/LandingPage.tsx).
-   Deliberately its own dark look rather than the dashboard's light theme, so every rule here is
-   scoped under .landing and all colors come from the --l-* tokens below. */
+   Every rule here is scoped under .landing and all colors come from the --l-* tokens below; the
+   dashboard's own tokens in src/index.css mirror this palette so the whole app reads as one. */
 
 .landing {
   --l-bg: #0a0b14;

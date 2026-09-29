@@ -40,7 +40,7 @@
 .form-panel {
   border: 1px solid var(--line);
   background: var(--panel);
-  box-shadow: 0 16px 32px rgba(20, 26, 31, 0.08);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.2);
 }
 
 .status-card {
@@ -75,7 +75,7 @@
   z-index: 30;
   padding: 10px 32px;
   border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(10, 11, 20, 0.85);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -90,8 +90,9 @@
   padding-right: 24px;
   border-right: 1px solid var(--line);
   color: var(--text);
+  font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 1.05rem;
   letter-spacing: -0.01em;
   text-decoration: none;
 }
@@ -146,7 +147,7 @@
 }
 
 .view-tab:hover::after {
-  background: rgba(0, 104, 74, 0.35);
+  background: rgba(169, 179, 255, 0.35);
 }
 
 .view-tab.is-active::after {
@@ -184,7 +185,7 @@
   position: fixed;
   inset: 0;
   border: 0;
-  background: rgba(16, 21, 25, 0.48);
+  background: rgba(5, 6, 12, 0.66);
   z-index: 24;
 }
 
@@ -196,7 +197,7 @@
   height: 100svh;
   background: var(--panel);
   border-left: 1px solid var(--line);
-  box-shadow: -18px 0 44px rgba(8, 11, 13, 0.26);
+  box-shadow: -18px 0 44px rgba(0, 0, 0, 0.6);
   transform: translateX(102%);
   transition: transform 220ms ease;
   z-index: 25;
@@ -243,7 +244,7 @@
   border-radius: 24px;
   padding: 18px;
   background: var(--panel);
-  box-shadow: 0 18px 36px rgba(20, 26, 31, 0.08);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.2);
 }
 
 .agent-hero-header h2 {
@@ -273,7 +274,7 @@
 .agent-stage-chip {
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(16, 18, 42, 0.8);
   padding: 8px 10px;
 }
 
@@ -292,7 +293,7 @@
 .agent-hero-chip {
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(16, 18, 42, 0.72);
   padding: 10px 12px;
 }
 
@@ -325,12 +326,24 @@
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--panel-2);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(236, 235, 245, 0.03);
   overflow: hidden;
 }
 
 .agent-flow {
   height: 560px;
+}
+
+/* React Flow's own dark colorMode, retinted to this app's navy palette. */
+.agent-flow .react-flow {
+  --xy-background-color: transparent;
+  --xy-controls-button-background-color: var(--panel);
+  --xy-controls-button-background-color-hover: var(--panel-hover);
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-border-color: var(--line);
+  --xy-minimap-background-color: var(--panel-2);
+  --xy-edge-label-background-color: var(--panel-2);
+  --xy-edge-label-color: var(--muted);
 }
 
 .agent-flow .react-flow__background {
@@ -355,9 +368,9 @@
   width: 220px;
   border: 1.5px solid;
   border-radius: 14px;
-  background: linear-gradient(165deg, #ffffff, rgba(255, 255, 255, 0.85));
+  background: var(--panel);
   color: var(--text);
-  box-shadow: 0 8px 16px rgba(14, 19, 23, 0.12);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
   transition: box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease;
 }
 
@@ -372,13 +385,13 @@
   white-space: nowrap;
   border-radius: 999px;
   padding: 3px 10px;
-  background: var(--accent);
-  color: #ffffff;
+  background: var(--highlight);
+  color: var(--on-accent);
   font-size: 0.62rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  box-shadow: 0 6px 14px rgba(20, 26, 31, 0.28);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.6);
   z-index: 5;
 }
 
@@ -387,7 +400,7 @@
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: #ffffff;
+  background: var(--on-accent);
   animation: you-are-here-pulse 1.4s ease-in-out infinite;
 }
 
@@ -404,12 +417,12 @@
 .agent-flow .react-flow__node:hover .agent-card-node,
 .agent-card-node.is-active,
 .agent-card-node.is-selected {
-  box-shadow: 0 20px 30px rgba(14, 19, 23, 0.22);
+  box-shadow: 0 20px 30px rgba(0, 0, 0, 0.55);
   transform: translateY(-2px);
 }
 
 .agent-flow .react-flow__node.dragging .agent-card-node {
-  box-shadow: 0 26px 40px rgba(14, 19, 23, 0.3);
+  box-shadow: 0 26px 40px rgba(0, 0, 0, 0.6);
   transform: scale(1.03) rotate(-0.4deg);
 }
 
@@ -427,8 +440,8 @@
   align-items: center;
   justify-content: center;
   padding: 10px 8px;
-  border-right: 1px solid rgba(20, 26, 31, 0.12);
-  background: rgba(255, 255, 255, 0.35);
+  border-right: 1px solid rgba(236, 235, 245, 0.1);
+  background: rgba(16, 18, 42, 0.35);
 }
 
 .node-card-logo-rail svg {
@@ -449,7 +462,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 9px 10px;
-  border-bottom: 1px solid rgba(20, 26, 31, 0.1);
+  border-bottom: 1px solid rgba(236, 235, 245, 0.08);
 }
 
 .agent-detail-tech-icon {
@@ -472,8 +485,8 @@
   font-weight: 800;
   letter-spacing: 0.06em;
   padding: 2px 8px 2px 6px;
-  border: 1px solid rgba(20, 26, 31, 0.18);
-  background: rgba(20, 26, 31, 0.05);
+  border: 1px solid rgba(236, 235, 245, 0.14);
+  background: rgba(236, 235, 245, 0.04);
 }
 
 .agent-card-status::before {
@@ -503,13 +516,13 @@
 }
 
 .agent-card-meta-row span {
-  border: 1px solid rgba(20, 26, 31, 0.14);
+  border: 1px solid rgba(236, 235, 245, 0.11);
   border-radius: 6px;
   font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   padding: 2px 6px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(16, 18, 42, 0.55);
 }
 
 /* The rules a guardrail node enforces (agent_topology.py's guardrail:checks/guardrail:tool-call-limit,
@@ -523,13 +536,13 @@
 }
 
 .agent-card-rule-chip {
-  border: 1px solid rgba(20, 26, 31, 0.14);
+  border: 1px solid rgba(236, 235, 245, 0.11);
   border-radius: 6px;
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   padding: 3px 6px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(16, 18, 42, 0.55);
 }
 
 .agent-card-source {
@@ -540,72 +553,72 @@
 
 .agent-node-agent,
 .agent-kind-pill.agent-node-agent {
-  border-color: #17553b;
-  background: linear-gradient(165deg, #e6f9ee, #cdeedb);
+  border-color: var(--highlight);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--highlight) 16%, var(--panel)), color-mix(in srgb, var(--highlight) 6%, var(--panel)));
 }
 
 .agent-node-tool,
 .agent-kind-pill.agent-node-tool {
-  border-color: #1b5f87;
-  background: linear-gradient(165deg, #eaf6fd, #d3ebf8);
+  border-color: var(--accent);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--accent) 16%, var(--panel)), color-mix(in srgb, var(--accent) 6%, var(--panel)));
 }
 
 .agent-node-middleware,
 .agent-kind-pill.agent-node-middleware {
-  border-color: #785114;
-  background: linear-gradient(165deg, #fef4de, #fbe6bc);
+  border-color: var(--warn);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--warn) 16%, var(--panel)), color-mix(in srgb, var(--warn) 6%, var(--panel)));
 }
 
 .agent-node-guardrail,
 .agent-kind-pill.agent-node-guardrail {
-  border-color: #7e2520;
-  background: linear-gradient(165deg, #fdeae7, #f8d1cb);
+  border-color: var(--error);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--error) 16%, var(--panel)), color-mix(in srgb, var(--error) 6%, var(--panel)));
 }
 
 .agent-node-prompt,
 .agent-kind-pill.agent-node-prompt {
-  border-color: #4b3787;
-  background: linear-gradient(165deg, #f0ecfd, #e0d7fa);
+  border-color: var(--violet);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--violet) 16%, var(--panel)), color-mix(in srgb, var(--violet) 6%, var(--panel)));
 }
 
 .agent-node-agent .agent-card-status {
-  color: #17553b;
+  color: var(--highlight);
 }
 
 .agent-node-tool .agent-card-status {
-  color: #1b5f87;
+  color: var(--accent);
 }
 
 .agent-node-middleware .agent-card-status {
-  color: #785114;
+  color: var(--warn);
 }
 
 .agent-node-guardrail .agent-card-status {
-  color: #7e2520;
+  color: var(--error);
 }
 
 .agent-node-prompt .agent-card-status {
-  color: #4b3787;
+  color: var(--violet);
 }
 
 .agent-node-agent .node-card-logo-rail {
-  color: #17553b;
+  color: var(--highlight);
 }
 
 .agent-node-tool .node-card-logo-rail {
-  color: #1b5f87;
+  color: var(--accent);
 }
 
 .agent-node-middleware .node-card-logo-rail {
-  color: #785114;
+  color: var(--warn);
 }
 
 .agent-node-guardrail .node-card-logo-rail {
-  color: #7e2520;
+  color: var(--error);
 }
 
 .agent-node-prompt .node-card-logo-rail {
-  color: #4b3787;
+  color: var(--violet);
 }
 
 /* System-architecture node kinds (SystemArchitectureHero.tsx) -- same pattern as the
@@ -613,91 +626,91 @@
    distinct palette from the agent-topology kinds so the two graphs don't look identical. */
 .arch-node-ingestion,
 .agent-kind-pill.arch-node-ingestion {
-  border-color: #1b5f87;
-  background: linear-gradient(165deg, #eaf6fd, #d3ebf8);
+  border-color: var(--accent);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--accent) 16%, var(--panel)), color-mix(in srgb, var(--accent) 6%, var(--panel)));
 }
 
 .arch-node-datastore,
 .agent-kind-pill.arch-node-datastore {
-  border-color: #785114;
-  background: linear-gradient(165deg, #fef4de, #fbe6bc);
+  border-color: var(--warn);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--warn) 16%, var(--panel)), color-mix(in srgb, var(--warn) 6%, var(--panel)));
 }
 
 .arch-node-compute,
 .agent-kind-pill.arch-node-compute {
-  border-color: #17553b;
-  background: linear-gradient(165deg, #e6f9ee, #cdeedb);
+  border-color: var(--highlight);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--highlight) 16%, var(--panel)), color-mix(in srgb, var(--highlight) 6%, var(--panel)));
 }
 
 .arch-node-observability,
 .agent-kind-pill.arch-node-observability {
-  border-color: #4b3787;
-  background: linear-gradient(165deg, #f0ecfd, #e0d7fa);
+  border-color: var(--violet);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--violet) 16%, var(--panel)), color-mix(in srgb, var(--violet) 6%, var(--panel)));
 }
 
 .arch-node-frontend,
 .agent-kind-pill.arch-node-frontend {
-  border-color: #7e2520;
-  background: linear-gradient(165deg, #fdeae7, #f8d1cb);
+  border-color: var(--error);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--error) 16%, var(--panel)), color-mix(in srgb, var(--error) 6%, var(--panel)));
 }
 
 .arch-node-ingestion .agent-card-status {
-  color: #1b5f87;
+  color: var(--accent);
 }
 
 .arch-node-datastore .agent-card-status {
-  color: #785114;
+  color: var(--warn);
 }
 
 .arch-node-compute .agent-card-status {
-  color: #17553b;
+  color: var(--highlight);
 }
 
 .arch-node-observability .agent-card-status {
-  color: #4b3787;
+  color: var(--violet);
 }
 
 .arch-node-frontend .agent-card-status {
-  color: #7e2520;
+  color: var(--error);
 }
 
 .arch-node-ingestion .node-card-logo-rail {
-  color: #1b5f87;
+  color: var(--accent);
 }
 
 .arch-node-datastore .node-card-logo-rail {
-  color: #785114;
+  color: var(--warn);
 }
 
 .arch-node-compute .node-card-logo-rail {
-  color: #17553b;
+  color: var(--highlight);
 }
 
 .arch-node-observability .node-card-logo-rail {
-  color: #4b3787;
+  color: var(--violet);
 }
 
 .arch-node-frontend .node-card-logo-rail {
-  color: #7e2520;
+  color: var(--error);
 }
 
 .agent-flow-edge.edge-observability .react-flow__edge-path {
-  stroke: rgba(75, 55, 135, 0.55);
+  stroke: rgba(201, 166, 255, 0.55);
   stroke-dasharray: 3 5;
 }
 
 .agent-flow .react-flow__edge-path,
 .agent-flow .react-flow__connection-path {
-  stroke: rgba(26, 33, 38, 0.24);
+  stroke: rgba(236, 235, 245, 0.19);
   stroke-width: 1.45;
 }
 
 .agent-flow-edge .react-flow__edge-path {
-  stroke: rgba(26, 33, 38, 0.33);
+  stroke: rgba(236, 235, 245, 0.26);
 }
 
 .agent-flow-edge.edge-primary .react-flow__edge-path {
-  stroke: #14643d;
+  stroke: var(--highlight);
   stroke-width: 2.2;
   stroke-dasharray: 6 4;
   animation: agent-edge-flow 1.1s linear infinite;
@@ -710,12 +723,12 @@
 }
 
 .agent-flow-edge.edge-enforcement .react-flow__edge-path {
-  stroke: rgba(114, 76, 20, 0.65);
+  stroke: rgba(245, 194, 107, 0.6);
   stroke-dasharray: 4 4;
 }
 
 .agent-flow-edge.edge-guardrail .react-flow__edge-path {
-  stroke: rgba(136, 37, 32, 0.7);
+  stroke: rgba(255, 122, 138, 0.65);
   stroke-dasharray: 5 5;
 }
 
@@ -742,11 +755,13 @@
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 6px 14px rgba(14, 19, 23, 0.12);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.3);
 }
 
 .agent-flow .react-flow__controls button {
-  background: #ffffff;
+  background: var(--panel);
+  color: var(--text);
+  fill: var(--text);
   border-bottom-color: var(--line);
 }
 
@@ -754,8 +769,12 @@
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 6px 14px rgba(14, 19, 23, 0.12);
-  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.3);
+  background: rgba(16, 18, 42, 0.85);
+}
+
+.agent-flow .react-flow__edge-textbg {
+  fill: var(--panel-2);
 }
 
 .agent-flow .react-flow__attribution {
@@ -806,7 +825,7 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel-2);
-  font: 12px/1.45 'Cascadia Code', 'Consolas', monospace;
+  font: 12px/1.45 var(--font-mono);
   white-space: pre-wrap;
   overflow: auto;
 }
@@ -1428,7 +1447,7 @@
 }
 
 .eval-run-id {
-  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-family: var(--font-mono);
   font-size: 0.85rem;
   word-break: break-all;
 }
@@ -1485,7 +1504,7 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel);
-  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-family: var(--font-mono);
   font-size: 0.82rem;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -1513,7 +1532,7 @@
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
-  box-shadow: 0 24px 48px rgba(20, 26, 31, 0.18);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1598,7 +1617,7 @@
 
 .json-key {
   color: var(--muted);
-  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-family: var(--font-mono);
 }
 
 .json-type-hint {
@@ -1607,7 +1626,7 @@
 }
 
 .json-value {
-  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-family: var(--font-mono);
   word-break: break-word;
 }
 
@@ -1765,18 +1784,18 @@
 }
 
 .score-high {
-  background: var(--accent-dim);
-  color: var(--accent);
+  background: var(--score-high-dim);
+  color: var(--score-high);
 }
 
 .score-mid {
-  background: var(--warn-dim);
-  color: var(--warn);
+  background: var(--score-mid-dim);
+  color: var(--score-mid);
 }
 
 .score-low {
-  background: var(--error-dim);
-  color: var(--error);
+  background: var(--score-low-dim);
+  color: var(--score-low);
 }
 
 .match-badge {
@@ -1789,8 +1808,8 @@
 }
 
 .match-badge-yes {
-  background: var(--accent-dim);
-  color: var(--accent);
+  background: var(--highlight-dim);
+  color: var(--highlight);
 }
 
 .match-badge-no {
@@ -1978,19 +1997,19 @@
 
 .primary-button {
   background: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
   font-weight: 700;
-  box-shadow: 0 8px 16px rgba(0, 104, 74, 0.22);
+  box-shadow: 0 8px 16px rgba(169, 179, 255, 0.22);
 }
 
 .primary-button:hover {
   background: var(--accent-strong);
-  box-shadow: 0 10px 20px rgba(0, 104, 74, 0.28);
+  box-shadow: 0 10px 20px rgba(169, 179, 255, 0.28);
 }
 
 .primary-button:active {
   transform: translateY(1px);
-  box-shadow: 0 4px 10px rgba(0, 104, 74, 0.24);
+  box-shadow: 0 4px 10px rgba(169, 179, 255, 0.24);
 }
 
 .danger-button {
@@ -1999,7 +2018,7 @@
 }
 
 .danger-button:hover {
-  background: rgba(179, 38, 30, 0.18);
+  background: rgba(255, 122, 138, 0.22);
   color: var(--error-strong);
 }
 
@@ -2139,9 +2158,6 @@
 }
 
 .alluvial-wrap {
-  --flow-total: #3d4d44;
-  --flow-pending: #cfd9d2;
-  --flow-failed: #5c4a99;
   position: relative;
   margin: 8px auto 0;
   max-width: 60vw;
@@ -2217,31 +2233,31 @@
 }
 
 .legend-swatch-total {
-  background: #3d4d44;
+  background: var(--flow-total);
 }
 
 .legend-swatch-processed {
-  background: #8dc7ee;
-}
-
-.legend-swatch-pending {
-  background: #cfd9d2;
-}
-
-.legend-swatch-good {
   background: var(--accent);
 }
 
+.legend-swatch-pending {
+  background: var(--flow-pending);
+}
+
+.legend-swatch-good {
+  background: var(--score-high);
+}
+
 .legend-swatch-moderate {
-  background: var(--warn);
+  background: var(--score-mid);
 }
 
 .legend-swatch-bad {
-  background: var(--error);
+  background: var(--score-low);
 }
 
 .legend-swatch-failed {
-  background: #5c4a99;
+  background: var(--flow-failed);
 }
 
 /* =========================================================================================
@@ -2313,12 +2329,12 @@
   right: 0;
   bottom: 0;
   z-index: 40;
-  background: rgba(255, 255, 255, 0.97);
+  background: rgba(16, 18, 42, 0.97);
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--line);
   padding: 6px max(6px, env(safe-area-inset-left)) calc(6px + env(safe-area-inset-bottom))
     max(6px, env(safe-area-inset-right));
-  box-shadow: 0 -8px 24px rgba(20, 26, 31, 0.08);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.2);
 }
 
 .mobile-first .bottom-nav-link {
@@ -2432,7 +2448,7 @@
   background: var(--panel);
   border-radius: 14px;
   padding: 6px;
-  box-shadow: 0 16px 32px rgba(20, 26, 31, 0.16);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
 }
 
 .tab-menu-item {
@@ -2624,7 +2640,7 @@
   border-radius: 16px;
   background: var(--panel);
   padding: 4px 14px;
-  box-shadow: 0 10px 24px rgba(20, 26, 31, 0.06);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.15);
 }
 
 .mobile-first .jobs-table td {
@@ -2693,14 +2709,15 @@
   gap: 4px;
   padding: 4px;
   border-radius: 999px;
-  background: rgba(20, 26, 31, 0.85);
-  box-shadow: 0 8px 20px rgba(20, 26, 31, 0.25);
+  background: var(--panel-hover);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
 }
 
 .dev-layout-toggle button {
   border: 0;
   background: transparent;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--muted);
   font: inherit;
   font-size: 0.68rem;
   font-weight: 700;
@@ -2710,8 +2727,8 @@
 }
 
 .dev-layout-toggle button.is-active {
-  background: #ffffff;
-  color: var(--text);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 /* Shown by LandingGate (src/components/LandingGate.tsx) for the brief moment between a root
    arrival and knowing its landing-page experiment variant -- blank, at most ~1.5s. */
