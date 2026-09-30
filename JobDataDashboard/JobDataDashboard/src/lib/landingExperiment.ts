@@ -2,17 +2,17 @@ import posthog from 'posthog-js'
 import { isAnalyticsEnabled } from './posthog'
 
 // Landing page vs. straight-to-dashboard A/B test: do visitors who first see the landing page
-// explore more of the dashboard? Like mobile-first-layout (see ./experiment.tsx), the experiment
-// itself (variants, allocation, metrics) lives in PostHog Cloud -- this is the flag key both sides
-// agree on. Multivariate "control" / "test" (a boolean flag also works: `true` means "test").
+// explore more of the dashboard? The experiment itself (variants, allocation, metrics) lives in
+// PostHog Cloud -- this is the flag key both sides agree on. Multivariate "control" / "test" (a
+// boolean flag also works: `true` means "test").
 export const LANDING_FLAG_KEY = 'landing-page'
 export const LANDING_PATH = '/welcome'
 
 type Variant = 'control' | 'test'
 
-// QA/screenshot override: ?landing=test|control. Unlike ?mobile_layout it isn't remembered --
-// "test" shows the landing page on every root arrival that carries it, which is what you want
-// while iterating on the page itself.
+// QA/screenshot override: ?landing=test|control. It isn't remembered -- "test" shows the landing
+// page on every root arrival that carries it, which is what you want while iterating on the page
+// itself.
 const OVERRIDE_PARAM = 'landing'
 // How long a root arrival waits for PostHog's flags before falling back to the dashboard. Past
 // this the visitor is treated as not enrolled (and the flag is never read, so no exposure gets

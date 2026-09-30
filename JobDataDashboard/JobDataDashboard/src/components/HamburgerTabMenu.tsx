@@ -14,10 +14,9 @@ type HamburgerTabMenuProps = {
   className?: string
 }
 
-// The mobile-first replacement for a row of tabs/sidebar links -- a single button showing the
-// current section, which expands into a vertical list instead of a horizontally scrolling row.
-// Used directly (e.g. AdminLayout, which needs an entirely different desktop rendering) or via
-// TabBar (which also renders the classic .pane-tabs row for non-mobile-first).
+// The app's section switcher in place of a row of tabs/sidebar links -- a single button showing
+// the current section, which expands into a vertical list instead of a horizontally scrolling
+// row. Used directly (AdminLayout) or via TabBar (every other sub-tab bar).
 export default function HamburgerTabMenu({ items, ariaLabel, className }: HamburgerTabMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const activeItem = items.find((item) => item.isActive) ?? items[0]

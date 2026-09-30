@@ -1,11 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { NodeProps } from '@xyflow/react'
-import { Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow } from '@xyflow/react'
+import { Background, Handle, MarkerType, Position, ReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { IconType } from 'react-icons'
 import { FiEye, FiEyeOff } from 'react-icons/fi'
 import { SiFastapi, SiGrafana, SiLangchain, SiMlflow, SiPostgresql, SiPrometheus, SiPython, SiReact, SiRedis } from 'react-icons/si'
-import { useMobileLayout } from '../lib/experiment'
 
 // Unlike AgentTopologyHero (which renders a *live* topology fetched from JobManagerAgent's own
 // introspection of its running config/prompt/tools), this graph describes the system's actual
@@ -174,14 +173,6 @@ const NODE_ICON: Record<string, IconType> = {
   jobdatadashboard: SiReact,
 }
 
-const MINIMAP_COLOR: Record<SystemNodeKind, string> = {
-  ingestion: '#a9b3ff',
-  datastore: '#f5c26b',
-  compute: '#ff9b7a',
-  observability: '#c9a6ff',
-  frontend: '#ff7a8a',
-}
-
 const KIND_COLUMN_X: Record<SystemNodeKind, number> = {
   ingestion: 100,
   datastore: 400,
@@ -285,14 +276,12 @@ function buildFlowNode(node: SystemNode, point: Point) {
 }
 
 export default function SystemArchitectureHero() {
-  const isMobileFirst = useMobileLayout()
   const [pinnedNodeId, setPinnedNodeId] = useState<string | null>(null)
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [isDetailExpanded, setIsDetailExpanded] = useState(false)
 
   const layout = useMemo(() => buildLayout(SYSTEM_NODES), [])
   const fallbackNodeId = SYSTEM_NODES[0]?.id ?? null
-  const activeNodeId = pinnedNodeId ?? hoveredNodeId ?? fallbackNodeId
+  const activeNodeId = pinnedNodeId ?? fallbackNodeId
   const activeNode = SYSTEM_NODES.find((node) => node.id === activeNodeId) ?? null
 
   // Collapse the detail text back down whenever the selected node changes, rather than leaving a
@@ -372,47 +361,29 @@ export default function SystemArchitectureHero() {
                 edges={flowEdges}
                 nodeTypes={nodeTypes}
                 // Pan/zoom/drag are what actually fight page scroll on a touch screen -- a swipe
-                // meant to scroll the page gets captured as a graph pan instead. Locked out under
-                // the mobile-first-layout experiment; node tap-to-select (below) stays on since a
-                // discrete tap doesn't have that conflict. fitView's own bounds are widened way
-                // past desktop's so the whole diagram renders in frame with nothing to pan to.
-                nodesDraggable={!isMobileFirst}
+                // meant to scroll the page gets captured as a graph pan instead. Locked out; node
+                // tap-to-select (below) stays on since a discrete tap doesn't have that conflict.
+                // fitView's bounds are wide enough that the whole diagram renders in frame with nothing
+                // to pan to.
+                nodesDraggable={false}
                 nodesConnectable={false}
                 elementsSelectable={false}
                 nodeDragThreshold={2}
                 zoomOnDoubleClick={false}
-                panOnScroll={!isMobileFirst}
-                panOnDrag={!isMobileFirst}
-                zoomOnScroll={!isMobileFirst}
-                zoomOnPinch={!isMobileFirst}
-                minZoom={isMobileFirst ? 0.12 : 0.45}
+                panOnScroll={false}
+                panOnDrag={false}
+                zoomOnScroll={false}
+                zoomOnPinch={false}
+                minZoom={0.12}
                 maxZoom={1.35}
                 fitView
-                fitViewOptions={{ padding: isMobileFirst ? 0.06 : 0.14, minZoom: isMobileFirst ? 0.12 : 0.45 }}
-                defaultViewport={{ x: 0, y: 0, zoom: isMobileFirst ? 0.12 : 0.7 }}
-                onNodeMouseEnter={isMobileFirst ? undefined : (_, node) => setHoveredNodeId(node.id)}
-                onNodeMouseLeave={
-                  isMobileFirst
-                    ? undefined
-                    : (_, node) => {
-                        setHoveredNodeId((current) => (current === node.id ? null : current))
-                      }
-                }
+                fitViewOptions={{ padding: 0.06, minZoom: 0.12 }}
+                defaultViewport={{ x: 0, y: 0, zoom: 0.12 }}
                 onNodeClick={(_, node) => {
                   setPinnedNodeId((current) => (current === node.id ? null : node.id))
                 }}
               >
                 <Background color="rgba(236, 235, 245, 0.08)" gap={22} size={1.4} />
-                {!isMobileFirst && <Controls showInteractive={false} />}
-                <MiniMap
-                  pannable
-                  zoomable
-                  nodeStrokeWidth={2}
-                  nodeColor={(node) => MINIMAP_COLOR[(node.data as unknown as DetailNodeData)?.kind] ?? '#4a4d6e'}
-                  maskColor="rgba(10, 11, 20, 0.6)"
-                  className="agent-flow-minimap"
-                  style={{ width: 140, height: 96 }}
-                />
               </ReactFlow>
             </ActiveNodeContext.Provider>
           </div>
@@ -427,25 +398,19 @@ export default function SystemArchitectureHero() {
             <strong>{activeNode?.label ?? 'No node selected'}</strong>
           </div>
           <p className="agent-detail-source">Source: {activeNode?.source ?? 'n/a'}</p>
-          {isMobileFirst ? (
-            <>
-              <button
-                type="button"
-                className="ghost-button ghost-button-with-icon agent-detail-toggle"
-                onClick={() => setIsDetailExpanded((current) => !current)}
-              >
-                {isDetailExpanded ? (
-                  <FiEyeOff aria-hidden="true" className="button-icon" />
-                ) : (
-                  <FiEye aria-hidden="true" className="button-icon" />
-                )}
-                {isDetailExpanded ? 'Hide details' : 'Show details'}
-              </button>
-              {isDetailExpanded && <pre className="agent-detail-content">{activeNode?.detail ?? ''}</pre>}
-            </>
-          ) : (
-            <pre className="agent-detail-content">{activeNode?.detail ?? ''}</pre>
-          )}
+          <button
+            type="button"
+            className="ghost-button ghost-button-with-icon agent-detail-toggle"
+            onClick={() => setIsDetailExpanded((current) => !current)}
+          >
+            {isDetailExpanded ? (
+              <FiEyeOff aria-hidden="true" className="button-icon" />
+            ) : (
+              <FiEye aria-hidden="true" className="button-icon" />
+            )}
+            {isDetailExpanded ? 'Hide details' : 'Show details'}
+          </button>
+          {isDetailExpanded && <pre className="agent-detail-content">{activeNode?.detail ?? ''}</pre>}
         </aside>
       </div>
     </section>

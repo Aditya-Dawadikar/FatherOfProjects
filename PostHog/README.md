@@ -52,12 +52,10 @@ as before. Gating lives in `src/lib/landingExperiment.ts` + `src/components/Land
 - **Revisits from the dashboard**: the brand link in the top nav opens `/welcome` from any page, for
   both variants. Filter `landing_viewed` on `entry = experiment` when comparing variants, so control
   visitors who chose to open it don't count as exposed to the landing page.
-- **Phones are included** -- independent of `mobile-first-layout`; the landing page is responsive
-  on its own.
+- **Phones are included** -- the landing page is responsive on its own.
 - **Flag timeout**: a root arrival waits up to 1.5s for flags, then falls back to the dashboard
   without reading the flag (no exposure logged).
-- **QA override**: `?landing=test` or `?landing=control` (not remembered, unlike
-  `?mobile_layout`).
+- **QA override**: `?landing=test` or `?landing=control` (not remembered across page loads).
 
 Events:
 
