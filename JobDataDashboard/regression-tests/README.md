@@ -22,4 +22,4 @@ DASHBOARD_URL=http://localhost:8080 npx playwright test  # against docker compos
 
 ## CI
 
-`.github/workflows/dashboard-regression.yml` runs on every push to `master`: it waits for Railway's deployment of that commit to go live (failing if the deploy fails), then runs the tests. It can also be run manually from the Actions tab. Set the `DASHBOARD_URL` repo variable to override the default prod domain. The failure report and traces are uploaded as the `playwright-report` artifact.
+`.github/workflows/dashboard-regression.yml` runs on every push to `master`: it waits for Railway's deployment of that commit to go live (failing if the deploy fails), then runs the tests, alongside a Lighthouse CI job (see `../lighthouse/README.md`). It can also be run manually from the Actions tab. Set the `DASHBOARD_URL` repo variable to override the default prod domain. The failure report and traces are uploaded as the `playwright-report` artifact.

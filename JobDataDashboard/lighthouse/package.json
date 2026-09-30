@@ -1,0 +1,12 @@
+{
+  "name": "jobdatadashboard-lighthouse",
+  "private": true,
+  "description": "Lighthouse CI runs against the deployed dashboard",
+  "scripts": {
+    "lhci": "lhci autorun",
+    "summary": "node summarize.cjs"
+  },
+  "devDependencies": {
+    "@lhci/cli": "^0.15.1"
+  }
+}

@@ -1,7 +1,7 @@
 name: Dashboard regression
 
 # Every push to master deploys to Railway -- once that deploy is live, re-check that every
-# dashboard page still loads.
+# dashboard page still loads, and run Lighthouse against it.
 on:
   push:
     branches: [master]
@@ -10,6 +10,9 @@ on:
       dashboard_url:
         description: Dashboard URL to test (defaults to the DASHBOARD_URL repo variable / prod domain)
         required: false
+
+env:
+  DASHBOARD_URL: ${{ inputs.dashboard_url || vars.DASHBOARD_URL || 'https://projectycjobs.buildwithadi.dev' }}
 
 # Only the newest push matters -- it supersedes whatever an older run would have tested.
 concurrency:
@@ -21,23 +24,14 @@ permissions:
   deployments: read
 
 jobs:
-  pages:
+  deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-    defaults:
-      run:
-        working-directory: JobDataDashboard/regression-tests
-    env:
-      CI: true
-      DASHBOARD_URL: ${{ inputs.dashboard_url || vars.DASHBOARD_URL || 'https://projectycjobs.buildwithadi.dev' }}
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-
       # Railway's GitHub integration creates one deployment per pushed commit and marks it
       # success once the environment is live. Testing before then would test the old build.
       - name: Wait for Railway deploy of ${{ github.sha }}
         if: github.event_name == 'push'
-        working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -66,6 +60,18 @@ jobs:
           echo "::error::Timed out waiting for Railway to deploy ${GITHUB_SHA}."
           exit 1
 
+  pages:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: JobDataDashboard/regression-tests
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -84,3 +90,36 @@ jobs:
             JobDataDashboard/regression-tests/playwright-report
             JobDataDashboard/regression-tests/test-results
           retention-days: 14
+
+  lighthouse:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: JobDataDashboard/lighthouse
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      # Scores are warn-only assertions for now (see lighthouserc.cjs), so this step reports rather
+      # than gates -- it fails only if Lighthouse itself can't run.
+      - name: Run Lighthouse CI
+        run: npx lhci autorun
+
+      - name: Write scores to job summary
+        if: always() && hashFiles('JobDataDashboard/lighthouse/lhci-reports/manifest.json') != ''
+        run: node summarize.cjs
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-reports
+          path: JobDataDashboard/lighthouse/lhci-reports
+          if-no-files-found: ignore
+          retention-days: 30
