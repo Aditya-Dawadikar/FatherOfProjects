@@ -23,7 +23,7 @@ module.exports = {
       // Median of 3 runs per URL -- single Lighthouse runs against a live site are noisy.
       numberOfRuns: 3,
       settings: {
-        // Mobile emulation (Lighthouse's default) -- the dashboard's only layout is mobile-first.
+        // Mobile emulation (Lighthouse's default) -- audits the dashboard's mobile-first layout.
         // Keep these runs out of PostHog: they'd show up as real visitors and skew the
         // landing-page experiment's numbers.
         blockedUrlPatterns: ['*posthog.com*'],

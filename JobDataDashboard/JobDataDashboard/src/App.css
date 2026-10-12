@@ -101,6 +101,59 @@
   color: var(--accent);
 }
 
+.top-nav .view-tabs {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.view-tabs {
+  display: flex;
+  gap: 20px;
+  padding: 0;
+  overflow-x: auto;
+}
+
+.view-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 10px 0;
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.view-tab.is-active {
+  color: var(--text);
+}
+
+.view-tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background 140ms ease;
+}
+
+.view-tab:hover {
+  color: var(--text);
+}
+
+.view-tab:hover::after {
+  background: rgba(169, 179, 255, 0.35);
+}
+
+.view-tab.is-active::after {
+  background: var(--accent);
+}
+
 .app-body {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.95fr);
@@ -284,6 +337,11 @@
 /* React Flow's own dark colorMode, retinted to this app's navy palette. */
 .agent-flow .react-flow {
   --xy-background-color: transparent;
+  --xy-controls-button-background-color: var(--panel);
+  --xy-controls-button-background-color-hover: var(--panel-hover);
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-border-color: var(--line);
+  --xy-minimap-background-color: var(--panel-2);
   --xy-edge-label-background-color: var(--panel-2);
   --xy-edge-label-color: var(--muted);
 }
@@ -693,6 +751,28 @@
   opacity: 0;
 }
 
+.agent-flow .react-flow__controls {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.3);
+}
+
+.agent-flow .react-flow__controls button {
+  background: var(--panel);
+  color: var(--text);
+  fill: var(--text);
+  border-bottom-color: var(--line);
+}
+
+.agent-flow .agent-flow-minimap {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.3);
+  background: rgba(16, 18, 42, 0.85);
+}
+
 .agent-flow .react-flow__edge-textbg {
   fill: var(--panel-2);
 }
@@ -1081,6 +1161,28 @@
   background: var(--error);
 }
 
+.pane-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pane-tab {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 7px 16px;
+  font: inherit;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.pane-tab:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .admin-layout {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -1089,8 +1191,46 @@
   align-items: start;
 }
 
+.admin-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 20px;
+  padding: 12px;
+  position: sticky;
+  top: 20px;
+}
+
+.admin-sidebar-link {
+  display: block;
+  padding: 10px 14px;
+  border-radius: 12px;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.admin-sidebar-link:hover {
+  color: var(--text);
+  background: var(--overlay);
+}
+
+.admin-sidebar-link.is-active {
+  color: var(--text);
+  background: var(--accent-dim);
+}
+
 .admin-content {
   min-width: 0;
+}
+
+.pane-tab.is-active {
+  background: var(--accent-dim);
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 .pane-meta {
@@ -1937,6 +2077,17 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .admin-sidebar {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .view-tabs {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
   .toolbar,
   .panel-heading,
   .form-actions,
@@ -2110,58 +2261,66 @@
 }
 
 /* =========================================================================================
-   Mobile-first layout -- the app's only layout, at every viewport width (it started as the "test"
-   variant of a PostHog A/B experiment and was kept). Scoped under `.app-shell` so these rules
-   out-rank the generic base rules further up this file. Tuned for real phone widths
-   (~360-430px); desktop windows get the same treatment.
+   Mobile-first layout
+   Everything below is scoped under `.mobile-first`, a class Layout.tsx adds to `.app-shell` for
+   narrow viewports and phones (see src/lib/mobileLayout.ts); laptops and monitors keep the
+   desktop layout above. Tuned for real phone widths (~360-430px).
    ========================================================================================= */
 
-/* The bottom nav is the primary navigation; the top bar stays for the brand link back to the
-   landing page. */
-.app-shell .top-nav {
+.bottom-nav {
+  display: none;
+}
+
+/* Under mobile-first the bottom nav replaces the tab row, but the top bar stays for the brand link
+   back to the landing page. */
+.mobile-first .top-nav {
   padding: 10px 16px;
 }
 
-.app-shell .top-nav-brand {
+.mobile-first .top-nav .view-tabs {
+  display: none;
+}
+
+.mobile-first .top-nav-brand {
   border-right: 0;
   padding-right: 0;
 }
 
-.app-shell .app-header {
+.mobile-first .app-header {
   padding: 16px 16px 10px;
   flex-wrap: wrap;
   gap: 10px;
 }
 
-.app-shell .app-body {
+.mobile-first .app-body {
   grid-template-columns: 1fr;
   padding: 0 16px 24px;
   gap: 16px;
 }
 
-.app-shell .app-body-single {
+.mobile-first .app-body-single {
   padding: 0 16px 24px;
 }
 
-.app-shell .admin-layout {
+.mobile-first .admin-layout {
   grid-template-columns: 1fr;
   padding: 0 16px 24px;
   gap: 12px;
 }
 
-.app-shell .content-panel,
-.app-shell .form-panel {
+.mobile-first .content-panel,
+.mobile-first .form-panel {
   padding: 14px;
   border-radius: 18px;
 }
 
-.app-shell .form-panel {
+.mobile-first .form-panel {
   position: static;
 }
 
 /* --- Bottom tab bar replaces the top nav, always reachable with a thumb -------------------- */
 
-.app-shell .bottom-nav {
+.mobile-first .bottom-nav {
   display: flex;
   position: fixed;
   left: 0;
@@ -2176,7 +2335,7 @@
   box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.2);
 }
 
-.app-shell .bottom-nav-link {
+.mobile-first .bottom-nav-link {
   flex: 1 1 0;
   min-width: 0;
   display: flex;
@@ -2193,34 +2352,36 @@
   line-height: 1.1;
 }
 
-.app-shell .bottom-nav-icon {
+.mobile-first .bottom-nav-icon {
   font-size: 1.2rem;
 }
 
-.app-shell .bottom-nav-link span {
+.mobile-first .bottom-nav-link span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
 }
 
-.app-shell .bottom-nav-link.is-active {
+.mobile-first .bottom-nav-link.is-active {
   color: var(--accent);
   background: var(--accent-dim);
 }
 
-.app-shell .app-main {
+.mobile-first .app-main {
   padding-bottom: calc(70px + env(safe-area-inset-bottom));
 }
 
-.app-shell .global-alert-banner {
+.mobile-first .global-alert-banner {
   margin: 8px 16px 0;
   font-size: 0.82rem;
 }
 
-/* --- Hamburger menu (see HamburgerTabMenu.tsx) -- Overview/ETL Data/Evals/Migrations' sub-tab
-   bars and the Admin sections, instead of a horizontally scrolling row of pills: one button
-   showing the current section, expanding into a vertical list. ------------------------------ */
+/* --- Hamburger menu (see HamburgerTabMenu.tsx) -- what Overview/ETL Data/Evals/Migrations' sub-
+   tab bars and the Admin sidebar become under mobile-first, instead of a horizontally scrolling
+   row of pills: one button showing the current section, expanding into a vertical list. Only
+   ever rendered while mobile-first is active, so these aren't `.mobile-first`-scoped -- the
+   component itself decides whether to mount at all. ------------------------------------------ */
 
 .tab-menu {
   position: relative;
@@ -2313,63 +2474,63 @@
 
 /* --- Fixed-column grids collapse to one column so nothing forces horizontal overflow -------- */
 
-.app-shell .summary-grid,
-.app-shell .kpi-grid,
-.app-shell .rpm-config-grid,
-.app-shell .mlflow-summary-grid,
-.app-shell .form-grid,
-.app-shell .eval-run-fields,
-.app-shell .match-detail-fields {
+.mobile-first .summary-grid,
+.mobile-first .kpi-grid,
+.mobile-first .rpm-config-grid,
+.mobile-first .mlflow-summary-grid,
+.mobile-first .form-grid,
+.mobile-first .eval-run-fields,
+.mobile-first .match-detail-fields {
   grid-template-columns: 1fr;
 }
 
 /* --- Toolbars stack, and every action becomes a full-width, thumb-sized target --------------
    The app already has a `@media (max-width: 720px)` layer (further down this file) that column-
-   stacks this same selector list for any narrow *window*. Mirrored here so the same stacking
-   applies at any width, relying on `align-items: stretch` (the default) for full-
+   stacks this same selector list for any narrow *window*. Mirrored here under `.mobile-first` so
+   a phone held in landscape (wider than 720px) gets the same stacking, relying on `align-items: stretch` (the default) for full-
    width children rather than a flex-basis hack -- `flex: 1 1 100%` on the children of a *column*-
    direction flex container sets their HEIGHT to 100%, not width, which is what produced a broken
    masonry-style layout the first time this was tried here. */
-.app-shell .toolbar,
-.app-shell .panel-heading,
-.app-shell .form-actions,
-.app-shell .job-form-drawer-header,
-.app-shell .toolbar-actions,
-.app-shell .pagination-bar,
-.app-shell .pagination-actions,
-.app-shell .pagination-copy {
+.mobile-first .toolbar,
+.mobile-first .panel-heading,
+.mobile-first .form-actions,
+.mobile-first .job-form-drawer-header,
+.mobile-first .toolbar-actions,
+.mobile-first .pagination-bar,
+.mobile-first .pagination-actions,
+.mobile-first .pagination-copy {
   flex-direction: column;
   align-items: stretch;
 }
 
-.app-shell .toolbar-actions {
+.mobile-first .toolbar-actions {
   flex-wrap: nowrap;
 }
 
-.app-shell .records-toolbar {
+.mobile-first .records-toolbar {
   grid-template-columns: 1fr;
 }
 
-.app-shell .search-input,
-.app-shell .filter-select,
-.app-shell .min-score-input,
-.app-shell .date-input,
-.app-shell .field input,
-.app-shell .field textarea {
+.mobile-first .search-input,
+.mobile-first .filter-select,
+.mobile-first .min-score-input,
+.mobile-first .date-input,
+.mobile-first .field input,
+.mobile-first .field textarea {
   min-width: 0;
   min-height: 44px;
 }
 
-.app-shell .ghost-button,
-.app-shell .primary-button,
-.app-shell .danger-button {
+.mobile-first .ghost-button,
+.mobile-first .primary-button,
+.mobile-first .danger-button {
   min-height: 44px;
   justify-content: center;
 }
 
 /* --- Job/match forms open as a bottom sheet instead of a side drawer ------------------------ */
 
-.app-shell .job-form-drawer {
+.mobile-first .job-form-drawer {
   top: auto;
   bottom: 0;
   left: 0;
@@ -2384,7 +2545,7 @@
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
 }
 
-.app-shell .job-form-drawer.is-open {
+.mobile-first .job-form-drawer.is-open {
   transform: translateY(0);
 }
 
@@ -2394,7 +2555,7 @@
    grouping on a wide desktop layout. Flattened here so there's exactly one outer frame on mobile;
    `.agent-graph-wrap`/`.agent-detail-panel` keep their own framing since those mark two actually
    distinct regions (the diagram canvas vs. the text readout below it), not redundant nesting. */
-.app-shell .agent-hero {
+.mobile-first .agent-hero {
   border: 0;
   border-radius: 0;
   padding: 0;
@@ -2402,71 +2563,75 @@
   box-shadow: none;
 }
 
-.app-shell .agent-hero-kpis {
+.mobile-first .agent-hero-kpis {
   grid-template-columns: 1fr;
 }
 
 /* Was a horizontally-scrolling strip -- back to a single-column grid (each stage its own full-
    width grid item, stacked) so nothing on this page needs a sideways swipe to read. */
-.app-shell .agent-flow-stages {
+.mobile-first .agent-flow-stages {
   grid-template-columns: 1fr;
 }
 
-.app-shell .agent-hero-body {
+.mobile-first .agent-hero-body {
   grid-template-columns: 1fr;
 }
 
-.app-shell .agent-graph-wrap,
-.app-shell .agent-flow {
+.mobile-first .agent-graph-wrap,
+.mobile-first .agent-flow {
   height: 58svh;
   min-height: 340px;
 }
 
-/* Pan/zoom/drag are disabled on this canvas (see AgentTopologyHero.tsx /
+/* Pan/zoom/drag are disabled on this canvas under mobile-first (see AgentTopologyHero.tsx /
    SystemArchitectureHero.tsx -- accidental touches while scrolling would otherwise pan/zoom the
    graph instead), and fitView is given much more room to shrink to, so the whole diagram sits
    inside this one frame with nothing left to pan to. Node tap-to-select still works. */
-.app-shell .agent-flow .react-flow__node {
+.mobile-first .agent-flow .react-flow__node {
   cursor: default;
 }
 
-.app-shell .agent-detail-panel {
+.mobile-first .agent-detail-panel {
   height: auto;
   min-height: 0;
   max-height: 40svh;
 }
 
-.app-shell .agent-detail-toggle {
+.mobile-first .agent-detail-toggle {
   margin-top: 4px;
+}
+
+.mobile-first .agent-flow-minimap {
+  display: none;
 }
 
 /* --- Grafana embed fills the space left by the header/tabs/bottom nav ----------------------- */
 
-.app-shell .grafana-embed {
+.mobile-first .grafana-embed {
   height: calc(100svh - 230px);
   min-height: 420px;
 }
 
 /* --- Jobs & Matches become tap-friendly cards instead of a table wider than the screen ------- */
 
-.app-shell .table-wrap {
+.mobile-first .table-wrap {
   border: 0;
   overflow: visible;
 }
 
-.app-shell .jobs-table,
-.app-shell .jobs-table tbody,
-.app-shell .jobs-table tr,
-.app-shell .jobs-table td {
+.mobile-first .jobs-table,
+.mobile-first .jobs-table tbody,
+.mobile-first .jobs-table tr,
+.mobile-first .jobs-table td {
   display: block;
   width: 100%;
 }
 
-.app-shell .jobs-table thead {
+.mobile-first .jobs-table thead {
   display: none;
 }
 
-.app-shell .jobs-table tr {
+.mobile-first .jobs-table tr {
   margin-bottom: 12px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -2475,7 +2640,7 @@
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.15);
 }
 
-.app-shell .jobs-table td {
+.mobile-first .jobs-table td {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2485,11 +2650,11 @@
   text-align: right;
 }
 
-.app-shell .jobs-table td:last-child {
+.mobile-first .jobs-table td:last-child {
   border-bottom: 0;
 }
 
-.app-shell .jobs-table td::before {
+.mobile-first .jobs-table td::before {
   content: attr(data-label);
   flex: 0 0 auto;
   color: var(--muted);
@@ -2500,29 +2665,29 @@
   text-align: left;
 }
 
-.app-shell .jobs-table td.row-actions-cell {
+.mobile-first .jobs-table td.row-actions-cell {
   justify-content: flex-end;
 }
 
-.app-shell .jobs-table td.row-actions-cell::before {
+.mobile-first .jobs-table td.row-actions-cell::before {
   display: none;
 }
 
 /* --- Other data tables (evals/migration comparisons) stay tables but read more compactly ---- */
 
-.app-shell .sweep-compare-table th,
-.app-shell .sweep-compare-table td {
+.mobile-first .sweep-compare-table th,
+.mobile-first .sweep-compare-table td {
   padding: 10px 12px;
   font-size: 0.85rem;
 }
 
 /* --- Modals become full-screen sheets so there's no double scroll region -------------------- */
 
-.app-shell .modal-overlay {
+.mobile-first .modal-overlay {
   padding: 0;
 }
 
-.app-shell .modal-panel {
+.mobile-first .modal-panel {
   width: 100%;
   max-width: none;
   height: 100svh;

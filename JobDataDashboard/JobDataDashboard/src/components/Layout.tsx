@@ -6,17 +6,23 @@ import { PRODUCT_NAME } from '../lib/brand'
 import { LANDING_PATH } from '../lib/landingExperiment'
 import { trackEvent, trackPageview, trackSectionReached } from '../lib/posthog'
 import BrandMark from './BrandMark'
+import { useMobileLayout } from '../lib/mobileLayout'
 import ObservabilityPage from '../pages/ObservabilityPage'
 
-// The bottom tab bar's sections (see App.css's `.bottom-nav` rules) -- short labels since
-// horizontal space is tight.
+// Shared between the desktop top nav and the mobile-first bottom tab bar (see App.css's
+// `.mobile-first .bottom-nav` rules) -- one source of truth for routes/icons, shortLabel only
+// used by the bottom bar where horizontal space is tight.
 const NAV_ITEMS = [
-  { to: '/', end: true, icon: FiLayout, label: 'Overview' },
-  { to: '/observability', end: false, icon: FiBarChart2, label: 'Metrics' },
-  { to: '/evals', end: false, icon: FiActivity, label: 'Evals' },
-  { to: '/etl-data', end: false, icon: FiDatabase, label: 'Data' },
-  { to: '/admin', end: false, icon: FiSettings, label: 'Admin' },
+  { to: '/', end: true, icon: FiLayout, label: 'Agent Overview', shortLabel: 'Overview' },
+  { to: '/observability', end: false, icon: FiBarChart2, label: 'Agent Observability', shortLabel: 'Metrics' },
+  { to: '/evals', end: false, icon: FiActivity, label: 'Agent Evals', shortLabel: 'Evals' },
+  { to: '/etl-data', end: false, icon: FiDatabase, label: 'ETL Data', shortLabel: 'Data' },
+  { to: '/admin', end: false, icon: FiSettings, label: 'Admin', shortLabel: 'Admin' },
 ]
+
+function tabClassName({ isActive }: { isActive: boolean }) {
+  return `view-tab${isActive ? ' is-active' : ''}`
+}
 
 function bottomTabClassName({ isActive }: { isActive: boolean }) {
   return `bottom-nav-link${isActive ? ' is-active' : ''}`
@@ -32,6 +38,9 @@ export default function Layout() {
   // this is the thing actually on screen there.
   const location = useLocation()
   const isObservability = location.pathname === '/observability'
+  // Narrow viewports and phones get the mobile-first layout (see src/lib/mobileLayout.ts);
+  // laptops and monitors keep the desktop top tab row.
+  const isMobileFirst = useMobileLayout()
   // HashRouter navigation never triggers a real page load, so posthog-js's own history-based
   // pageview autocapture (disabled in src/lib/posthog.ts) would miss every tab switch -- fire one
   // manually here instead, in the one place every route renders through.
@@ -47,7 +56,7 @@ export default function Layout() {
   const isBillingExhausted = billingStatusQuery.data?.is_billing_exhausted ?? false
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${isMobileFirst ? ' mobile-first' : ''}`}>
       {isBillingExhausted && (
         <NavLink to="/rate-limits" className="global-alert-banner">
           <FiAlertTriangle aria-hidden="true" className="button-icon" />
@@ -69,6 +78,14 @@ export default function Layout() {
           <BrandMark size={24} />
           <span>{PRODUCT_NAME}</span>
         </Link>
+        <nav className="view-tabs">
+          {NAV_ITEMS.map((item) => (
+            <NavLink key={item.to} to={item.to} end={item.end} className={tabClassName}>
+              <item.icon aria-hidden="true" className="button-icon" />
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
       </div>
 
       <div className="app-main">
@@ -80,13 +97,14 @@ export default function Layout() {
         </div>
       </div>
 
-      {/* Primary navigation: a thumb-reachable bottom bar so switching sections never costs a
-          reach-to-the-top-of-the-screen tap. The top bar above only holds the brand link. */}
+      {/* Only ever shown under .mobile-first (see App.css) -- replaces the top tab row with a
+          thumb-reachable bottom bar so switching sections never costs a reach-to-the-top-of-the-
+          screen tap. */}
       <nav className="bottom-nav" aria-label="Primary">
         {NAV_ITEMS.map((item) => (
           <NavLink key={item.to} to={item.to} end={item.end} className={bottomTabClassName}>
             <item.icon aria-hidden="true" className="bottom-nav-icon" />
-            <span>{item.label}</span>
+            <span>{item.shortLabel}</span>
           </NavLink>
         ))}
       </nav>
